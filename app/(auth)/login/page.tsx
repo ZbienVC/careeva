@@ -30,10 +30,10 @@ export default function LoginPage() {
       }
 
       setSubmitted(true);
-      // Redirect to check email page (or dashboard after confirmation)
+      // Redirect to dashboard immediately
       setTimeout(() => {
         router.push('/dashboard');
-      }, 2000);
+      }, 500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -51,9 +51,9 @@ export default function LoginPage() {
           {submitted ? (
             <div className="bg-green-900 bg-opacity-30 border border-green-700 rounded-lg p-4 text-center">
               <div className="text-3xl mb-2">✓</div>
-              <h3 className="text-green-400 font-semibold mb-2">Check Your Email</h3>
-              <p className="text-green-300 text-sm">We've sent a sign-in link to {email}</p>
-              <p className="text-green-300 text-sm mt-2">Redirecting you to the dashboard...</p>
+              <h3 className="text-green-400 font-semibold mb-2">Sign In Successful!</h3>
+              <p className="text-green-300 text-sm">Welcome back to Careeva</p>
+              <p className="text-green-300 text-sm mt-2">Redirecting to dashboard...</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">

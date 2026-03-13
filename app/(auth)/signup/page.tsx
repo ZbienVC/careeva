@@ -28,8 +28,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      // For simplicity, we'll use the signin endpoint with name
-      const response = await fetch('/api/auth/signin', {
+      const response = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: formData.email, name: formData.name }),

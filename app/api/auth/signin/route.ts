@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendVerificationEmail } from "@/lib/email";
-import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,8 +22,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find or create user
-    let user = await prisma.user.findUnique({
+    // Find user by email
+    const user = await prisma.user.findUnique({
       where: { email },
     });
 
@@ -36,19 +34,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate verification token
-    const token = crypto.randomBytes(32).toString("hex");
-
-    // Send verification email
-    try {
-      await sendVerificationEmail(email, token);
-    } catch (emailError) {
-      console.error("Email sending error:", emailError);
-      // Log error but don't fail - user still gets signed in after verification
-    }
-
+    // User exists - sign in immediately without email verification
     return NextResponse.json(
-      { success: true, message: "Verification email sent" },
+      { success: true, message: "Sign in successful" },
       { status: 200 }
     );
   } catch (error) {

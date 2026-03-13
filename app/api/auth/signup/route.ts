@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendVerificationEmail } from "@/lib/email";
-import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,30 +35,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create new user
+    // Create new user with email verified
     const user = await prisma.user.create({
       data: {
         email,
         name: name && typeof name === "string" ? name : undefined,
+        emailVerified: true,
       },
     });
-
-    // Generate verification token
-    const token = crypto.randomBytes(32).toString("hex");
-
-    // Send verification email
-    try {
-      await sendVerificationEmail(email, token, name);
-    } catch (emailError) {
-      console.error("Email sending error:", emailError);
-      // Log error but don't fail - user is created, they just won't receive the email
-      // In production, you might want to queue this for retry or alert admins
-    }
 
     return NextResponse.json(
       {
         success: true,
-        message: "Account created. Check your email for verification link",
+        message: "Account created. You can now sign in.",
         email: user.email,
       },
       { status: 201 }

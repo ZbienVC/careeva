@@ -44,14 +44,27 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
+    // Create session by setting a cookie
+    const response = NextResponse.json(
       {
         success: true,
         message: "Account created. You can now sign in.",
         email: user.email,
+        userId: user.id,
       },
       { status: 201 }
     );
+    
+    // Set session cookie (valid for 30 days)
+    response.cookies.set('careeva-session', JSON.stringify({ userId: user.id, email: user.email }), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60, // 30 days in seconds
+      path: '/',
+    });
+    
+    return response;
   } catch (error) {
     console.error("Sign up error:", error);
     return NextResponse.json(

@@ -23,6 +23,7 @@ async function apiCall<T>(
     const url = `${API_BASE}${endpoint}`;
     const response = await fetch(url, {
       ...options,
+      credentials: 'include', // Include cookies in requests
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,

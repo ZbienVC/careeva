@@ -6,6 +6,8 @@ import { authOptions } from "@/lib/auth";
 import { parseResume } from "@/lib/resume-parser";
 import { prisma } from "@/lib/db";
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication

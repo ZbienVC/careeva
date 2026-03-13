@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       data: {
         email,
         name: name && typeof name === "string" ? name : undefined,
-        emailVerified: true,
+        emailVerified: new Date(),
       },
     });
 

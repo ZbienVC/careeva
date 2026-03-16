@@ -132,19 +132,24 @@ model Application {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId     String?
+  job       Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
 
-  status    String   @default("applied") // "applied", "interviewing", "rejected", "accepted"
+  // Kanban board fields
+  company   String
+  role      String
+  status    String   @default("applied") // "applied", "phone_screen", "interview", "offer", "rejected"
   appliedAt DateTime @default(now())
-  note      String?  @db.Text
+  dateApplied String? // YYYY-MM-DD format for Kanban UI
+  url       String?
+  notes     String?  @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, jobId])
   @@map("applications")
 }
+
 
 model JobScore {
   id        String   @id @default(cuid())

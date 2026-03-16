@@ -63,6 +63,18 @@ export default function Navbar({ showAuth = false, showDashboard = false }: Navb
                   Jobs
                 </Link>
                 <Link
+                  href="/dashboard/applications"
+                  className="text-sm text-gray-300 hover:text-white transition-colors"
+                >
+                  Applications
+                </Link>
+                <Link
+                  href="/dashboard/cover-letter"
+                  className="text-sm text-gray-300 hover:text-white transition-colors"
+                >
+                  Cover Letter
+                </Link>
+                <Link
                   href="/dashboard/profile"
                   className="text-sm text-gray-300 hover:text-white transition-colors"
                 >

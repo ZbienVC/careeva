@@ -2,9 +2,7 @@ import { getServerSession } from 'next-auth/next';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession();
@@ -15,6 +13,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const { jobDescription, jobTitle, company, hiringManager, candidateName, tone } = await req.json();
+
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: 'OPENAI_API_KEY is not configured' }, { status: 500 });
+    }
+
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
     if (!jobDescription || !jobTitle || !company) {
       return NextResponse.json(

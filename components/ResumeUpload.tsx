@@ -42,7 +42,6 @@ export default function ResumeUpload({ onSuccess, onError }: ResumeUploadProps) 
   };
 
   const handleFile = async (file: File) => {
-    // Validate file type
     const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
     if (!validTypes.includes(file.type)) {
       const error = 'Please upload a PDF or DOCX file';
@@ -50,7 +49,6 @@ export default function ResumeUpload({ onSuccess, onError }: ResumeUploadProps) 
       return;
     }
 
-    // Validate file size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
       const error = 'File size must be less than 10MB';
       onError?.(error);
@@ -74,14 +72,11 @@ export default function ResumeUpload({ onSuccess, onError }: ResumeUploadProps) 
 
   return (
     <div className="space-y-6">
-      {/* Upload Area */}
       {!uploadedData ? (
         <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
-            isDragging
-              ? 'border-blue-500 bg-blue-500 bg-opacity-10'
-              : 'border-[#30363d] hover:border-blue-500'
-          }`}
+          className={`rounded-3xl border-2 border-dashed p-8 text-center transition-all ${
+            isDragging ? 'border-blue-400 bg-blue-500/10 shadow-lg shadow-blue-950/20' : 'border-white/10 bg-white/[0.03] hover:border-blue-400/50 hover:bg-white/[0.05]'
+          } ${loading ? 'pointer-events-none opacity-90' : 'cursor-pointer'}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -97,74 +92,77 @@ export default function ResumeUpload({ onSuccess, onError }: ResumeUploadProps) 
           />
 
           {loading ? (
-            <>
+            <div className="space-y-4">
               <LoadingSpinner />
-              <p className="text-gray-400 mt-4">Uploading and parsing {fileName}...</p>
-            </>
+              <div>
+                <p className="text-base font-medium text-white">Parsing {fileName}</p>
+                <p className="mt-1 text-sm text-slate-400">Careeva is extracting skills, roles, technologies, and experience signals.</p>
+              </div>
+            </div>
           ) : (
             <>
-              <div className="text-4xl mb-4">📄</div>
-              <h3 className="text-lg font-semibold text-white mb-2">Drop your resume here</h3>
-              <p className="text-gray-400 text-sm">or click to browse</p>
-              <p className="text-gray-500 text-xs mt-2">PDF or DOCX (max 10MB)</p>
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500/20 via-cyan-400/15 to-violet-500/20 text-3xl text-white">
+                ↑
+              </div>
+              <h3 className="mt-5 text-xl font-semibold text-white">Drop your resume here</h3>
+              <p className="mt-2 text-sm text-slate-400">or click to browse from your device</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2 text-xs text-slate-400">
+                <span className="badge">PDF</span>
+                <span className="badge">DOCX</span>
+                <span className="badge">Max 10MB</span>
+              </div>
             </>
           )}
         </div>
       ) : null}
 
-      {/* Uploaded Data Preview */}
       {uploadedData && (
-        <div className="bg-[#161b22] border border-green-700 border-opacity-50 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-green-400 mb-4">✓ Resume Parsed Successfully</h3>
+        <div className="rounded-3xl border border-emerald-500/25 bg-emerald-500/10 p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-emerald-100">Resume parsed successfully</h3>
+              <p className="mt-1 text-sm text-emerald-200/80">Your profile intelligence has been refreshed and is ready for scoring and writing flows.</p>
+            </div>
+            <button onClick={() => setUploadedData(null)} className="btn-secondary !px-4 !py-2 text-sm">
+              Upload another
+            </button>
+          </div>
 
-          <div className="space-y-4 text-sm">
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
             {uploadedData.skills && uploadedData.skills.length > 0 && (
-              <div>
-                <h4 className="text-gray-400 font-medium mb-2">Skills ({uploadedData.skills.length})</h4>
-                <div className="flex flex-wrap gap-2">
+              <div className="premium-card-soft p-4">
+                <h4 className="text-sm font-medium text-slate-300">Skills ({uploadedData.skills.length})</h4>
+                <div className="mt-3 flex flex-wrap gap-2">
                   {uploadedData.skills.map((skill: string, i: number) => (
-                    <span key={i} className="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-xs">
-                      {skill}
-                    </span>
+                    <span key={i} className="badge border-blue-500/20 bg-blue-500/10 text-blue-100">{skill}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {uploadedData.technologies && uploadedData.technologies.length > 0 && (
+              <div className="premium-card-soft p-4">
+                <h4 className="text-sm font-medium text-slate-300">Technologies</h4>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {uploadedData.technologies.map((tech: string, i: number) => (
+                    <span key={i} className="badge border-violet-500/20 bg-violet-500/10 text-violet-100">{tech}</span>
                   ))}
                 </div>
               </div>
             )}
 
             {uploadedData.roles && uploadedData.roles.length > 0 && (
-              <div>
-                <h4 className="text-gray-400 font-medium mb-2">Roles</h4>
-                <p className="text-gray-300">{uploadedData.roles.join(', ')}</p>
+              <div className="premium-card-soft p-4">
+                <h4 className="text-sm font-medium text-slate-300">Roles</h4>
+                <p className="mt-3 text-sm leading-6 text-slate-300">{uploadedData.roles.join(', ')}</p>
               </div>
             )}
 
-            {uploadedData.yearsOfExperience && (
-              <div>
-                <h4 className="text-gray-400 font-medium mb-2">Years of Experience</h4>
-                <p className="text-gray-300">{uploadedData.yearsOfExperience} years</p>
-              </div>
-            )}
-
-            {uploadedData.technologies && uploadedData.technologies.length > 0 && (
-              <div>
-                <h4 className="text-gray-400 font-medium mb-2">Technologies</h4>
-                <div className="flex flex-wrap gap-2">
-                  {uploadedData.technologies.map((tech: string, i: number) => (
-                    <span key={i} className="px-2 py-1 bg-purple-900 text-purple-200 rounded text-xs">
-                      {tech}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
+            <div className="premium-card-soft p-4">
+              <h4 className="text-sm font-medium text-slate-300">Experience</h4>
+              <p className="mt-3 text-sm leading-6 text-slate-300">{uploadedData.yearsOfExperience || 0} years detected</p>
+            </div>
           </div>
-
-          <button
-            onClick={() => setUploadedData(null)}
-            className="mt-6 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            Upload Another Resume
-          </button>
         </div>
       )}
     </div>

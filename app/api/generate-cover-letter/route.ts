@@ -1,13 +1,12 @@
-import { getServerSession } from 'next-auth/next';
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentUserFromRequest } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
+  const user = await getCurrentUserFromRequest(req);
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -18,24 +17,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'OPENAI_API_KEY is not configured' }, { status: 500 });
     }
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
     if (!jobDescription || !jobTitle || !company) {
-      return NextResponse.json(
-        { error: 'Job description, job title, and company are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Job description, job title, and company are required' }, { status: 400 });
     }
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const prompt = `You are an expert cover letter writer. Generate a professional, tailored cover letter based on the following information:
 
 Company: ${company}
 Job Title: ${jobTitle}
 Hiring Manager: ${hiringManager || 'Hiring Team'}
-Candidate Name: ${candidateName}
+Candidate Name: ${candidateName || user.name || 'The candidate'}
 Tone: ${tone}
+Candidate Background Signals: ${[
+      user.profile?.jobTitle ? `Target role: ${user.profile.jobTitle}` : '',
+      user.profile?.careerGoals ? `Career goals: ${user.profile.careerGoals}` : '',
+      user.profile?.skills?.length ? `Skills: ${user.profile.skills.slice(0, 12).join(', ')}` : '',
+      user.profile?.roles?.length ? `Prior roles: ${user.profile.roles.slice(0, 6).join(', ')}` : '',
+      user.profile?.additionalInfo ? `Additional context: ${user.profile.additionalInfo}` : '',
+    ].filter(Boolean).join(' | ') || 'No extra profile context available.'}
 
 Job Description:
 ${jobDescription}
@@ -53,16 +54,10 @@ Do not include placeholders or brackets. Write a complete, ready-to-send cover l
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
+      messages: [{ role: 'user', content: prompt }],
     });
 
     const coverLetter = completion.choices?.[0]?.message?.content || 'Failed to generate cover letter';
-
     return NextResponse.json({ coverLetter });
   } catch (error) {
     console.error('Failed to generate cover letter:', error);

@@ -1,23 +1,14 @@
-import { getServerSession } from 'next-auth/next';
 import { prisma } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentUserFromRequest } from '@/lib/session';
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
+  const user = await getCurrentUserFromRequest(req);
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
     const samples = await prisma.writingSample.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
@@ -31,9 +22,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
+  const user = await getCurrentUserFromRequest(req);
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -41,27 +31,11 @@ export async function POST(req: NextRequest) {
     const { title, type, content } = await req.json();
 
     if (!title || !type || !content) {
-      return NextResponse.json(
-        { error: 'Title, type, and content are required' },
-        { status: 400 }
-      );
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Title, type, and content are required' }, { status: 400 });
     }
 
     const sample = await prisma.writingSample.create({
-      data: {
-        userId: user.id,
-        title,
-        type,
-        content,
-      },
+      data: { userId: user.id, title, type, content },
     });
 
     return NextResponse.json(sample);

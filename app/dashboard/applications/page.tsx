@@ -3,8 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { profileAPI } from '@/lib/api';
 
 interface Application {
   id: string;
@@ -35,33 +35,47 @@ const blank = (): Application => ({
 });
 
 export default function Applications() {
-  const sessionResult = useSession();
-  const session = sessionResult?.data;
   const router = useRouter();
   const [apps, setApps] = useState<Application[]>([]);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<Application>(blank());
   const [editing, setEditing] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!session) router.push('/login');
-    else fetchApplications();
-  }, [session, router]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const fetchApplications = async () => {
     try {
       const res = await fetch('/api/applications', { credentials: 'include' });
-      if (res.ok) setApps(await res.json());
+      if (!res.ok) throw new Error('Failed to fetch applications');
+      setApps(await res.json());
     } catch (e) {
       console.error('Failed to fetch applications:', e);
+      setError('Unable to load application tracker right now.');
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    profileAPI.get().then((result) => {
+      if (!result.success) {
+        router.push('/login');
+        return;
+      }
+      fetchApplications();
+    });
+  }, [router]);
+
   const save = async () => {
+    if (!form.company.trim() || !form.role.trim()) {
+      setError('Company and role are required.');
+      return;
+    }
+
     try {
+      setSaving(true);
+      setError('');
       const method = editing ? 'PUT' : 'POST';
       const res = await fetch('/api/applications', {
         method,
@@ -69,26 +83,34 @@ export default function Applications() {
         body: JSON.stringify(editing ? { ...form, id: editing } : form),
         credentials: 'include',
       });
-      if (res.ok) {
-        await fetchApplications();
-        setModal(false);
-        setForm(blank());
-        setEditing(null);
-      }
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to save application');
+
+      await fetchApplications();
+      setModal(false);
+      setForm(blank());
+      setEditing(null);
     } catch (e) {
       console.error('Failed to save application:', e);
+      setError(e instanceof Error ? e.message : 'Failed to save application');
+    } finally {
+      setSaving(false);
     }
   };
 
   const remove = async (id: string) => {
     try {
+      setError('');
       const res = await fetch(`/api/applications?id=${id}`, {
         method: 'DELETE',
         credentials: 'include',
       });
-      if (res.ok) await fetchApplications();
+      if (!res.ok) throw new Error('Failed to delete application');
+      await fetchApplications();
     } catch (e) {
       console.error('Failed to delete application:', e);
+      setError('Failed to remove application.');
     }
   };
 
@@ -102,10 +124,12 @@ export default function Applications() {
           body: JSON.stringify({ ...app, status }),
           credentials: 'include',
         });
-        if (res.ok) await fetchApplications();
+        if (!res.ok) throw new Error('Failed to update application');
+        await fetchApplications();
       }
     } catch (e) {
       console.error('Failed to move application:', e);
+      setError('Failed to update application status.');
     }
   };
 
@@ -157,6 +181,8 @@ export default function Applications() {
         </div>
       </section>
 
+      {error && <div className="premium-card border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="stat-tile"><div className="text-sm text-slate-400">Total tracked</div><div className="mt-2 text-3xl font-bold text-white">{metrics.total}</div></div>
         <div className="stat-tile"><div className="text-sm text-slate-400">Active process</div><div className="mt-2 text-3xl font-bold text-blue-300">{metrics.active}</div></div>
@@ -168,7 +194,7 @@ export default function Applications() {
         {COLUMNS.map((column) => {
           const columnApps = apps.filter((app) => app.status === column.key);
           return (
-            <div key={column.key} className="premium-card p-4 md:p-5 min-h-[360px]">
+            <div key={column.key} className="premium-card min-h-[360px] p-4 md:p-5">
               <div className="mb-4 flex items-center gap-3">
                 <div className={`h-2.5 w-2.5 rounded-full ${column.color}`} />
                 <span className="font-semibold text-white">{column.label}</span>
@@ -259,7 +285,7 @@ export default function Applications() {
 
             <div className="mt-6 flex flex-wrap justify-end gap-3">
               <button onClick={() => { setModal(false); setEditing(null); }} className="btn-secondary">Cancel</button>
-              <button onClick={save} className="btn-primary">Save application</button>
+              <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">{saving ? 'Saving...' : 'Save application'}</button>
             </div>
           </div>
         </div>

@@ -1,30 +1,20 @@
-import { getServerSession } from 'next-auth/next';
 import { prisma } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentUserFromRequest } from '@/lib/session';
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
+  const user = await getCurrentUserFromRequest(req);
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
     const applications = await prisma.application.findMany({
       where: { userId: user.id },
       orderBy: { appliedAt: 'desc' },
     });
 
-    // Format for frontend
-    const formatted = applications.map(app => ({
+    const formatted = applications.map((app) => ({
       id: app.id,
       company: app.company,
       role: app.role,
@@ -42,9 +32,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
+  const user = await getCurrentUserFromRequest(req);
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -56,21 +45,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Company and role are required' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
     const application = await prisma.application.create({
       data: {
         userId: user.id,
         company,
         role,
         status: status || 'applied',
-        dateApplied: dateApplied,
+        dateApplied,
         appliedAt: dateApplied ? new Date(dateApplied) : new Date(),
         notes,
         url,
@@ -93,9 +74,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
+  const user = await getCurrentUserFromRequest(req);
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -107,19 +87,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    // Verify ownership
-    const app = await prisma.application.findFirst({
-      where: { id, userId: user.id },
-    });
-
+    const app = await prisma.application.findFirst({ where: { id, userId: user.id } });
     if (!app) {
       return NextResponse.json({ error: 'Application not found' }, { status: 404 });
     }
@@ -153,9 +121,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getServerSession();
-
-  if (!session?.user?.email) {
+  const user = await getCurrentUserFromRequest(req);
+  if (!user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -167,25 +134,12 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    // Verify ownership
-    const app = await prisma.application.findFirst({
-      where: { id, userId: user.id },
-    });
-
+    const app = await prisma.application.findFirst({ where: { id, userId: user.id } });
     if (!app) {
       return NextResponse.json({ error: 'Application not found' }, { status: 404 });
     }
 
     await prisma.application.delete({ where: { id } });
-
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Failed to delete application:', error);

@@ -8,7 +8,7 @@ export default function DashboardLayout({
   return (
     <>
       <Navbar showDashboard={true} />
-      <main className="min-h-screen bg-[#0d1117]">{children}</main>
+      <main className="min-h-screen">{children}</main>
     </>
   );
 }

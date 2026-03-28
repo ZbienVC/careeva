@@ -3,8 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { profileAPI } from '@/lib/api';
 
 interface SavedLetter {
   id: string;
@@ -21,14 +21,12 @@ const toneOptions = [
 ];
 
 export default function CoverLetterPage() {
-  const sessionResult = useSession();
-  const session = sessionResult?.data;
   const router = useRouter();
 
   const [company, setCompany] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [hiringManager, setHiringManager] = useState('');
-  const [candidateName, setCandidateName] = useState('Zachary Bienstock');
+  const [candidateName, setCandidateName] = useState('');
   const [tone, setTone] = useState('professional');
   const [jd, setJd] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,9 +37,15 @@ export default function CoverLetterPage() {
   const [saveMessage, setSaveMessage] = useState('');
 
   useEffect(() => {
-    if (!session) router.push('/login');
-    else fetchSavedLetters();
-  }, [session, router]);
+    profileAPI.get().then((result) => {
+      if (!result.success) {
+        router.push('/login');
+        return;
+      }
+
+      fetchSavedLetters();
+    });
+  }, [router]);
 
   const fetchSavedLetters = async () => {
     try {
@@ -106,6 +110,11 @@ export default function CoverLetterPage() {
   };
 
   const save = async () => {
+    if (!letter.trim()) {
+      setError('Generate or paste a cover letter before saving.');
+      return;
+    }
+
     try {
       const res = await fetch('/api/writing-samples', {
         method: 'POST',
@@ -118,13 +127,13 @@ export default function CoverLetterPage() {
         credentials: 'include',
       });
 
-      if (res.ok) {
-        await fetchSavedLetters();
-        setSaveMessage('Cover letter saved to your library.');
-        setTimeout(() => setSaveMessage(''), 2500);
-      }
+      if (!res.ok) throw new Error('Failed to save cover letter');
+      await fetchSavedLetters();
+      setSaveMessage('Cover letter saved to your library.');
+      setTimeout(() => setSaveMessage(''), 2500);
     } catch (e) {
       console.error('Failed to save letter:', e);
+      setError('Failed to save cover letter.');
     }
   };
 
@@ -197,7 +206,7 @@ export default function CoverLetterPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="field-label">Your name</label>
-              <input value={candidateName} onChange={(e) => setCandidateName(e.target.value)} />
+              <input value={candidateName} onChange={(e) => setCandidateName(e.target.value)} placeholder="Your full name" />
             </div>
             <div>
               <label className="field-label">Hiring manager</label>

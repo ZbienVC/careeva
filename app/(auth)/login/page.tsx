@@ -1,16 +1,31 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/Loading';
 
+const HIGHLIGHTS = [
+  'Resume parsing that turns your raw experience into structured profile intelligence.',
+  'Cleaner application tracking with visible movement from applied to offer.',
+  'AI-generated cover letters that pull from your real profile context.',
+];
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    fetch('/api/profile')
+      .then((res) => {
+        if (res.ok) router.replace('/dashboard');
+      })
+      .finally(() => setCheckingAuth(false));
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,16 +39,13 @@ export default function LoginPage() {
         body: JSON.stringify({ email }),
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Sign in failed');
       }
 
       setSubmitted(true);
-      // Redirect to dashboard immediately
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 500);
+      setTimeout(() => router.push('/dashboard'), 700);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -41,26 +53,55 @@ export default function LoginPage() {
     }
   };
 
+  if (checkingAuth) {
+    return (
+      <div className="flex min-h-[calc(100vh-72px)] items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-8">
-          <h1 className="text-2xl font-bold text-white mb-2">Welcome Back</h1>
-          <p className="text-gray-400 mb-6">Sign in to your Careeva account</p>
+    <div className="mx-auto grid min-h-[calc(100vh-72px)] max-w-7xl gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-16">
+      <section className="hero-panel gradient-border hidden p-8 lg:flex lg:flex-col lg:justify-between">
+        <div className="relative z-10">
+          <div className="badge mb-4">Welcome back</div>
+          <h1 className="section-heading text-5xl">Pick up your search with less friction.</h1>
+          <p className="section-subcopy mt-5 max-w-xl text-base leading-7 md:text-lg">
+            Careeva keeps your role targeting, resume intelligence, and application workflow in one polished command center.
+          </p>
+        </div>
+
+        <div className="relative z-10 mt-10 space-y-4">
+          {HIGHLIGHTS.map((item, index) => (
+            <div key={item} className="premium-card-soft flex items-start gap-4 p-4">
+              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 text-sm font-semibold text-white">0{index + 1}</div>
+              <p className="text-sm leading-6 text-slate-300">{item}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="flex items-center justify-center">
+        <div className="premium-card gradient-border w-full max-w-xl p-7 md:p-9">
+          <div className="mb-8">
+            <div className="badge mb-4">Sign in</div>
+            <h1 className="text-3xl font-bold text-white md:text-4xl">Access your dashboard</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-400 md:text-base">
+              Use the email tied to your account. We’ll drop you straight back into your pipeline.
+            </p>
+          </div>
 
           {submitted ? (
-            <div className="bg-green-900 bg-opacity-30 border border-green-700 rounded-lg p-4 text-center">
-              <div className="text-3xl mb-2">✓</div>
-              <h3 className="text-green-400 font-semibold mb-2">Sign In Successful!</h3>
-              <p className="text-green-300 text-sm">Welcome back to Careeva</p>
-              <p className="text-green-300 text-sm mt-2">Redirecting to dashboard...</p>
+            <div className="rounded-3xl border border-emerald-500/25 bg-emerald-500/10 p-6 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-2xl text-emerald-200">✓</div>
+              <h3 className="mt-4 text-xl font-semibold text-emerald-100">Signed in successfully</h3>
+              <p className="mt-2 text-sm text-emerald-200/90">Redirecting you to your dashboard now.</p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
-                  Email Address
-                </label>
+                <label htmlFor="email" className="field-label">Email address</label>
                 <input
                   id="email"
                   type="email"
@@ -69,37 +110,29 @@ export default function LoginPage() {
                   placeholder="you@example.com"
                   required
                   disabled={loading}
-                  className="w-full px-4 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
                 />
               </div>
 
               {error && (
-                <div className="bg-red-900 bg-opacity-30 border border-red-700 rounded-lg p-3">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
+                <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>
               )}
 
-              <button
-                type="submit"
-                disabled={loading || !email}
-                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-              >
+              <button type="submit" disabled={loading || !email} className="btn-primary w-full disabled:opacity-50">
                 {loading && <LoadingSpinner />}
-                {loading ? 'Signing In...' : 'Sign In'}
+                {loading ? 'Signing you in...' : 'Continue to dashboard'}
               </button>
             </form>
           )}
 
-          <div className="mt-6 text-center">
-            <p className="text-gray-400">
-              Don't have an account?{' '}
-              <Link href="/signup" className="text-blue-400 hover:text-blue-300">
-                Sign up here
-              </Link>
-            </p>
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300">
+            New here?{' '}
+            <Link href="/signup" className="font-semibold text-blue-300 hover:text-blue-200">
+              Create your account
+            </Link>
+            {' '}and get set up in under a minute.
           </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -1,25 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/Loading';
 
+const BENEFITS = [
+  { label: 'Profile intelligence', value: 'Resume + goals + preferences in one place' },
+  { label: 'AI job matching', value: 'Spot higher-fit roles faster' },
+  { label: 'Application workflow', value: 'Track each opportunity without chaos' },
+];
+
 export default function SignupPage() {
-  const [formData, setFormData] = useState({
-    email: '',
-    name: '',
-  });
+  const [formData, setFormData] = useState({ email: '', name: '' });
   const [loading, setLoading] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    fetch('/api/profile')
+      .then((res) => {
+        if (res.ok) router.replace('/dashboard');
+      })
+      .finally(() => setCheckingAuth(false));
+  }, [router]);
+
   const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,15 +43,13 @@ export default function SignupPage() {
         body: JSON.stringify({ email: formData.email, name: formData.name }),
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Sign up failed');
       }
 
       setSubmitted(true);
-      setTimeout(() => {
-        router.push('/login');
-      }, 500);
+      setTimeout(() => router.push('/dashboard/onboarding'), 800);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -50,41 +57,49 @@ export default function SignupPage() {
     }
   };
 
+  if (checkingAuth) {
+    return (
+      <div className="flex min-h-[calc(100vh-72px)] items-center justify-center">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-8">
-          <h1 className="text-2xl font-bold text-white mb-2">Get Started</h1>
-          <p className="text-gray-400 mb-6">Create your Careeva account and find your next opportunity</p>
+    <div className="mx-auto grid min-h-[calc(100vh-72px)] max-w-7xl gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[0.98fr_1.02fr] lg:px-8 lg:py-16">
+      <section className="flex items-center justify-center order-2 lg:order-1">
+        <div className="premium-card gradient-border w-full max-w-xl p-7 md:p-9">
+          <div className="mb-8">
+            <div className="badge mb-4">Get started</div>
+            <h1 className="text-3xl font-bold text-white md:text-4xl">Create your Careeva workspace</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-400 md:text-base">
+              Set up your account once, then move straight into onboarding, resume upload, and better-fit applications.
+            </p>
+          </div>
 
           {submitted ? (
-            <div className="bg-green-900 bg-opacity-30 border border-green-700 rounded-lg p-4 text-center">
-              <div className="text-3xl mb-2">✓</div>
-              <h3 className="text-green-400 font-semibold mb-2">Account Created! Redirecting to login...</h3>
-              <p className="text-green-300 text-sm">Your account is ready. You can now sign in.</p>
+            <div className="rounded-3xl border border-emerald-500/25 bg-emerald-500/10 p-6 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-2xl text-emerald-200">✓</div>
+              <h3 className="mt-4 text-xl font-semibold text-emerald-100">Account ready</h3>
+              <p className="mt-2 text-sm text-emerald-200/90">Taking you into onboarding so your recommendations can start strong.</p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-2">
-                  Full Name
-                </label>
+                <label htmlFor="name" className="field-label">Full name</label>
                 <input
                   id="name"
                   type="text"
                   value={formData.name}
                   onChange={(e) => handleChange('name', e.target.value)}
-                  placeholder="John Doe"
+                  placeholder="Zachary Bienstock"
                   required
                   disabled={loading}
-                  className="w-full px-4 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
                 />
               </div>
 
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
-                  Email Address
-                </label>
+                <label htmlFor="email" className="field-label">Email address</label>
                 <input
                   id="email"
                   type="email"
@@ -93,37 +108,45 @@ export default function SignupPage() {
                   placeholder="you@example.com"
                   required
                   disabled={loading}
-                  className="w-full px-4 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
                 />
               </div>
 
-              {error && (
-                <div className="bg-red-900 bg-opacity-30 border border-red-700 rounded-lg p-3">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
-              )}
+              {error && <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>}
 
-              <button
-                type="submit"
-                disabled={loading || !formData.email || !formData.name}
-                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-              >
+              <button type="submit" disabled={loading || !formData.email || !formData.name} className="btn-primary w-full disabled:opacity-50">
                 {loading && <LoadingSpinner />}
-                {loading ? 'Creating Account...' : 'Create Account'}
+                {loading ? 'Creating your workspace...' : 'Create account'}
               </button>
             </form>
           )}
 
-          <div className="mt-6 text-center">
-            <p className="text-gray-400">
-              Already have an account?{' '}
-              <Link href="/login" className="text-blue-400 hover:text-blue-300">
-                Sign in here
-              </Link>
-            </p>
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300">
+            Already have an account?{' '}
+            <Link href="/login" className="font-semibold text-blue-300 hover:text-blue-200">
+              Sign in
+            </Link>
           </div>
         </div>
-      </div>
+      </section>
+
+      <section className="hero-panel gradient-border order-1 p-8 lg:order-2">
+        <div className="relative z-10">
+          <div className="badge mb-4">Premium workflow</div>
+          <h2 className="section-heading text-5xl">A cleaner job search stack from day one.</h2>
+          <p className="section-subcopy mt-5 max-w-xl text-base leading-7 md:text-lg">
+            Careeva helps you move from scattered tabs and generic AI outputs to a tighter system with real profile context.
+          </p>
+
+          <div className="mt-8 space-y-4">
+            {BENEFITS.map((item) => (
+              <div key={item.label} className="premium-card-soft p-5">
+                <div className="text-sm uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
+                <div className="mt-2 text-base text-white">{item.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

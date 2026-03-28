@@ -182,7 +182,7 @@ export const uploadAPI = {
       }
 
       const data = await response.json();
-      return { success: true, data };
+      return { success: true, data: data?.data || data };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed';
       return { success: false, error: message };

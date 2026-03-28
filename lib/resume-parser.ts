@@ -4,10 +4,6 @@ import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 interface ParsedResume {
   skills: string[];
   roles: string[];
@@ -40,6 +36,14 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
   } else {
     throw new Error("Unsupported file format. Please upload PDF or DOCX.");
   }
+
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
 
   // Use OpenAI to extract structured data
   const response = await openai.chat.completions.create({

@@ -44,8 +44,8 @@ Write a compelling cover letter that:
 
 Do not include placeholders or brackets. Write a complete, ready-to-send cover letter.`;
 
-    const message = await openai.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
       max_tokens: 1024,
       messages: [
         {
@@ -55,10 +55,7 @@ Do not include placeholders or brackets. Write a complete, ready-to-send cover l
       ],
     });
 
-    const coverLetter =
-      message.content[0].type === 'text'
-        ? message.content[0].text
-        : 'Failed to generate cover letter';
+    const coverLetter = completion.choices?.[0]?.message?.content || 'Failed to generate cover letter';
 
     return NextResponse.json({ coverLetter });
   } catch (error) {

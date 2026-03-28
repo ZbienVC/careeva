@@ -13,56 +13,48 @@ export default function OnboardingPage() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    // Check if user is logged in
     profileAPI.get().then((result) => {
-      if (!result.success) {
-        router.push('/login');
-      }
+      if (!result.success) router.push('/login');
       setLoading(false);
     });
   }, [router]);
 
-  if (loading) {
-    return <LoadingPage />;
-  }
+  if (loading) return <LoadingPage />;
 
   if (success) {
     return (
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="bg-green-900 bg-opacity-30 border border-green-700 rounded-lg p-8 text-center">
-          <div className="text-5xl mb-4">✓</div>
-          <h1 className="text-3xl font-bold text-green-400 mb-4">All Set!</h1>
-          <p className="text-green-300 mb-8">
-            Your preferences have been saved. Now let's find you some great job opportunities.
-          </p>
-          <button
-            onClick={() => router.push('/dashboard/jobs')}
-            className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
-          >
-            Browse Jobs
-          </button>
+      <div className="page-shell">
+        <div className="hero-panel gradient-border p-10 text-center">
+          <div className="relative z-10 mx-auto max-w-2xl">
+            <div className="text-6xl">✓</div>
+            <h1 className="mt-6 text-4xl font-bold text-white">You’re dialed in.</h1>
+            <p className="mt-4 text-lg text-slate-300">
+              Your preferences are saved. Careeva can now personalize job matching, ranking, and cover letter generation much more effectively.
+            </p>
+            <button onClick={() => router.push('/dashboard/jobs')} className="btn-primary mt-8">
+              Browse matched jobs
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h1 className="text-3xl font-bold text-white mb-2">Let's Get to Know You</h1>
-      <p className="text-gray-400 mb-8">
-        Answer a few questions about your career goals to help us find the best job matches for you.
-      </p>
-
-      {error && (
-        <div className="bg-red-900 bg-opacity-30 border border-red-700 rounded-lg p-4 mb-6">
-          <p className="text-red-300">{error}</p>
+    <div className="page-shell space-y-8">
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="relative z-10 max-w-3xl">
+          <div className="badge mb-4">Onboarding flow</div>
+          <h1 className="section-heading text-4xl md:text-5xl">Let’s tune your search direction.</h1>
+          <p className="section-subcopy mt-4 text-base md:text-lg">
+            This guided setup keeps your preferences coherent across job discovery, profile positioning, and application writing.
+          </p>
         </div>
-      )}
+      </section>
 
-      <OnboardingForm
-        onSuccess={() => setSuccess(true)}
-        onError={(error) => setError(error)}
-      />
+      {error && <div className="premium-card border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
+
+      <OnboardingForm onSuccess={() => setSuccess(true)} onError={(message) => setError(message)} />
     </div>
   );
 }

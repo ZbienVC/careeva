@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { JobWithScore } from '@/lib/types';
 import { jobsAPI, profileAPI } from '@/lib/api';
@@ -15,19 +15,18 @@ export default function JobsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [totalJobs, setTotalJobs] = useState(0);
-  const pageSize = 10;
+  const [sortBy, setSortBy] = useState<'match' | 'recent' | 'company'>('match');
+  const pageSize = 9;
 
   useEffect(() => {
     const loadJobs = async () => {
       try {
-        // Check auth
         const authResult = await profileAPI.get();
         if (!authResult.success) {
           router.push('/login');
           return;
         }
 
-        // Load jobs
         const result = await jobsAPI.list({
           page,
           pageSize,
@@ -49,94 +48,140 @@ export default function JobsPage() {
     };
 
     const timer = setTimeout(() => {
-      loadJobs();
       setLoading(true);
-    }, 300);
+      loadJobs();
+    }, 250);
 
     return () => clearTimeout(timer);
   }, [search, page, router]);
 
-  if (loading && jobs.length === 0) {
-    return <LoadingPage />;
-  }
+  const sortedJobs = useMemo(() => {
+    const nextJobs = [...jobs];
+    if (sortBy === 'company') {
+      return nextJobs.sort((a, b) => a.company.localeCompare(b.company));
+    }
+    if (sortBy === 'recent') {
+      return nextJobs.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    }
+    return nextJobs.sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0));
+  }, [jobs, sortBy]);
+
+  if (loading && jobs.length === 0) return <LoadingPage />;
 
   const totalPages = Math.ceil(totalJobs / pageSize);
+  const strongMatches = jobs.filter((job) => (job.score?.overallScore || 0) >= 70).length;
+  const readyToApply = jobs.filter((job) => !!job.url).length;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-white mb-4">Job Opportunities</h1>
-        <p className="text-gray-400">
-          Found {totalJobs} job{totalJobs !== 1 ? 's' : ''} matching your profile
-        </p>
-      </div>
+    <div className="page-shell space-y-8">
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="relative z-10 flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="badge mb-4">Opportunity pipeline</div>
+            <h1 className="section-heading text-4xl md:text-5xl">Explore smarter-fit job opportunities.</h1>
+            <p className="section-subcopy mt-4 text-base md:text-lg">
+              Search, sort, and triage openings with a cleaner view of fit, quality, and application readiness.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3 xl:min-w-[460px]">
+            <div className="stat-tile">
+              <div className="text-sm text-slate-400">Total roles</div>
+              <div className="mt-2 text-3xl font-bold text-white">{totalJobs}</div>
+            </div>
+            <div className="stat-tile">
+              <div className="text-sm text-slate-400">Strong matches</div>
+              <div className="mt-2 text-3xl font-bold text-emerald-300">{strongMatches}</div>
+            </div>
+            <div className="stat-tile">
+              <div className="text-sm text-slate-400">Apply-ready</div>
+              <div className="mt-2 text-3xl font-bold text-blue-300">{readyToApply}</div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      {/* Search */}
-      <div className="mb-8">
-        <input
-          type="text"
-          placeholder="Search by job title, company..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          className="w-full px-4 py-3 bg-[#161b22] border border-[#30363d] rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-        />
-      </div>
+      <section className="premium-card p-6 md:p-7">
+        <div className="grid gap-4 lg:grid-cols-[1.4fr_0.7fr_0.7fr]">
+          <div>
+            <label className="field-label">Search roles</label>
+            <input
+              type="text"
+              placeholder="Search by job title, company, location..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div>
+            <label className="field-label">Sort by</label>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'match' | 'recent' | 'company')}>
+              <option value="match">Best match</option>
+              <option value="recent">Most recent</option>
+              <option value="company">Company name</option>
+            </select>
+          </div>
+          <div className="flex items-end">
+            <div className="premium-card-soft w-full p-4 text-sm text-slate-300">
+              <div className="text-slate-500">Live summary</div>
+              <div className="mt-1">{totalJobs} jobs surfaced for your current profile.</div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {error && (
-        <div className="bg-red-900 bg-opacity-30 border border-red-700 rounded-lg p-4 mb-8">
-          <p className="text-red-300">{error}</p>
+        <div className="premium-card border-red-500/30 bg-red-500/10 p-4 text-red-200">
+          {error}
         </div>
       )}
 
-      {/* Jobs List */}
-      {jobs.length > 0 ? (
-        <>
-          <div className="grid gap-6 mb-12">
-            {loading ? (
-              <LoadingSkeleton count={3} />
-            ) : (
-              jobs.map((job) => <JobCard key={job.id} job={job} />)
-            )}
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex justify-center items-center gap-4">
-              <button
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page === 1}
-                className="px-4 py-2 bg-[#30363d] hover:bg-[#484f58] disabled:opacity-50 text-white rounded-lg transition-colors"
-              >
-                Previous
-              </button>
-
-              <div className="text-gray-400">
-                Page {page} of {totalPages}
+      <section>
+        {sortedJobs.length > 0 ? (
+          <>
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold text-white">Recommended roles</h2>
+                <p className="mt-1 text-sm text-slate-400">Browse curated matches and prioritize the best-fit opportunities first.</p>
               </div>
-
-              <button
-                onClick={() => setPage(Math.min(totalPages, page + 1))}
-                disabled={page === totalPages}
-                className="px-4 py-2 bg-[#30363d] hover:bg-[#484f58] disabled:opacity-50 text-white rounded-lg transition-colors"
-              >
-                Next
-              </button>
+              <div className="badge">Page {page} of {Math.max(totalPages, 1)}</div>
             </div>
-          )}
-        </>
-      ) : (
-        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-12 text-center">
-          <div className="text-4xl mb-4">🔍</div>
-          <h3 className="text-lg font-bold text-white mb-2">No Jobs Found</h3>
-          <p className="text-gray-400">
-            {search ? 'Try adjusting your search criteria' : 'No job opportunities are currently available'}
-          </p>
-        </div>
-      )}
+
+            <div className="grid gap-6 xl:grid-cols-2">
+              {loading ? <LoadingSkeleton count={4} /> : sortedJobs.map((job) => <JobCard key={job.id} job={job} />)}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                <button
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page === 1}
+                  className="btn-secondary disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <div className="text-sm text-slate-400">Showing page {page} of {totalPages}</div>
+                <button
+                  onClick={() => setPage(Math.min(totalPages, page + 1))}
+                  disabled={page === totalPages}
+                  className="btn-secondary disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="empty-state">
+            <div className="text-5xl">🔍</div>
+            <h3 className="mt-4 text-2xl font-semibold text-white">No jobs found</h3>
+            <p className="mt-2 text-slate-400">
+              {search ? 'Try broadening the search, removing a company name, or using fewer keywords.' : 'No opportunities are currently available for this account yet.'}
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

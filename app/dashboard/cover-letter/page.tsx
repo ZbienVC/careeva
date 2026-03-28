@@ -14,6 +14,12 @@ interface SavedLetter {
   content: string;
 }
 
+const toneOptions = [
+  { value: 'professional', label: 'Professional' },
+  { value: 'enthusiastic', label: 'Enthusiastic' },
+  { value: 'conversational', label: 'Conversational' },
+];
+
 export default function CoverLetterPage() {
   const sessionResult = useSession();
   const session = sessionResult?.data;
@@ -30,6 +36,7 @@ export default function CoverLetterPage() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
+  const [saveMessage, setSaveMessage] = useState('');
 
   useEffect(() => {
     if (!session) router.push('/login');
@@ -59,7 +66,7 @@ export default function CoverLetterPage() {
 
   const generate = async () => {
     if (!company || !jobTitle || !jd) {
-      setError('Company, job title, and job description are required');
+      setError('Company, job title, and job description are required.');
       return;
     }
 
@@ -92,8 +99,8 @@ export default function CoverLetterPage() {
     }
   };
 
-  const copy = () => {
-    navigator.clipboard.writeText(letter);
+  const copy = async () => {
+    await navigator.clipboard.writeText(letter);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -113,7 +120,8 @@ export default function CoverLetterPage() {
 
       if (res.ok) {
         await fetchSavedLetters();
-        alert('Cover letter saved!');
+        setSaveMessage('Cover letter saved to your library.');
+        setTimeout(() => setSaveMessage(''), 2500);
       }
     } catch (e) {
       console.error('Failed to save letter:', e);
@@ -126,172 +134,162 @@ export default function CoverLetterPage() {
     setJobTitle(savedLetter.jobTitle);
   };
 
-  return (
-    <div>
-      <h1 style={{ fontSize: 28, fontWeight: 800, color: '#e6edf3', margin: '0 0 8px' }}>Cover Letter AI</h1>
-      <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14, margin: '0 0 32px' }}>
-        Generate a tailored, compelling cover letter in seconds
-      </p>
+  const seedPrompt = (preset: 'analyst' | 'growth' | 'ops') => {
+    const presets = {
+      analyst: {
+        company: 'BridgePoint Capital',
+        jobTitle: 'Investment Analyst',
+        jd: 'Seeking an analytical candidate with strong financial modeling, market research, stakeholder communication, and deal execution support experience.',
+      },
+      growth: {
+        company: 'Northstar Labs',
+        jobTitle: 'Growth Operations Associate',
+        jd: 'Looking for someone who can combine analytics, operations, experimentation, and cross-functional execution to accelerate growth initiatives.',
+      },
+      ops: {
+        company: 'CareSpring Health',
+        jobTitle: 'Strategic Operations Manager',
+        jd: 'Candidate should be comfortable with process design, KPI dashboards, stakeholder management, and using AI or automation to improve execution.',
+      },
+    };
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+    const next = presets[preset];
+    setCompany(next.company);
+    setJobTitle(next.jobTitle);
+    setJd(next.jd);
+  };
+
+  return (
+    <div className="page-shell space-y-8">
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="relative z-10 grid gap-6 xl:grid-cols-[1.15fr_0.85fr] xl:items-end">
+          <div>
+            <div className="badge mb-4">Writing workflow</div>
+            <h1 className="section-heading text-4xl md:text-5xl">Generate cover letters that actually feel tailored.</h1>
+            <p className="section-subcopy mt-4 text-base md:text-lg">
+              Turn a job description into a polished draft, then save, reuse, and refine it without breaking flow.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <button onClick={() => seedPrompt('analyst')} className="btn-secondary !py-3 !px-4 text-sm">Analyst</button>
+            <button onClick={() => seedPrompt('growth')} className="btn-secondary !py-3 !px-4 text-sm">Growth Ops</button>
+            <button onClick={() => seedPrompt('ops')} className="btn-secondary !py-3 !px-4 text-sm">Strategy Ops</button>
+          </div>
+        </div>
+      </section>
+
+      {error && <div className="premium-card border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
+      {saveMessage && <div className="premium-card border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200">{saveMessage}</div>}
+
+      <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="premium-card p-6 md:p-8 space-y-5">
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6, display: 'block' }}>
-                Company *
-              </label>
-              <input value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Google" />
+              <label className="field-label">Company *</label>
+              <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. Google" />
             </div>
             <div>
-              <label style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6, display: 'block' }}>
-                Job Title *
-              </label>
-              <input value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Analyst" />
+              <label className="field-label">Job title *</label>
+              <input value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="e.g. Analyst" />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6, display: 'block' }}>
-                Your Name
-              </label>
-              <input value={candidateName} onChange={e => setCandidateName(e.target.value)} />
+              <label className="field-label">Your name</label>
+              <input value={candidateName} onChange={(e) => setCandidateName(e.target.value)} />
             </div>
             <div>
-              <label style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6, display: 'block' }}>
-                Hiring Manager (optional)
-              </label>
-              <input value={hiringManager} onChange={e => setHiringManager(e.target.value)} placeholder="e.g. Jane Smith" />
+              <label className="field-label">Hiring manager</label>
+              <input value={hiringManager} onChange={(e) => setHiringManager(e.target.value)} placeholder="Optional" />
             </div>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6, display: 'block' }}>
-              Tone
-            </label>
-            <select value={tone} onChange={e => setTone(e.target.value)}>
-              <option value="professional">Professional</option>
-              <option value="enthusiastic">Enthusiastic</option>
-              <option value="conversational">Conversational</option>
-            </select>
+
+          <div>
+            <label className="field-label">Tone</label>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {toneOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setTone(option.value)}
+                  className={`rounded-2xl border px-4 py-3 text-sm font-medium ${tone === option.value ? 'border-blue-400/40 bg-blue-500/10 text-white' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.05]'}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6, display: 'block' }}>
-              Job Description *
-            </label>
-            <textarea
-              value={jd}
-              onChange={e => setJd(e.target.value)}
-              rows={10}
-              placeholder="Paste the job description..."
-              style={{ resize: 'vertical' }}
-            />
+
+          <div>
+            <label className="field-label">Job description *</label>
+            <textarea value={jd} onChange={(e) => setJd(e.target.value)} rows={12} placeholder="Paste the job description here..." />
           </div>
-          {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12 }}>{error}</div>}
-          <button
-            onClick={generate}
-            disabled={loading}
-            style={{
-              background: '#2563eb',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '12px 28px',
-              fontSize: 15,
-              fontWeight: 700,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1,
-            }}
-          >
-            {loading ? 'Writing with AI...' : 'Generate Cover Letter'}
-          </button>
+
+          <div className="flex flex-wrap gap-3">
+            <button onClick={generate} disabled={loading} className="btn-primary disabled:opacity-50">
+              {loading ? 'Writing with AI...' : 'Generate cover letter'}
+            </button>
+            <button onClick={() => { setCompany(''); setJobTitle(''); setHiringManager(''); setJd(''); setLetter(''); setError(''); }} className="btn-secondary">
+              Reset
+            </button>
+          </div>
         </div>
 
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <label style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Cover Letter</label>
+        <div className="premium-card p-6 md:p-8">
+          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm uppercase tracking-[0.22em] text-slate-500">Draft output</div>
+              <h2 className="mt-2 text-2xl font-bold text-white">Cover letter preview</h2>
+            </div>
             {letter && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={copy}
-                  style={{
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#e6edf3',
-                    borderRadius: 6,
-                    padding: '4px 12px',
-                    fontSize: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {copied ? '✅ Copied!' : 'Copy'}
-                </button>
-                <button
-                  onClick={save}
-                  style={{
-                    background: 'rgba(16,185,129,0.2)',
-                    border: '1px solid rgba(16,185,129,0.3)',
-                    color: '#10b981',
-                    borderRadius: 6,
-                    padding: '4px 12px',
-                    fontSize: 12,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Save
-                </button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={copy} className="btn-secondary !px-4 !py-2 text-sm">{copied ? 'Copied' : 'Copy'}</button>
+                <button onClick={save} className="btn-primary !px-4 !py-2 text-sm">Save</button>
               </div>
             )}
           </div>
+
           <textarea
             value={letter}
-            onChange={e => setLetter(e.target.value)}
-            rows={22}
-            placeholder="Your cover letter will appear here..."
-            style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6 }}
+            onChange={(e) => setLetter(e.target.value)}
+            rows={20}
+            placeholder="Your tailored cover letter will appear here..."
+            className="min-h-[420px] leading-7"
           />
+
+          {!letter && (
+            <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
+              Tip: the best drafts come from pasting the full job description and keeping your target role details specific.
+            </div>
+          )}
         </div>
-      </div>
+      </section>
 
       {savedLetters.length > 0 && (
-        <div style={{ marginTop: 40 }}>
-          <div style={{ fontWeight: 700, fontSize: 16, color: '#e6edf3', marginBottom: 16 }}>Saved Cover Letters</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {savedLetters.map(l => (
-              <div
-                key={l.id}
-                style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: 10,
-                  padding: '14px 18px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: '#e6edf3' }}>
-                    {l.jobTitle} at {l.company}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>{l.date}</div>
-                </div>
-                <button
-                  onClick={() => loadLetter(l)}
-                  style={{
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#e6edf3',
-                    borderRadius: 6,
-                    padding: '6px 14px',
-                    fontSize: 13,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Load
+        <section className="premium-card p-6 md:p-8">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Saved drafts</h2>
+              <p className="mt-1 text-sm text-slate-400">Reload a prior letter, use it as a starting point, and iterate faster.</p>
+            </div>
+            <div className="badge">{savedLetters.length} saved</div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {savedLetters.map((saved) => (
+              <div key={saved.id} className="premium-card-soft p-5">
+                <div className="text-lg font-semibold text-white">{saved.jobTitle}</div>
+                <div className="mt-1 text-sm text-slate-300">{saved.company}</div>
+                <div className="mt-2 text-xs text-slate-500">Saved {saved.date}</div>
+                <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-400">{saved.content}</p>
+                <button onClick={() => loadLetter(saved)} className="btn-secondary mt-4 !px-4 !py-2 text-sm">
+                  Load draft
                 </button>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserProfile } from '@/lib/types';
 import { profileAPI } from '@/lib/api';
@@ -34,29 +34,34 @@ export default function ProfilePage() {
     loadProfile();
   }, [router]);
 
+  const profileSignals = useMemo(() => {
+    if (!profile) return [];
+    return [
+      { label: 'Skills', value: profile.skills?.length || 0, tone: 'text-blue-300' },
+      { label: 'Technologies', value: profile.technologies?.length || 0, tone: 'text-violet-300' },
+      { label: 'Prior roles', value: profile.roles?.length || 0, tone: 'text-cyan-300' },
+      { label: 'Education items', value: profile.education?.length || 0, tone: 'text-emerald-300' },
+    ];
+  }, [profile]);
+
   const handleSuccess = async () => {
-    setSuccessMessage('Profile updated successfully!');
+    setSuccessMessage('Profile updated successfully.');
     setTimeout(() => setSuccessMessage(''), 3000);
-    // Reload profile
     const result = await profileAPI.get();
-    if (result.success) {
-      setProfile(result.data!);
-    }
+    if (result.success) setProfile(result.data!);
   };
 
-  const handleError = (error: string) => {
-    setError(error);
+  const handleError = (message: string) => {
+    setError(message);
     setTimeout(() => setError(''), 3000);
   };
 
-  if (loading) {
-    return <LoadingPage />;
-  }
+  if (loading) return <LoadingPage />;
 
   if (!profile) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="bg-red-900 bg-opacity-30 border border-red-700 rounded-lg p-6 text-center">
+      <div className="page-shell">
+        <div className="premium-card p-8 text-center">
           <p className="text-red-300">{error || 'Failed to load profile'}</p>
         </div>
       </div>
@@ -64,105 +69,91 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      {successMessage && (
-        <div className="mb-6 bg-green-900 bg-opacity-30 border border-green-700 rounded-lg p-4">
-          <p className="text-green-300">{successMessage}</p>
-        </div>
-      )}
-
-      {error && (
-        <div className="mb-6 bg-red-900 bg-opacity-30 border border-red-700 rounded-lg p-4">
-          <p className="text-red-300">{error}</p>
-        </div>
-      )}
-
-      {/* Profile Form */}
-      <ProfileForm
-        profile={profile}
-        onSuccess={handleSuccess}
-        onError={handleError}
-      />
-
-      {/* Resume Data */}
-      {(profile.skills?.length || 0) > 0 && (
-        <div className="mt-12 bg-[#161b22] border border-[#30363d] rounded-lg p-8">
-          <h2 className="text-2xl font-bold text-white mb-6">Parsed Resume Data</h2>
-
-          <div className="space-y-6">
-            {profile.skills && profile.skills.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-3">Skills ({profile.skills.length})</h3>
-                <div className="flex flex-wrap gap-2">
-                  {profile.skills.map((skill) => (
-                    <span
-                      key={skill}
-                      className="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm"
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                </div>
+    <div className="page-shell space-y-8">
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="relative z-10 grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+          <div>
+            <div className="badge mb-4">Profile intelligence</div>
+            <h1 className="section-heading text-4xl md:text-5xl">Sharpen the story behind your search.</h1>
+            <p className="section-subcopy mt-4 text-base md:text-lg">
+              Better profile context improves job ranking, personalization, and how your AI-generated application materials sound.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {profileSignals.map((item) => (
+              <div key={item.label} className="stat-tile">
+                <div className="text-sm text-slate-400">{item.label}</div>
+                <div className={`mt-2 text-3xl font-bold ${item.tone}`}>{item.value}</div>
               </div>
-            )}
-
-            {profile.technologies && profile.technologies.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-3">Technologies ({profile.technologies.length})</h3>
-                <div className="flex flex-wrap gap-2">
-                  {profile.technologies.map((tech) => (
-                    <span
-                      key={tech}
-                      className="px-3 py-1 bg-purple-900 text-purple-200 rounded-full text-sm"
-                    >
-                      {tech}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {profile.roles && profile.roles.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-3">Previous Roles</h3>
-                <ul className="space-y-2">
-                  {profile.roles.map((role) => (
-                    <li key={role} className="text-gray-300">
-                      • {role}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {profile.education && profile.education.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-3">Education</h3>
-                <ul className="space-y-2">
-                  {profile.education.map((edu) => (
-                    <li key={edu} className="text-gray-300">
-                      • {edu}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {profile.industries && profile.industries.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-3">Industries</h3>
-                <ul className="space-y-2">
-                  {profile.industries.map((industry) => (
-                    <li key={industry} className="text-gray-300">
-                      • {industry}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            ))}
           </div>
         </div>
-      )}
+      </section>
+
+      {successMessage && <div className="premium-card border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200">{successMessage}</div>}
+      {error && <div className="premium-card border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
+
+      <section className="grid gap-8 xl:grid-cols-[1.1fr_0.9fr]">
+        <ProfileForm profile={profile} onSuccess={handleSuccess} onError={handleError} />
+
+        {(profile.skills?.length || 0) > 0 && (
+          <div className="premium-card p-6 md:p-8">
+            <h2 className="text-2xl font-bold text-white">Resume intelligence</h2>
+            <p className="mt-2 text-sm text-slate-400">Parsed data currently informing scoring, matching, and AI writing workflows.</p>
+
+            <div className="mt-6 space-y-6">
+              {profile.skills && profile.skills.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Skills</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {profile.skills.map((skill) => (
+                      <span key={skill} className="badge border-blue-500/20 bg-blue-500/10 text-blue-100">{skill}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {profile.technologies && profile.technologies.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Technologies</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {profile.technologies.map((tech) => (
+                      <span key={tech} className="badge border-violet-500/20 bg-violet-500/10 text-violet-100">{tech}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {profile.roles && profile.roles.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Previous roles</h3>
+                  <ul className="mt-3 space-y-2 text-slate-300">
+                    {profile.roles.map((role) => <li key={role}>• {role}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {profile.education && profile.education.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Education</h3>
+                  <ul className="mt-3 space-y-2 text-slate-300">
+                    {profile.education.map((edu) => <li key={edu}>• {edu}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {profile.industries && profile.industries.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Detected industries</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {profile.industries.map((industry) => <span key={industry} className="badge">{industry}</span>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

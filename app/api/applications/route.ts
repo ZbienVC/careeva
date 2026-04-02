@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       company: application.company,
       role: application.role,
       status: application.status,
-      dateApplied: application.dateApplied || application.appliedAt.toISOString().split('T')[0],
+      dateApplied: application.dateApplied || application.appliedAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       notes: application.notes || '',
       url: application.url || '',
     });
@@ -110,7 +110,7 @@ export async function PUT(req: NextRequest) {
       company: updated.company,
       role: updated.role,
       status: updated.status,
-      dateApplied: updated.dateApplied || updated.appliedAt.toISOString().split('T')[0],
+      dateApplied: updated.dateApplied || updated.appliedAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       notes: updated.notes || '',
       url: updated.url || '',
     });

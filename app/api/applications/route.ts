@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       company: app.company,
       role: app.role,
       status: app.status,
-      dateApplied: app.dateApplied || app.appliedAt.toISOString().split('T')[0],
+      dateApplied: app.dateApplied || app.appliedAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       notes: app.notes || '',
       url: app.url || '',
     }));

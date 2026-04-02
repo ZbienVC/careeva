@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import { normalizeQuestion, resolveAnswer } from '@/lib/answer-engine';
 
-// GET /api/answers â€” list all stored reusable answers
+// GET /api/answers - list all stored reusable answers
 export async function GET(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -16,7 +15,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ answers });
 }
 
-// POST /api/answers â€” create or update a reusable answer
+// POST /api/answers - create or update a reusable answer
 export async function POST(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -51,22 +50,4 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({ success: true, answer: record });
-}
-, { status: 401 });
-
-  const { questionText } = await request.json();
-  if (!questionText) return NextResponse.json({ error: 'questionText required' }, { status: 400 });
-
-  const result = await resolveAnswer(user.id, questionText);
-  const norm = normalizeQuestion(questionText);
-
-  return NextResponse.json({
-    questionText,
-    questionKey: result.questionKey,
-    questionFamily: norm.questionFamily,
-    answer: result.answer,
-    confidence: result.confidence,
-    source: result.source,
-    needsReview: result.needsReview,
-  });
 }

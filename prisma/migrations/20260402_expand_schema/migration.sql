@@ -112,10 +112,16 @@ CREATE TABLE IF NOT EXISTS "projects" (
 );
 
 -- Add FK constraints for resume_bullets
-ALTER TABLE "resume_bullets"
-  ADD CONSTRAINT IF NOT EXISTS "resume_bullets_workHistoryId_fkey" FOREIGN KEY ("workHistoryId") REFERENCES "work_history"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "resume_bullets"
-  ADD CONSTRAINT IF NOT EXISTS "resume_bullets_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'resume_bullets_workHistoryId_fkey') THEN
+    ALTER TABLE "resume_bullets" ADD CONSTRAINT "resume_bullets_workHistoryId_fkey" FOREIGN KEY ("workHistoryId") REFERENCES "work_history"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'resume_bullets_projectId_fkey') THEN
+    ALTER TABLE "resume_bullets" ADD CONSTRAINT "resume_bullets_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $;
 
 -- certifications
 CREATE TABLE IF NOT EXISTS "certifications" (
@@ -333,8 +339,11 @@ CREATE TABLE IF NOT EXISTS "scrape_runs" (
   CONSTRAINT "scrape_runs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-ALTER TABLE "jobs"
-  ADD CONSTRAINT IF NOT EXISTS "jobs_scrapeRunId_fkey" FOREIGN KEY ("scrapeRunId") REFERENCES "scrape_runs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'jobs_scrapeRunId_fkey') THEN
+    ALTER TABLE "jobs" ADD CONSTRAINT "jobs_scrapeRunId_fkey" FOREIGN KEY ("scrapeRunId") REFERENCES "scrape_runs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $;
 
 -- companies
 CREATE TABLE IF NOT EXISTS "companies" (
@@ -431,8 +440,11 @@ CREATE TABLE IF NOT EXISTS "automation_runs" (
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-ALTER TABLE "applications"
-  ADD CONSTRAINT IF NOT EXISTS "applications_automationRunId_fkey" FOREIGN KEY ("automationRunId") REFERENCES "automation_runs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+DO $ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'applications_automationRunId_fkey') THEN
+    ALTER TABLE "applications" ADD CONSTRAINT "applications_automationRunId_fkey" FOREIGN KEY ("automationRunId") REFERENCES "automation_runs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $;
 
 -- automation_tasks
 CREATE TABLE IF NOT EXISTS "automation_tasks" (

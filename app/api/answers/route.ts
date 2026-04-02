@@ -52,12 +52,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ success: true, answer: record });
 }
-
-// POST /api/answers/resolve â€” resolve an answer for a question text
-// Returns answer from stored bank, profile data, or flags for review
-export async function resolveHandler(request: NextRequest) {
-  const user = await getCurrentUserFromRequest(request);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+, { status: 401 });
 
   const { questionText } = await request.json();
   if (!questionText) return NextResponse.json({ error: 'questionText required' }, { status: 400 });

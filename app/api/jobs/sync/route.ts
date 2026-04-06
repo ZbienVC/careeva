@@ -13,11 +13,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
 
     // Load user's job preferences + skills to build intelligent search queries
-    const [prefs, skills, workHistory, companyTargets] = await Promise.all([
+    const [prefs, skills, workHistory] = await Promise.all([
       prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
       prisma.skill.findMany({ where: { userId: user.id }, take: 20 }),
       prisma.workHistory.findMany({ where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 3 }),
-      prisma.companyTarget.findMany({ where: { userId: user.id }, take: 20 }),
     ]);
 
     // Build search queries from profile data
@@ -66,14 +65,9 @@ export async function POST(request: NextRequest) {
       'weworkremotely', 'authenticjobs', 'indeed', 'dice',
     ];
 
-    // Build Greenhouse/Lever boards from company targets
+    // Build Greenhouse/Lever boards from well-known industry targets
     const greenhouseBoards: string[] = [];
     const leverBoards: string[] = [];
-
-    for (const ct of companyTargets) {
-      if (ct.atsType === 'greenhouse' && ct.atsSlug) greenhouseBoards.push(ct.atsSlug);
-      if (ct.atsType === 'lever' && ct.atsSlug) leverBoards.push(ct.atsSlug);
-    }
 
     // Add well-known boards for target industries
     if (prefs?.targetIndustries?.some(i => /crypto|web3|blockchain/i.test(i))) {

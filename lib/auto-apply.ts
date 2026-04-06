@@ -208,7 +208,7 @@ export async function buildApplicationPacket(
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) throw new Error('Job not found');
 
-  const profileContext = await buildProfileContext(userId);
+  const profileContext = await buildEnrichedProfileContext(userId);
 
   // Check what's missing
   const missingFields: string[] = [];
@@ -314,6 +314,58 @@ export async function submitToGreenhouse(
   }
 }
 
+
+// ─── Enhanced profile context builder ────────────────────────────────────────
+// Upgrades the base buildProfileContext with all structured data models
+
+async function buildEnrichedProfileContext(userId: string): Promise<string> {
+  const base = await buildProfileContext(userId);
+  
+  // Add structured work history bullets
+  const whWithBullets = await prisma.workHistory.findMany({
+    where: { userId },
+    include: { bullets: { orderBy: { sortOrder: 'asc' } } },
+    orderBy: { startDate: 'desc' },
+  });
+  
+  // Add certifications
+  const certs = await prisma.certification.findMany({ where: { userId } });
+  
+  // Add projects
+  const projects = await prisma.project.findMany({ where: { userId }, include: { bullets: true } });
+  
+  const parts: string[] = [base];
+  
+  // Rich work bullets
+  if (whWithBullets.some(wh => wh.bullets.length > 0)) {
+    parts.push('\nDETAILED EXPERIENCE BULLETS:');
+    for (const wh of whWithBullets.slice(0, 4)) {
+      if (wh.bullets.length > 0) {
+        parts.push(`\n${wh.title} @ ${wh.company}:`);
+        for (const b of wh.bullets.slice(0, 5)) {
+          parts.push(`  • ${b.content}${b.metric ? ` (${b.metric})` : ''}`);
+        }
+      }
+    }
+  }
+  
+  if (certs.length > 0) {
+    parts.push('\nCERTIFICATIONS:');
+    for (const c of certs) {
+      parts.push(`- ${c.name}${c.issuer ? ` (${c.issuer})` : ''}${c.issueDate ? ` - ${new Date(c.issueDate).getFullYear()}` : ''}`);
+    }
+  }
+  
+  if (projects.length > 0) {
+    parts.push('\nKEY PROJECTS:');
+    for (const p of projects.slice(0, 3)) {
+      parts.push(`- ${p.name}${p.description ? `: ${p.description.slice(0, 100)}` : ''}`);
+      if (p.technologies.length > 0) parts.push(`  Tech: ${p.technologies.join(', ')}`);
+    }
+  }
+  
+  return parts.join('\n');
+}
 // ─── Step 6: Full auto-apply flow ─────────────────────────────────────────────
 
 export async function autoApplyToJob(

@@ -7,9 +7,9 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import OpenAI from 'openai';
+import { generateCoverLetter, generateBehavioralAnswer, generateShortAnswer, isAIConfigured } from '@/lib/ai-client';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// AI calls use the shared ai-client which routes to Claude or GPT based on task
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,14 +114,7 @@ JOB DESCRIPTION (first 1500 chars): ${job.description.slice(0, 1500)}
 
 Write a complete, ready-to-send cover letter. No placeholders. Address it to "Hiring Team" if no specific name available.`;
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.4,
-    max_tokens: 600,
-  });
-
-  return response.choices[0].message.content || '';
+  return generateCoverLetter(prompt);
 }
 
 // ─── Step 3: Generate answers for common questions ────────────────────────────
@@ -223,8 +216,10 @@ export async function buildApplicationPacket(
   const resumes = await prisma.resume.findMany({ where: { userId } });
   if (resumes.length === 0) missingFields.push('resume');
 
+  // Build cover letter prompt
+  const clPrompt = buildCoverLetterPrompt(profileContext, job.title, job.company, job.description);
   const [coverLetter, answers] = await Promise.all([
-    generateCoverLetter(profileContext, { title: job.title, company: job.company, description: job.description }),
+    generateCoverLetter(clPrompt),
     generateAnswers(userId, profileContext, { title: job.title, company: job.company, description: job.description }),
   ]);
 

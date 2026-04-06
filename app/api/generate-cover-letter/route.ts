@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
       '2. ONLY use facts explicitly stated in the CANDIDATE PROFILE below',
       '3. If the job requires a skill not in the profile, do NOT claim it - focus on transferable skills that ARE present',
       '4. Keep total body under 300 words (3 paragraphs + closing = fits on one page)',
-      5. Writing tone: . Avoid these words: ,
+      `5. Writing tone: ${toneWords}. Avoid these words: ${avoidWords}`,
       '',
       'CANDIDATE PROFILE (ONLY use facts from here):',
       profileContext,

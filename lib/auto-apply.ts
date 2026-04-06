@@ -231,7 +231,7 @@ export async function buildApplicationPacket(
   // Determine if we can auto-apply
   const canAutoApply = missingFields.length === 0 &&
     (job.atsType === 'greenhouse' || job.atsType === 'lever') &&
-    !!job.applyUrl;
+    !!job.applyUrl;  // Greenhouse + Lever: direct API submission
 
   const confidence = Math.max(0, 1 - (missingFields.length * 0.2));
 
@@ -366,6 +366,48 @@ async function buildEnrichedProfileContext(userId: string): Promise<string> {
   
   return parts.join('\n');
 }
+
+// ─── Submit to Lever (public apply API) ──────────────────────────────────────
+
+export async function submitToLever(
+  packet: ApplicationPacket,
+  job: { applyUrl: string; title: string; company: string; externalId: string },
+  applicantInfo: {
+    firstName: string; lastName: string; email: string;
+    phone?: string; linkedinUrl?: string;
+    resumeContent?: string; coverLetterContent?: string;
+  }
+): Promise<{ success: boolean; applicationId?: string; error?: string }> {
+  try {
+    // Extract company slug from URL: jobs.lever.co/{slug}/{job-id}
+    const match = job.applyUrl.match(/lever\.co\/([^/?#]+)\/([^/?#]+)/);
+    if (!match) throw new Error('Cannot parse Lever URL');
+    const [, companySlug, jobId] = match;
+
+    const formData = new FormData();
+    formData.append('name', `${applicantInfo.firstName} ${applicantInfo.lastName}`);
+    formData.append('email', applicantInfo.email);
+    if (applicantInfo.phone) formData.append('phone', applicantInfo.phone);
+    if (applicantInfo.linkedinUrl) formData.append('urls[LinkedIn]', applicantInfo.linkedinUrl);
+    if (applicantInfo.coverLetterContent) {
+      formData.append('comments', applicantInfo.coverLetterContent);
+    }
+
+    const res = await fetch(
+      `https://api.lever.co/v0/postings/${companySlug}/${jobId}/apply`,
+      { method: 'POST', body: formData }
+    );
+
+    if (!res.ok) {
+      const err = await res.text();
+      return { success: false, error: `Lever rejected: ${err.slice(0, 200)}` };
+    }
+    const result = await res.json().catch(() => ({}));
+    return { success: true, applicationId: result.applicationId || result.id || 'submitted' };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
 // ─── Step 6: Full auto-apply flow ─────────────────────────────────────────────
 
 export async function autoApplyToJob(
@@ -419,6 +461,31 @@ export async function autoApplyToJob(
   if (mode === 'review_first' || !packet.canAutoApply) {
     await prisma.application.update({ where: { id: application.id }, data: { status: 'prepping' } });
     return { status: 'queued_for_review', packet };
+  }
+
+  // Auto-submit for Lever
+  if (job.atsType === 'lever' && packet.canAutoApply) {
+    const personalInfo2 = await prisma.personalInfo.findUnique({ where: { userId } });
+    const nameParts2 = (personalInfo2?.fullName || 'Zach Bienstock').split(' ');
+    const leverResult = await submitToLever(
+      packet,
+      { applyUrl: job.applyUrl || '', title: job.title, company: job.company, externalId: job.externalId || '' },
+      {
+        firstName: nameParts2[0] || 'Zach',
+        lastName: nameParts2.slice(1).join(' ') || 'Bienstock',
+        email: personalInfo2?.email || 'zbienstock@gmail.com',
+        phone: personalInfo2?.phone || '',
+        linkedinUrl: personalInfo2?.linkedinUrl || '',
+        coverLetterContent: packet.coverLetter,
+      }
+    );
+    if (leverResult.success) {
+      await prisma.application.update({
+        where: { id: application.id },
+        data: { status: 'applied', appliedAt: new Date(), externalApplicationId: leverResult.applicationId },
+      });
+      return { status: 'applied', packet, applicationId: leverResult.applicationId };
+    }
   }
 
   // Auto-submit for Greenhouse

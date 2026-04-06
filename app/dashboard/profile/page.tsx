@@ -264,8 +264,8 @@ export default function ProfileBuilderPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Job Title" value={newWork.title} onChange={(v: string) => setNewWork((w: any) => ({ ...w, title: v }))} placeholder="Senior Data Analyst" required />
             <Input label="Company" value={newWork.company} onChange={(v: string) => setNewWork((w: any) => ({ ...w, company: v }))} placeholder="Company Name" required />
-            <Input label="Start Date" type="month" value={newWork.startDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, startDate: v + '-01' })} />
-            <Input label="End Date" type="month" value={newWork.endDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, endDate: v + '-01' })} />
+                <Input label="Start Date" type="month" value={newWork.startDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, startDate: v + '-01' }))} />
+                <Input label="End Date" type="month" value={newWork.endDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, endDate: v + '-01' }))} />
           </div>
           <TextArea label="Summary / Key responsibilities" value={newWork.summary} onChange={(v: string) => setNewWork((w: any) => ({ ...w, summary: v }))} placeholder="Describe what you did and the impact you had..." rows={3} />
           <div className="grid grid-cols-2 gap-3">

@@ -573,6 +573,7 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     sources = ['google', 'remotive', 'adzuna', 'themuse'],
     greenhouseBoards = [],
     leverBoards = [],
+    companyCareerUrls = [],
   } = params;
 
   // Create scrape run

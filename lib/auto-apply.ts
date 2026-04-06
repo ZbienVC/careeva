@@ -99,7 +99,7 @@ async function buildProfileContext(userId: string): Promise<string> {
 
 // ─── Step 2: Generate cover letter ───────────────────────────────────────────
 
-async function generateCoverLetter(
+async function buildAndGenerateCoverLetter(
   profileContext: string,
   job: { title: string; company: string; description: string },
   tone = 'professional'
@@ -219,7 +219,7 @@ export async function buildApplicationPacket(
   // Build cover letter prompt
   const clPrompt = buildCoverLetterPrompt(profileContext, job.title, job.company, job.description);
   const [coverLetter, answers] = await Promise.all([
-    generateCoverLetter(clPrompt),
+    buildAndGenerateCoverLetter(clPrompt, { title: job.title, company: job.company, description: job.description || '' }),
     generateAnswers(userId, profileContext, { title: job.title, company: job.company, description: job.description }),
   ]);
 

@@ -12,8 +12,8 @@ interface NavbarProps {
 const DASHBOARD_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/jobs', label: 'Jobs' },
+  { href: '/dashboard/automation', label: '⚡ Automate' },
   { href: '/dashboard/applications', label: 'Tracker' },
-  { href: '/dashboard/cover-letter', label: 'Cover Letters' },
   { href: '/dashboard/profile', label: 'Profile' },
 ];
 

@@ -78,31 +78,59 @@ export async function POST(req: NextRequest) {
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const prompt = `You are writing a cover letter for ${name} applying to ${company} for the ${jobTitle} position.
+    // Build professional header
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const cityState = [personalInfo?.city, personalInfo?.state ? (personalInfo.state + ' ' + (personalInfo?.zipCode || '')).trim() : ''].filter(Boolean).join(', ');
+    const letterHeader = [
+      name,
+      personalInfo?.addressLine1 || null,
+      cityState || null,
+      personalInfo?.phone || null,
+      personalInfo?.email || null,
+      personalInfo?.linkedinUrl || null,
+      personalInfo?.githubUrl || personalInfo?.websiteUrl || null,
+      '',
+      today,
+      '',
+      ...(hiringManager ? [hiringManager] : []),
+      'Hiring Team',
+      company,
+      '',
+      'Re: ' + jobTitle + ' Position',
+      '',
+      'Dear ' + (hiringManager || 'Hiring Team') + ',',
+    ].filter(l => l !== null).join('\n');
 
-WRITING STYLE: ${toneWords}. DO NOT use: ${avoidWords}. Be specific, human, and authentic.
+    const prompt = [
+      'TASK: Write the body of a professional cover letter. DO NOT write the header/date/greeting - that is already written.',
+      '',
+      'HARD RULES - FOLLOW EXACTLY:',
+      '1. NEVER fabricate, invent, or exaggerate ANY experience, skill, metric, company name, project, or achievement',
+      '2. ONLY use facts explicitly stated in the CANDIDATE PROFILE below',
+      '3. If the job requires a skill not in the profile, do NOT claim it - focus on transferable skills that ARE present',
+      '4. Keep total body under 300 words (3 paragraphs + closing = fits on one page)',
+      5. Writing tone: . Avoid these words: ,
+      '',
+      'CANDIDATE PROFILE (ONLY use facts from here):',
+      profileContext,
+      '',
+      'JOB DESCRIPTION:',
+      (jobDescription || '').slice(0, 1500),
+      '',
+      'FORMAT - write EXACTLY this structure:',
+      'PARAGRAPH 1 (2-3 sentences): Why this specific role at this specific company. Reference something specific from the job description.',
+      'PARAGRAPH 2 (3-4 sentences): Your most relevant experience from the profile. Use real job titles, company names, and real accomplishments. Show direct overlap with job requirements.',
+      'PARAGRAPH 3 (2 sentences): 2-3 specific skills/technologies that appear in BOTH the job description AND your profile. Be explicit.',
+      CLOSING: One sentence. Then blank line. Then: Sincerely, Then blank line. Then: ,
+      '',
+      'Begin writing from Paragraph 1 now:',
+    ].join('\n');
 
-${profileContext}
-
-JOB DESCRIPTION (first 1200 chars):
-${(jobDescription || '').slice(0, 1200)}
-
-INSTRUCTIONS:
-- Write 3 paragraphs: (1) why this specific role/company, (2) most relevant experience with 1-2 concrete examples from the profile above, (3) what you bring and call to action
-- Address it to "${hiringManager || 'Hiring Team'}"
-- Do NOT fabricate any experience, metrics, or skills not mentioned in the profile
-- Keep it under 350 words
-- Format as ready-to-send (include greeting and sign-off)`;
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.4,
       max_tokens: 700,
     });
 
     const body = response.choices[0].message.content || '';
-    const coverLetter = header + '\n\n' + body;
+    const coverLetter = letterHeader + '\n\n' + body;
 
     // Save to DB
     const saved = await prisma.coverLetter.create({

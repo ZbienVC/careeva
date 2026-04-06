@@ -9,9 +9,9 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import OpenAI from 'openai';
+import { generate, generateResumeSummary } from '@/lib/ai-client';
 
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+// Uses shared ai-client - Claude for resume writing, GPT fallback
 
 export interface KeywordAnalysis {
   requiredSkills: string[];

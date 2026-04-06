@@ -1,3 +1,4 @@
+// build: 2026-04-06-1525
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/session';
 import { buildApplicationPacket, autoApplyToJob } from '@/lib/auto-apply';

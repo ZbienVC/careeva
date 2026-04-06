@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { generateCoverLetter, isAIConfigured, getActiveAIProvider } from '@/lib/ai-client';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/session';
 import { prisma } from '@/lib/db';
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   try {
     const { jobDescription, jobTitle, company, hiringManager, tone = 'professional', jobId } = await req.json();
 
-    if (!process.env.OPENAI_API_KEY) return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 });
+    if (!isAIConfigured()) return NextResponse.json({ error: 'No AI API key configured. Add ANTHROPIC_API_KEY (Claude) or OPENAI_API_KEY to your environment.' }, { status: 500 });
     if (!jobTitle || !company) return NextResponse.json({ error: 'jobTitle and company required' }, { status: 400 });
 
     // Fetch full profile for rich context
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     if (posStatement) profileContext += `\nPOSITIONING: ${posStatement}\n`;
     else if (pitch) profileContext += `\nELEVATOR PITCH: ${pitch.answer}\n`;
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // Using Claude Sonnet 4.6 for cover letter generation (or GPT-4o-mini fallback)
 
     // Build professional header
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });

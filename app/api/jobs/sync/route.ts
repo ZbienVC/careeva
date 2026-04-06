@@ -60,10 +60,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Choose sources (can be overridden in body)
-    const sources: string[] = body.sources || [
+    type JobSource = 'google'|'remotive'|'adzuna'|'themuse'|'greenhouse'|'lever'|'indeed'|'weworkremotely'|'monster'|'remoteco'|'usajobs'|'arbeitnow'|'authenticjobs'|'jsearch'|'dice';
+    const sources: JobSource[] = (body.sources || [
       'google', 'remotive', 'adzuna', 'themuse', 'arbeitnow',
       'weworkremotely', 'authenticjobs', 'indeed', 'dice',
-    ];
+    ]) as JobSource[];
 
     // Build Greenhouse/Lever boards from well-known industry targets
     const greenhouseBoards: string[] = [];

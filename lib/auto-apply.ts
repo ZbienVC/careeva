@@ -261,6 +261,7 @@ export async function submitToGreenhouse(
     linkedinUrl?: string;
     resumeContent?: string;
     coverLetterContent?: string;
+    resumeText?: string;
   }
 ): Promise<{ success: boolean; applicationId?: string; error?: string }> {
   try {

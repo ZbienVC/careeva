@@ -1,264 +1,217 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { UserProfile, JobWithScore } from '@/lib/types';
 import { profileAPI, jobsAPI } from '@/lib/api';
 import { LoadingPage } from '@/components/Loading';
-import ResumeUpload from '@/components/ResumeUpload';
+
+interface PipelineStats {
+  totalJobs: number;
+  scoredJobs: number;
+  highMatchJobs: number;
+  applications: number;
+  interviews: number;
+  interviewRate: number;
+}
+
+function StatCard({ label, value, sub, color, href }: { label: string; value: string | number; sub?: string; color?: string; href?: string }) {
+  const inner = (
+    <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 ${href ? 'hover:border-indigo-200 hover:shadow-md transition-all cursor-pointer' : ''}`}>
+      <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+      <p className={`text-3xl font-black tabular-nums ${color || 'text-slate-900'}`}>{value}</p>
+      {sub && <p className="text-slate-400 text-xs mt-1">{sub}</p>}
+    </div>
+  );
+  return href ? <Link href={href}>{inner}</Link> : inner;
+}
+
+function QuickAction({ icon, label, desc, href, gradient }: { icon: string; label: string; desc: string; href: string; gradient: string }) {
+  return (
+    <Link href={href} className="group bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:border-slate-200 hover:shadow-md transition-all block">
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg mb-3" style={{ background: gradient }}>
+        {icon}
+      </div>
+      <p className="font-bold text-slate-900 text-sm mb-0.5">{label}</p>
+      <p className="text-slate-400 text-xs leading-relaxed">{desc}</p>
+    </Link>
+  );
+}
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [recentJobs, setRecentJobs] = useState<JobWithScore[]>([]);
+  const [profile, setProfile] = useState<any>(null);
+  const [pipeline, setPipeline] = useState<PipelineStats | null>(null);
+  const [recentJobs, setRecentJobs] = useState<any[]>([]);
+  const [recentApps, setRecentApps] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [showUpload, setShowUpload] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(0);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const profileResult = await profileAPI.get();
-        if (!profileResult.success) {
-          router.push('/login');
-          return;
-        }
-        setProfile(profileResult.data!);
+    (async () => {
+      const profileResult = await profileAPI.get();
+      if (!profileResult.success) { router.push('/login'); return; }
+      setProfile(profileResult.data);
 
-        const jobsResult = await jobsAPI.list({ pageSize: 6 });
-        if (jobsResult.success) {
-          setRecentJobs(jobsResult.data?.jobs || []);
-        }
-      } catch (err) {
-        setError('Failed to load dashboard');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
+      // Pipeline stats
+      const [pipeRes, jobsRes, appsRes, fullRes] = await Promise.all([
+        fetch('/api/automate').then(r => r.ok ? r.json() : null),
+        jobsAPI.list({ pageSize: 5 }),
+        fetch('/api/applications').then(r => r.ok ? r.json() : []),
+        fetch('/api/profile/full').then(r => r.ok ? r.json() : null),
+      ]);
 
-    loadData();
+      if (pipeRes?.pipeline) setPipeline(pipeRes.pipeline);
+      if (jobsRes.success) setRecentJobs(jobsRes.data?.jobs || []);
+      if (Array.isArray(appsRes)) setRecentApps(appsRes.slice(0, 5));
+      if (fullRes?.completeness) setProfileComplete(fullRes.completeness);
+
+      setLoading(false);
+    })();
   }, [router]);
-
-  const readinessScore = useMemo(() => {
-    if (!profile) return 0;
-    const checks = [
-      Boolean(profile.jobTitle),
-      Boolean(profile.careerGoals),
-      (profile.skills?.length || 0) > 4,
-      (profile.targetIndustries?.length || 0) > 0,
-      Boolean(profile.desiredSalaryMin || profile.desiredSalaryMax),
-      Boolean(profile.resumeUrl),
-    ];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [profile]);
-
-  const topMatches = useMemo(
-    () => [...recentJobs].sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0)).slice(0, 3),
-    [recentJobs]
-  );
 
   if (loading) return <LoadingPage />;
 
-  if (error || !profile) {
-    return (
-      <div className="page-shell">
-        <div className="premium-card p-8 text-center">
-          <p className="text-red-300">{error || 'Failed to load profile'}</p>
-          <Link href="/" className="mt-4 inline-block text-blue-300 hover:text-blue-200">
-            Return to home
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const stats = [
-    { label: 'Skills captured', value: profile.skills?.length || 0, detail: 'Resume + profile intelligence' },
-    { label: 'Years of experience', value: profile.yearsOfExperience || 0, detail: 'Used for job fit scoring' },
-    { label: 'Target industries', value: profile.targetIndustries?.length || 0, detail: 'Powering search alignment' },
-    { label: 'Saved opportunities', value: recentJobs.length, detail: 'Fresh roles in your pipeline' },
-  ];
+  const firstName = profile?.name?.split(' ')[0] || 'there';
+  const needsOnboarding = !profile?.skills?.length && !profile?.jobTitle;
+  const interviewRate = pipeline ? (pipeline.applications > 0 ? Math.round((pipeline.interviews || 0) / pipeline.applications * 100) : 0) : 0;
 
   return (
-    <div className="page-shell space-y-8">
-      <section className="hero-panel gradient-border p-8 md:p-10">
-        <div className="relative z-10 grid gap-8 lg:grid-cols-[1.4fr_0.9fr] lg:items-center">
-          <div>
-            <div className="badge mb-4">Career command center</div>
-            <h1 className="section-heading text-4xl md:text-5xl">
-              Welcome back{profile.jobTitle ? `, ${profile.jobTitle}` : ''}.
-            </h1>
-            <p className="section-subcopy mt-4 max-w-2xl text-base md:text-lg">
-              Keep your search momentum high with tighter profile data, sharper cover letters, and a cleaner view of the roles that deserve your time.
-            </p>
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900">Hey {firstName} 👋</h1>
+          <p className="text-slate-400 text-sm mt-0.5">
+            {needsOnboarding
+              ? 'Complete your profile to start automating applications'
+              : `Your job search is ${pipeline?.highMatchJobs ? 'active' : 'ready to run'}`}
+          </p>
+        </div>
+        <Link href="/dashboard/automation"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-bold text-sm"
+          style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 4px 16px rgba(16,185,129,0.3)' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Run Auto-Apply
+        </Link>
+      </div>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <button onClick={() => setShowUpload((prev) => !prev)} className="btn-primary">
-                {showUpload ? 'Close resume upload' : 'Upload resume'}
-              </button>
-              <Link href="/dashboard/jobs" className="btn-secondary">
-                Browse job matches
-              </Link>
-              <Link href="/dashboard/applications" className="btn-secondary">
-                Open application tracker
-              </Link>
-            </div>
-          </div>
-
-          <div className="premium-card-soft p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm uppercase tracking-[0.22em] text-slate-500">Profile readiness</div>
-                <div className="mt-2 text-5xl font-bold text-white">{readinessScore}%</div>
-              </div>
-              <div className="h-24 w-24 rounded-full border-[10px] border-blue-500/30 flex items-center justify-center text-lg font-semibold text-blue-300">
-                {readinessScore}
+      {/* Onboarding CTA */}
+      {needsOnboarding && (
+        <div className="bg-gradient-to-r from-indigo-50 to-emerald-50 rounded-2xl border border-indigo-100 p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-bold text-slate-900 text-base mb-1">Complete your profile to unlock auto-apply</p>
+              <p className="text-slate-500 text-sm">The more you share, the better Careeva matches and writes for you. Estimated 15-20 minutes.</p>
+              <div className="flex items-center gap-2 mt-3">
+                <div className="h-2 bg-slate-200 rounded-full flex-1 max-w-[200px] overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-emerald-500 to-indigo-500 rounded-full transition-all" style={{ width: `${profileComplete}%` }} />
+                </div>
+                <span className="text-xs font-bold text-slate-500">{profileComplete}% complete</span>
               </div>
             </div>
-            <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500" style={{ width: `${readinessScore}%` }} />
-            </div>
-            <div className="mt-6 space-y-3 text-sm text-slate-300">
-              <div className="flex items-center justify-between"><span>Resume uploaded</span><span>{profile.resumeUrl ? 'Yes' : 'Not yet'}</span></div>
-              <div className="flex items-center justify-between"><span>Career goals defined</span><span>{profile.careerGoals ? 'Yes' : 'Add context'}</span></div>
-              <div className="flex items-center justify-between"><span>Preferred industries</span><span>{profile.targetIndustries?.length || 0}</span></div>
-            </div>
+            <Link href="/dashboard/onboarding"
+              className="px-6 py-3 rounded-xl text-white font-bold text-sm whitespace-nowrap"
+              style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+              Build Profile →
+            </Link>
           </div>
         </div>
-      </section>
-
-      {showUpload && (
-        <section className="premium-card p-8">
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold text-white">Refresh your resume intelligence</h2>
-              <p className="mt-1 text-sm text-slate-400">Upload your latest resume so Careeva can sharpen scoring, writing, and search suggestions.</p>
-            </div>
-            <button onClick={() => setShowUpload(false)} className="btn-ghost">Close</button>
-          </div>
-          <ResumeUpload
-            onSuccess={() => {
-              setShowUpload(false);
-              profileAPI.get().then((result) => {
-                if (result.success) setProfile(result.data!);
-              });
-            }}
-            onError={(message) => setError(message)}
-          />
-        </section>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => (
-          <div key={stat.label} className="stat-tile">
-            <div className="text-sm text-slate-400">{stat.label}</div>
-            <div className="mt-3 text-3xl font-bold text-white">{stat.value}</div>
-            <div className="mt-2 text-sm text-slate-500">{stat.detail}</div>
-          </div>
-        ))}
-      </section>
+      {/* Pipeline Stats */}
+      {pipeline && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard label="Jobs Found" value={pipeline.totalJobs} sub="in your pipeline" href="/dashboard/jobs" />
+          <StatCard label="High Match" value={pipeline.highMatchJobs} sub="score ≥ 70" color="text-emerald-600" href="/dashboard/jobs" />
+          <StatCard label="Applied" value={pipeline.applications} sub="total submitted" color="text-indigo-600" href="/dashboard/applications" />
+          <StatCard label="Interview Rate" value={`${interviewRate}%`} sub={`${pipeline.interviews || 0} interviews`} color={interviewRate >= 15 ? 'text-emerald-600' : 'text-slate-900'} href="/dashboard/applications" />
+        </div>
+      )}
 
-      <section className="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
-        <div className="premium-card p-7">
-          <div className="mb-6 flex items-end justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold text-white">Top opportunities</h2>
-              <p className="mt-1 text-sm text-slate-400">Highest-signal roles from your latest job feed.</p>
-            </div>
-            <Link href="/dashboard/jobs" className="btn-ghost">See all jobs</Link>
-          </div>
+      {/* Quick actions */}
+      <div>
+        <h2 className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-3">Quick Actions</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <QuickAction icon="⚡" label="Run Auto-Apply" desc="Search, score, and apply in one click" href="/dashboard/automation" gradient="linear-gradient(135deg,#10b981,#059669)" />
+          <QuickAction icon="💼" label="Browse Jobs" desc="View your scored job feed" href="/dashboard/jobs" gradient="linear-gradient(135deg,#6366f1,#4f46e5)" />
+          <QuickAction icon="📋" label="Applications" desc="Track status and provide feedback" href="/dashboard/applications" gradient="linear-gradient(135deg,#0ea5e9,#0284c7)" />
+          <QuickAction icon="👤" label="Profile" desc="Add more data to improve results" href="/dashboard/profile" gradient="linear-gradient(135deg,#f59e0b,#d97706)" />
+        </div>
+      </div>
 
-          {topMatches.length > 0 ? (
-            <div className="space-y-4">
-              {topMatches.map((job) => (
-                <Link
-                  key={job.id}
-                  href={`/dashboard/jobs/${job.id}`}
-                  className="premium-card-soft block p-5 transition hover:border-white/15 hover:bg-white/[0.05]"
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <div className="text-lg font-semibold text-white">{job.title}</div>
-                      <div className="mt-1 text-sm text-slate-300">{job.company} · {job.location}</div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
-                        <span className="badge capitalize">{job.jobType}</span>
-                        {job.salary && <span className="badge">{job.salary}</span>}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl bg-white/[0.04] px-4 py-3 text-center">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Match</div>
-                      <div className="mt-1 text-3xl font-bold text-blue-300">{Math.round(job.score?.overallScore || 0)}</div>
-                    </div>
+      {/* Recent jobs */}
+      {recentJobs.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-slate-600 uppercase tracking-wider">Recent High Matches</h2>
+            <Link href="/dashboard/jobs" className="text-xs text-indigo-500 font-semibold hover:text-indigo-700">See all →</Link>
+          </div>
+          <div className="space-y-2">
+            {recentJobs.slice(0, 5).map((job: any) => {
+              const score = job.jobScores?.[0]?.overallScore || job.score?.overallScore || 0;
+              return (
+                <Link key={job.id} href={`/dashboard/jobs/${job.id}`} className="flex items-center justify-between bg-white rounded-xl border border-slate-100 px-4 py-3 hover:border-slate-200 transition-all">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-slate-900 text-sm truncate">{job.title}</p>
+                    <p className="text-slate-400 text-xs">{job.company} {job.location ? `· ${job.location}` : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-3 ml-3">
+                    {job.atsType && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 capitalize">{job.atsType}</span>
+                    )}
+                    {score > 0 && (
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-full ${score >= 75 ? 'bg-emerald-50 text-emerald-700' : score >= 55 ? 'bg-amber-50 text-amber-700' : 'bg-slate-50 text-slate-500'}`}>
+                        {score}
+                      </span>
+                    )}
                   </div>
                 </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state !p-8">
-              <div className="text-4xl">💼</div>
-              <h3 className="mt-4 text-xl font-semibold text-white">No role recommendations yet</h3>
-              <p className="mt-2 text-slate-400">Complete onboarding and upload a resume to unlock stronger job matching.</p>
-              <div className="mt-6 flex justify-center gap-3">
-                <Link href="/dashboard/onboarding" className="btn-primary">Complete onboarding</Link>
-                <button onClick={() => setShowUpload(true)} className="btn-secondary">Upload resume</button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="premium-card p-7">
-            <h2 className="text-2xl font-semibold text-white">Next best actions</h2>
-            <div className="mt-5 space-y-3 text-sm">
-              <Link href="/dashboard/onboarding" className="premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05]">
-                <div>
-                  <div className="font-medium text-white">Refine your job preferences</div>
-                  <div className="mt-1 text-slate-400">Dial in salary, industries, and job types for stronger targeting.</div>
-                </div>
-                <span className="text-slate-500">→</span>
-              </Link>
-              <Link href="/dashboard/cover-letter" className="premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05]">
-                <div>
-                  <div className="font-medium text-white">Generate a tailored cover letter</div>
-                  <div className="mt-1 text-slate-400">Turn a job description into a polished draft in one flow.</div>
-                </div>
-                <span className="text-slate-500">→</span>
-              </Link>
-              <Link href="/dashboard/profile" className="premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05]">
-                <div>
-                  <div className="font-medium text-white">Polish profile context</div>
-                  <div className="mt-1 text-slate-400">Add goals and positioning to improve application quality.</div>
-                </div>
-                <span className="text-slate-500">→</span>
-              </Link>
-            </div>
-          </div>
-
-          <div className="premium-card p-7">
-            <h2 className="text-2xl font-semibold text-white">Snapshot</h2>
-            <div className="mt-5 space-y-4 text-sm text-slate-300">
-              <div>
-                <div className="text-slate-500">Target title</div>
-                <div className="mt-1 text-base text-white">{profile.jobTitle || 'Not set yet'}</div>
-              </div>
-              <div>
-                <div className="text-slate-500">Preferred industries</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(profile.targetIndustries?.length ? profile.targetIndustries : ['Add industries']).map((industry) => (
-                    <span key={industry} className="badge">{industry}</span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="text-slate-500">Career goals</div>
-                <p className="mt-1 leading-6 text-slate-300">{profile.careerGoals || 'Add a short direction statement so writing and matching feels more personal and aligned.'}</p>
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
-      </section>
+      )}
+
+      {/* Recent applications */}
+      {recentApps.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-slate-600 uppercase tracking-wider">Recent Applications</h2>
+            <Link href="/dashboard/applications" className="text-xs text-indigo-500 font-semibold hover:text-indigo-700">See all →</Link>
+          </div>
+          <div className="space-y-2">
+            {recentApps.map((app: any, i: number) => (
+              <div key={i} className="flex items-center justify-between bg-white rounded-xl border border-slate-100 px-4 py-3">
+                <div>
+                  <p className="font-semibold text-slate-900 text-sm">{app.role}</p>
+                  <p className="text-slate-400 text-xs">{app.company} · {new Date(app.dateApplied || app.createdAt).toLocaleDateString()}</p>
+                </div>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+                  app.status === 'applied' ? 'bg-emerald-50 text-emerald-700' :
+                  app.status === 'phone_screen' || app.status === 'interview' ? 'bg-indigo-50 text-indigo-700' :
+                  app.status === 'offer' ? 'bg-emerald-100 text-emerald-800' :
+                  app.status === 'rejected' ? 'bg-red-50 text-red-600' :
+                  'bg-slate-100 text-slate-500'
+                }`}>{app.status?.replace(/_/g, ' ')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Profile completeness nudge */}
+      {!needsOnboarding && profileComplete < 80 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-center justify-between gap-4">
+          <div>
+            <p className="font-semibold text-amber-900 text-sm">Profile {profileComplete}% complete</p>
+            <p className="text-amber-700 text-xs mt-0.5">More profile data = better job matches + more accurate cover letters</p>
+          </div>
+          <Link href="/dashboard/profile" className="px-4 py-2 rounded-xl text-sm font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 transition-all whitespace-nowrap">
+            Add more →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

@@ -285,13 +285,139 @@ async function searchUSAJobs(query: string): Promise<SearchJob[]> {
     });
   } catch { return []; }
 }
+
+// ─── Source 7: Arbeitnow (free, no auth, remote+EU+US tech jobs) ──────────────
+
+async function searchArbeitnow(query: string): Promise<SearchJob[]> {
+  try {
+    const url = `https://www.arbeitnow.com/api/job-board-api?search=${encodeURIComponent(query)}`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Careeva/1.0 job-aggregator', 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || []).slice(0, 20).map((job: any): SearchJob => ({
+      title: job.title || '',
+      company: job.company_name || '',
+      location: job.location || 'Remote',
+      description: job.description || '',
+      url: job.url || '',
+      applyUrl: job.url || '',
+      isRemote: !!job.remote,
+      isHybrid: false,
+      source: 'arbeitnow',
+      atsType: detectATS(job.url || ''),
+      postedAt: job.created_at ? new Date(job.created_at * 1000) : undefined,
+    }));
+  } catch { return []; }
+}
+
+// ─── Source 8: We Work Remotely RSS (free, remote-only jobs) ─────────────────
+
+async function searchWeWorkRemotely(query: string): Promise<SearchJob[]> {
+  try {
+    const url = `https://weworkremotely.com/remote-jobs.rss`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Careeva/1.0 job-aggregator' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    const qLow = query.toLowerCase();
+    return items
+      .map(item => {
+        const get = (tag: string) => item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`))?.[1]?.replace(/<!\[CDATA\[|\]\]>/g, '').trim() || '';
+        const title = get('title');
+        const link = get('link') || get('url');
+        const desc = get('description').replace(/<[^>]+>/g, '').slice(0, 2000);
+        // WWR format: "Company: Job Title" in region
+        const [companyRaw, jobTitleRaw] = title.includes(': ') ? title.split(': ') : ['', title];
+        return {
+          title: jobTitleRaw || title,
+          company: companyRaw || 'Remote Company',
+          location: 'Remote',
+          description: desc,
+          url: link,
+          applyUrl: link,
+          isRemote: true,
+          isHybrid: false,
+          source: 'weworkremotely',
+          atsType: detectATS(link),
+        } as SearchJob;
+      })
+      .filter(j => j.title && j.url && (j.title.toLowerCase().includes(qLow) || j.description.toLowerCase().includes(qLow)))
+      .slice(0, 20);
+  } catch { return []; }
+}
+
+// ─── Source 9: Authentic Jobs RSS (free, creative/tech roles) ────────────────
+
+async function searchAuthenticJobs(query: string): Promise<SearchJob[]> {
+  try {
+    const url = `https://authenticjobs.com/api/?api_key=&method=aj.jobs.search&keywords=${encodeURIComponent(query)}&per_page=20&format=json`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.listings?.listing || []).map((job: any): SearchJob => ({
+      title: job.title || '',
+      company: job.company?.name || '',
+      location: job.company?.location || '',
+      description: job.description || '',
+      url: job.url || '',
+      applyUrl: job.url || '',
+      isRemote: /remote/i.test(job.type || ''),
+      isHybrid: false,
+      source: 'authenticjobs',
+      atsType: detectATS(job.url || ''),
+    }));
+  } catch { return []; }
+}
+
+// ─── Source 10: JSearch via RapidAPI free tier (60 calls/month free) ─────────
+// Aggregates: LinkedIn, Indeed, ZipRecruiter, Glassdoor in one call
+// User must add their own free RapidAPI key
+
+async function searchJSearch(query: string, location = 'United States'): Promise<SearchJob[]> {
+  const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
+  if (!RAPIDAPI_KEY) return [];
+  try {
+    const url = `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(query + ' in ' + location)}&page=1&num_pages=2&date_posted=week`;
+    const res = await fetch(url, {
+      headers: {
+        'x-rapidapi-key': RAPIDAPI_KEY,
+        'x-rapidapi-host': 'jsearch.p.rapidapi.com',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || []).map((job: any): SearchJob => ({
+      title: job.job_title || '',
+      company: job.employer_name || '',
+      location: `${job.job_city || ''} ${job.job_state || ''} ${job.job_country || ''}`.trim(),
+      description: job.job_description || '',
+      url: job.job_apply_link || job.job_google_link || '',
+      applyUrl: job.job_apply_link || '',
+      salary: job.job_min_salary && job.job_max_salary ? `$${job.job_min_salary.toLocaleString()}–$${job.job_max_salary.toLocaleString()}` : undefined,
+      salaryMin: job.job_min_salary || undefined,
+      salaryMax: job.job_max_salary || undefined,
+      isRemote: !!job.job_is_remote,
+      isHybrid: false,
+      source: 'jsearch',
+      atsType: detectATS(job.job_apply_link || ''),
+      postedAt: job.job_posted_at_datetime_utc ? new Date(job.job_posted_at_datetime_utc) : undefined,
+    }));
+  } catch { return []; }
+}
 // ─── Main search aggregator ───────────────────────────────────────────────────
 
 export interface JobSearchParams {
   userId: string;
   queries: string[];          // e.g. ["data analyst", "operations manager"]
   locations?: string[];       // e.g. ["New York, NY", "Remote"]
-  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever' | 'indeed' | 'usajobs')[];
+  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever' | 'indeed' | 'usajobs' | 'arbeitnow' | 'weworkremotely' | 'authenticjobs' | 'jsearch')[];
   greenhouseBoards?: string[];
   leverBoards?: string[];
 }
@@ -337,6 +463,20 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
       for (const location of locations) {
         const i = await searchIndeedRSS(query, location);
         allJobs = allJobs.concat(i);
+      }
+    }
+    if (sources.includes('arbeitnow')) {
+      const an = await searchArbeitnow(query);
+      allJobs = allJobs.concat(an);
+    }
+    if (sources.includes('weworkremotely')) {
+      const wwr = await searchWeWorkRemotely(query);
+      allJobs = allJobs.concat(wwr);
+    }
+    if (sources.includes('jsearch')) {
+      for (const location of locations) {
+        const js = await searchJSearch(query, location);
+        allJobs = allJobs.concat(js);
       }
     }
   }

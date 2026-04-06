@@ -209,10 +209,9 @@ export async function buildApplicationPacket(
   const resumes = await prisma.resume.findMany({ where: { userId } });
   if (resumes.length === 0) missingFields.push('resume');
 
-  // Build cover letter prompt
-  const clPrompt = buildCoverLetterPrompt(profileContext, job.title, job.company, job.description);
+  // Build cover letter via Claude (ai-client routes to Claude Sonnet 4.6 or GPT fallback)
   const [coverLetter, answers] = await Promise.all([
-    buildAndGenerateCoverLetter(clPrompt, { title: job.title, company: job.company, description: job.description || '' }),
+    buildAndGenerateCoverLetter(profileContext, { title: job.title, company: job.company, description: job.description || '' }),
     generateAnswers(userId, profileContext, { title: job.title, company: job.company, description: job.description }),
   ]);
 

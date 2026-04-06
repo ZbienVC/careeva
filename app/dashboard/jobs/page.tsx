@@ -74,7 +74,7 @@ function JobCard({ job, onApply, onScore }: {
           <p className="text-slate-500 text-sm mt-0.5">{job.company}</p>
         </div>
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <ScoreBadge score={job.score?.overallScore || job.score?.score} />
+          <ScoreBadge score={job.score?.overallScore} />
           {job.atsType && (
             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded capitalize ${ATS_COLORS[job.atsType] || 'bg-slate-50 text-slate-500'}`}>
               {job.atsType}

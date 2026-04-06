@@ -177,16 +177,9 @@ async function generateAnswers(
 
   // Generate answers for behavioral questions using AI
   if (!answers['why_this_company']) {
-    const aiResponse = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{
-        role: 'user',
-        content: `In 2-3 sentences, explain why this candidate is interested in ${job.company} for a ${job.title} role. Be specific but authentic. Profile: ${profileContext.slice(0, 500)}`,
-      }],
-      max_tokens: 150,
-      temperature: 0.3,
-    });
-    answers['why_this_company'] = aiResponse.choices[0].message.content || '';
+    answers['why_this_company'] = await generateShortAnswer(
+      `In 2-3 sentences, explain why this candidate is interested in ${job.company} for a ${job.title} role. Be specific but authentic. Profile: ${profileContext.slice(0, 500)}`
+    ).catch(() => '');
   }
 
   return answers;

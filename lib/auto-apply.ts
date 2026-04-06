@@ -217,8 +217,8 @@ export async function buildApplicationPacket(
 
   // Determine if we can auto-apply
   const canAutoApply = missingFields.length === 0 &&
-    (job.atsType === 'greenhouse' || job.atsType === 'lever') &&
-    !!job.applyUrl;  // Greenhouse + Lever: direct API submission
+    (job.atsType === 'greenhouse' || job.atsType === 'lever' || job.atsType === 'ashby') &&
+    !!job.applyUrl;  // Greenhouse + Lever + Ashby: direct API submission
 
   const confidence = Math.max(0, 1 - (missingFields.length * 0.2));
 
@@ -396,6 +396,53 @@ export async function submitToLever(
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// ─── Submit to Ashby (public apply API) ──────────────────────────────────────
+
+export async function submitToAshby(
+  packet: ApplicationPacket,
+  job: { applyUrl: string; title: string; company: string; externalId: string },
+  applicantInfo: {
+    firstName: string; lastName: string; email: string;
+    phone?: string; linkedinUrl?: string; coverLetterContent?: string; resumeText?: string;
+  }
+): Promise<{ success: boolean; applicationId?: string; error?: string }> {
+  try {
+    // Ashby URL: jobs.ashbyhq.com/{company}/{job-id} or app.ashbyhq.com/api/non-user-facing/job-board/application
+    const match = job.applyUrl.match(/ashbyhq\.com\/([^/?#]+)\/([^/?#]+)/);
+    if (!match) throw new Error('Cannot parse Ashby URL');
+    const [, companySlug, jobPostingId] = match;
+
+    const payload = {
+      jobPostingId,
+      email: applicantInfo.email,
+      firstName: applicantInfo.firstName,
+      lastName: applicantInfo.lastName,
+      phoneNumber: applicantInfo.phone || '',
+      linkedInUrl: applicantInfo.linkedinUrl || '',
+      resumeAsText: applicantInfo.resumeText || packet.resumeText || '',
+      coverLetter: applicantInfo.coverLetterContent || packet.coverLetter || '',
+    };
+
+    const res = await fetch(
+      `https://app.ashbyhq.com/api/non-user-facing/job-board/application`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!res.ok) {
+      const err = await res.text();
+      return { success: false, error: `Ashby rejected: ${err.slice(0, 200)}` };
+    }
+    const result = await res.json().catch(() => ({}));
+    return { success: true, applicationId: result.id || result.applicationId || 'submitted' };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
 // ─── Step 6: Full auto-apply flow ─────────────────────────────────────────────
 
 export async function autoApplyToJob(
@@ -473,6 +520,32 @@ export async function autoApplyToJob(
         data: { status: 'applied', appliedAt: new Date(), externalApplicationId: leverResult.applicationId },
       });
       return { status: 'applied', packet, applicationId: leverResult.applicationId };
+    }
+  }
+
+  // Auto-submit for Ashby
+  if (job.atsType === 'ashby' && packet.canAutoApply) {
+    const personalInfoA = await prisma.personalInfo.findUnique({ where: { userId } });
+    const namePartsA = (personalInfoA?.fullName || 'Zach Bienstock').split(' ');
+    const ashbyResult = await submitToAshby(
+      packet,
+      { applyUrl: job.applyUrl || '', title: job.title, company: job.company, externalId: job.externalId || '' },
+      {
+        firstName: namePartsA[0] || 'Zach',
+        lastName: namePartsA.slice(1).join(' ') || 'Bienstock',
+        email: personalInfoA?.email || 'zbienstock@gmail.com',
+        phone: personalInfoA?.phone || '',
+        linkedinUrl: personalInfoA?.linkedinUrl || '',
+        coverLetterContent: packet.coverLetter,
+        resumeText: packet.resumeText,
+      }
+    );
+    if (ashbyResult.success) {
+      await prisma.application.update({
+        where: { id: application.id },
+        data: { status: 'applied', appliedAt: new Date(), externalApplicationId: ashbyResult.applicationId },
+      });
+      return { status: 'applied', packet, applicationId: ashbyResult.applicationId };
     }
   }
 

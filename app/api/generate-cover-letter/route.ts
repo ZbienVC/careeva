@@ -101,7 +101,8 @@ INSTRUCTIONS:
       max_tokens: 700,
     });
 
-    const coverLetter = response.choices[0].message.content || '';
+    const body = response.choices[0].message.content || '';
+    const coverLetter = header + '\n\n' + body;
 
     // Save to DB
     const saved = await prisma.coverLetter.create({

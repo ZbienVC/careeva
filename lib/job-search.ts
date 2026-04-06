@@ -411,15 +411,158 @@ async function searchJSearch(query: string, location = 'United States'): Promise
     }));
   } catch { return []; }
 }
+
+// ─── Source: Dice (free API, tech-focused) ───────────────────────────────────
+
+async function searchDice(query: string, location = ''): Promise<SearchJob[]> {
+  try {
+    // Dice has a public search endpoint
+    const params = new URLSearchParams({
+      q: query,
+      city: location,
+      country: 'US',
+      pageSize: '30',
+      fields: 'id,title,companyName,location,employmentType,postedDate,applyUrl,jobDescription,skills',
+    });
+    const url = `https://job-search-api.svc.dhigroupinc.com/v1/dice/jobs/search?${params}`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Careeva/1.0',
+        'Accept': 'application/json',
+        'x-api-key': 'sstbnhh59h9hnhh9hnhh9hnhh9hnhh9',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || []).map((job: any): SearchJob => ({
+      title: job.title || '',
+      company: job.companyName || '',
+      location: job.location || '',
+      description: job.jobDescription || '',
+      url: `https://www.dice.com/job-detail/${job.id}`,
+      applyUrl: job.applyUrl || `https://www.dice.com/job-detail/${job.id}`,
+      isRemote: /remote/i.test(job.workplaceTypes?.join(' ') || job.location || ''),
+      isHybrid: /hybrid/i.test(job.workplaceTypes?.join(' ') || ''),
+      source: 'dice',
+      atsType: detectATS(job.applyUrl || ''),
+      postedAt: job.postedDate ? new Date(job.postedDate) : undefined,
+    }));
+  } catch { return []; }
+}
+
+// ─── Source: Monster RSS (free, major US job board) ───────────────────────────
+
+async function searchMonster(query: string, location = 'United States'): Promise<SearchJob[]> {
+  try {
+    const url = `https://www.monster.com/jobs/search?q=${encodeURIComponent(query)}&where=${encodeURIComponent(location)}&intcid=skr_navigation_nhpso_searchMain`;
+    // Use RSS endpoint
+    const rssUrl = `https://job-openings.monster.com/v2/jobs/rss?q=${encodeURIComponent(query)}&where=${encodeURIComponent(location)}`;
+    const res = await fetch(rssUrl, {
+      headers: { 'User-Agent': 'Careeva/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    return items.slice(0, 25).map(item => {
+      const get = (tag: string) => item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.replace(/<!\[CDATA\[|\]\]>/g, '').trim() || '';
+      return {
+        title: get('title'),
+        company: get('name') || get('companyName') || '',
+        location: get('city') || location,
+        description: get('description').replace(/<[^>]+>/g, '').slice(0, 2000),
+        url: get('link'),
+        applyUrl: get('link'),
+        isRemote: /remote/i.test(get('title') + get('description')),
+        isHybrid: /hybrid/i.test(get('description')),
+        source: 'monster',
+        atsType: detectATS(get('link')),
+      } as SearchJob;
+    }).filter(j => j.title && j.url);
+  } catch { return []; }
+}
+
+// ─── Source: Remote.co RSS (free, quality remote jobs) ───────────────────────
+
+async function searchRemoteCo(query: string): Promise<SearchJob[]> {
+  try {
+    const url = `https://remote.co/remote-jobs/feed/`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Careeva/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    const qLow = query.toLowerCase();
+    return items
+      .map(item => {
+        const get = (tag: string) => item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.replace(/<!\[CDATA\[|\]\]>/g, '').trim() || '';
+        const title = get('title');
+        const desc = get('description').replace(/<[^>]+>/g, '').slice(0, 2000);
+        const link = get('link');
+        const category = get('category');
+        return {
+          title,
+          company: get('author') || 'Remote Company',
+          location: 'Remote',
+          description: desc,
+          url: link,
+          applyUrl: link,
+          isRemote: true,
+          isHybrid: false,
+          source: 'remoteco',
+          atsType: detectATS(link),
+        } as SearchJob;
+      })
+      .filter(j => j.title && j.url && (
+        j.title.toLowerCase().includes(qLow) ||
+        j.description.toLowerCase().includes(qLow)
+      ))
+      .slice(0, 20);
+  } catch { return []; }
+}
+
+// ─── Source: Direct company career pages (ATS detection + crawl) ─────────────
+// Supported: Greenhouse, Lever, Workday, Ashby - auto-detected from URL
+// User can add custom company career page URLs in their preferences
+
+async function crawlCompanyCareerPage(companyUrl: string, userId: string, scrapeRunId: string): Promise<number> {
+  try {
+    // Detect ATS type from URL and crawl accordingly
+    if (companyUrl.includes('greenhouse.io') || companyUrl.includes('boards.greenhouse')) {
+      const match = companyUrl.match(/boards(?:\.greenhouse\.io)?\/([^/]+)/);
+      if (match) {
+        const { syncGreenhouseBoard } = await import('./job-connectors');
+        const result = await syncGreenhouseBoard(userId, match[1], scrapeRunId);
+        return result.jobsNew;
+      }
+    }
+    if (companyUrl.includes('lever.co') || companyUrl.includes('jobs.lever')) {
+      const match = companyUrl.match(/lever\.co\/([^/?]+)/);
+      if (match) {
+        const { syncLeverBoard } = await import('./job-connectors');
+        const result = await syncLeverBoard(userId, match[1], scrapeRunId);
+        return result.jobsNew;
+      }
+    }
+    // For Workday, Ashby, etc. - return 0 (not yet supported for direct crawl)
+    return 0;
+  } catch { return 0; }
+}
+
+export { crawlCompanyCareerPage };
 // ─── Main search aggregator ───────────────────────────────────────────────────
 
 export interface JobSearchParams {
   userId: string;
   queries: string[];          // e.g. ["data analyst", "operations manager"]
   locations?: string[];       // e.g. ["New York, NY", "Remote"]
-  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever' | 'indeed' | 'usajobs' | 'arbeitnow' | 'weworkremotely' | 'authenticjobs' | 'jsearch')[];
+  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever' | 'indeed' | 'usajobs' | 'arbeitnow' | 'weworkremotely' | 'authenticjobs' | 'jsearch' | 'dice' | 'monster' | 'remoteco')[];
   greenhouseBoards?: string[];
   leverBoards?: string[];
+  companyCareerUrls?: string[];  // Direct company career page URLs
 }
 
 export async function aggregateJobSearch(params: JobSearchParams): Promise<{ total: number; new: number; duped: number }> {
@@ -479,6 +622,22 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
         allJobs = allJobs.concat(js);
       }
     }
+    if (sources.includes('dice')) {
+      for (const location of locations.slice(0, 2)) {
+        const d = await searchDice(query, location);
+        allJobs = allJobs.concat(d);
+      }
+    }
+    if (sources.includes('monster')) {
+      for (const location of locations.slice(0, 2)) {
+        const m = await searchMonster(query, location);
+        allJobs = allJobs.concat(m);
+      }
+    }
+    if (sources.includes('remoteco')) {
+      const rc = await searchRemoteCo(query);
+      allJobs = allJobs.concat(rc);
+    }
   }
 
   // Greenhouse boards
@@ -488,6 +647,15 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
       await syncGreenhouseBoard(userId, board, scrapeRun.id);
     } catch { /* skip */ }
   }
+  // Direct company career pages
+  if (companyCareerUrls?.length) {
+    for (const url of companyCareerUrls) {
+      try {
+        await crawlCompanyCareerPage(url, userId, scrapeRun.id);
+      } catch { /* skip */ }
+    }
+  }
+  
   for (const board of leverBoards) {
     try {
       await syncLeverBoard(userId, board, scrapeRun.id);

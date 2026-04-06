@@ -362,7 +362,7 @@ export async function submitToLever(
   applicantInfo: {
     firstName: string; lastName: string; email: string;
     phone?: string; linkedinUrl?: string;
-    resumeContent?: string; coverLetterContent?: string;
+    resumeContent?: string; coverLetterContent?: string; resumeText?: string;
   }
 ): Promise<{ success: boolean; applicationId?: string; error?: string }> {
   try {

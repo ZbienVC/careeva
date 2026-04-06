@@ -194,13 +194,104 @@ async function searchTheMuse(query: string): Promise<SearchJob[]> {
   }
 }
 
+
+// ─── Curated company boards by role family ────────────────────────────────────
+
+export const CURATED_GREENHOUSE_BOARDS: Record<string, string[]> = {
+  analytics: ['stripe', 'airbnb', 'lyft', 'coinbase', 'reddit', 'notion', 'figma', 'plaid', 'brex', 'chime'],
+  fintech: ['stripe', 'plaid', 'brex', 'chime', 'robinhood', 'coinbase', 'affirm', 'marqeta', 'ripple'],
+  crypto: ['coinbase', 'ripple', 'kraken', 'blockchain', 'alchemy', 'chainalysis', 'dydx'],
+  ops: ['airbnb', 'lyft', 'doordash', 'instacart', 'notion', 'asana', 'monday'],
+  ai_ml: ['anthropic', 'openai', 'cohere', 'huggingface', 'runway', 'scale'],
+  saas: ['salesforce', 'hubspot', 'zendesk', 'intercom', 'segment', 'amplitude', 'mixpanel'],
+  startup: ['notion', 'figma', 'linear', 'vercel', 'supabase', 'railway', 'retool'],
+};
+
+export const CURATED_LEVER_BOARDS: Record<string, string[]> = {
+  analytics: ['netflix', 'twitter', 'slack', 'dropbox', 'square'],
+  fintech: ['square', 'klarna', 'nubank', 'wise', 'monzo'],
+  ops: ['square', 'shopify', 'shopify', 'flexport'],
+  saas: ['atlassian', 'datadog', 'pagerduty', 'hashicorp'],
+};
+
+// ─── Source 5: Indeed RSS feed (free, no auth) ────────────────────────────────
+
+async function searchIndeedRSS(query: string, location = 'United States'): Promise<SearchJob[]> {
+  try {
+    const url = `https://www.indeed.com/rss?q=${encodeURIComponent(query)}&l=${encodeURIComponent(location)}&sort=date&limit=50`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Careeva/1.0; job-aggregator)',
+        'Accept': 'application/rss+xml, application/xml, text/xml',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    
+    // Parse RSS XML manually (no external parser needed)
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    return items.slice(0, 30).map(item => {
+      const get = (tag: string) => item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`))?.[1]?.replace(/<!\[CDATA\[|\]\]>/g, '').trim() || '';
+      const title = get('title');
+      const link = get('link');
+      const desc = get('description').replace(/<[^>]+>/g, '').slice(0, 2000);
+      const company = get('source') || title.split(' at ').slice(-1)[0] || '';
+      const jobTitle = title.includes(' at ') ? title.split(' at ')[0] : title;
+      return {
+        title: jobTitle,
+        company,
+        location: get('geo:point') || location,
+        description: desc,
+        url: link,
+        applyUrl: link,
+        isRemote: /remote/i.test(title + desc),
+        isHybrid: /hybrid/i.test(title + desc),
+        source: 'indeed',
+        atsType: detectATS(link),
+        postedAt: get('pubDate') ? new Date(get('pubDate')) : undefined,
+      } as SearchJob;
+    }).filter(j => j.title && j.url);
+  } catch (err) {
+    console.warn('[JobSearch] Indeed RSS error:', err);
+    return [];
+  }
+}
+
+// ─── Source 6: USAJobs (US government jobs, free API) ─────────────────────────
+
+async function searchUSAJobs(query: string): Promise<SearchJob[]> {
+  const USAJOBS_HOST = process.env.USAJOBS_HOST || '';
+  const USAJOBS_KEY = process.env.USAJOBS_KEY || '';
+  if (!USAJOBS_HOST || !USAJOBS_KEY) return [];
+  try {
+    const url = `https://data.usajobs.gov/api/search?Keyword=${encodeURIComponent(query)}&ResultsPerPage=25`;
+    const res = await fetch(url, { headers: { 'Host': USAJOBS_HOST, 'User-Agent': USAJOBS_HOST, 'Authorization-Key': USAJOBS_KEY } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.SearchResult?.SearchResultItems || []).map((item: any) => {
+      const pos = item.MatchedObjectDescriptor;
+      return {
+        title: pos?.PositionTitle || '',
+        company: pos?.DepartmentName || 'US Government',
+        location: pos?.PositionLocationDisplay || 'USA',
+        description: pos?.QualificationSummary || '',
+        url: pos?.PositionURI || '',
+        applyUrl: pos?.ApplyURI?.[0] || pos?.PositionURI || '',
+        isRemote: /remote/i.test(pos?.PositionLocationDisplay || ''),
+        isHybrid: false,
+        source: 'usajobs',
+      } as SearchJob;
+    });
+  } catch { return []; }
+}
 // ─── Main search aggregator ───────────────────────────────────────────────────
 
 export interface JobSearchParams {
   userId: string;
   queries: string[];          // e.g. ["data analyst", "operations manager"]
   locations?: string[];       // e.g. ["New York, NY", "Remote"]
-  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever')[];
+  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever' | 'indeed' | 'usajobs')[];
   greenhouseBoards?: string[];
   leverBoards?: string[];
 }
@@ -241,6 +332,12 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     if (sources.includes('themuse')) {
       const m = await searchTheMuse(query);
       allJobs = allJobs.concat(m);
+    }
+    if (sources.includes('indeed')) {
+      for (const location of locations) {
+        const i = await searchIndeedRSS(query, location);
+        allJobs = allJobs.concat(i);
+      }
     }
   }
 

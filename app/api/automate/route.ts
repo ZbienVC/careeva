@@ -21,7 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUserFromRequest } from '@/lib/session';
-import { aggregateJobSearch } from '@/lib/job-search';
+import { aggregateJobSearch, CURATED_GREENHOUSE_BOARDS, CURATED_LEVER_BOARDS } from '@/lib/job-search';
 import { autoApplyToJob } from '@/lib/auto-apply';
 import { scoreJob } from '@/lib/job-scorer';
 

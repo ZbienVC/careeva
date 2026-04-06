@@ -135,25 +135,16 @@ export async function analyzeJobFit(userId: string, jobId: string): Promise<Keyw
     ? Math.round((matchedSkills.length / jdKeywords.length) * 100) 
     : 50;
 
-  // AI tailoring notes (only if OpenAI configured)
+  // AI tailoring notes via ai-client (Claude for analysis, GPT fallback)
   let tailoringNotes = '';
-  if (openai && job.description) {
+  if (job.description) {
     try {
-      const profileSummary = workHistory.slice(0, 2).map(w => `${w.title} at ${w.company}: ${w.summary || ''}`).join('. ');
-      const res = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{
-          role: 'user',
-          content: `In 2-3 sentences, tell me how a candidate with this background should position themselves for this job. Focus on what to emphasize, not what to fabricate.
-Background: ${profileSummary}
-Missing required skills: ${missingRequired.slice(0, 5).join(', ')}
-Job: ${job.title} at ${job.company}
-Key JD requirements: ${job.description.slice(0, 500)}`,
-        }],
-        max_tokens: 200,
-        temperature: 0.3,
+      const profileSummary = workHistory.slice(0, 2).map(w => `\ at \: \`).join('. ');
+      tailoringNotes = await generate({
+        task: 'job_analysis',
+        prompt: `In 2-3 sentences, tell me how a candidate with this background should position themselves for this job. Focus on what to emphasize, not what to fabricate.\nBackground: \\nMissing required skills: \\nJob: \ at \\nKey JD requirements: \`,
+        maxTokens: 200,
       });
-      tailoringNotes = res.choices[0].message.content || '';
     } catch { /* non-fatal */ }
   }
 
@@ -183,32 +174,24 @@ export async function generateTailoredSummary(
     prisma.personalInfo.findUnique({ where: { userId } }),
   ]);
 
-  if (!job || !openai) throw new Error('Cannot generate without job or OpenAI');
+  if (!job) throw new Error('Job not found');
 
-  const profile = workHistory.slice(0, 3).map(w => 
-    `${w.title} at ${w.company}: ${w.summary || ''}\nKey bullets: ${w.bullets.slice(0, 3).map(b => b.content).join('; ')}`
+  const profile = workHistory.slice(0, 3).map(w =>
+    `\ at \: \\nKey bullets: \`
   ).join('\n\n');
 
-  const res = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [{
-      role: 'user',
-      content: `Write a 2-sentence resume summary for ${personalInfo?.fullName || 'the candidate'} tailored to: ${job.title} at ${job.company}.
+  const summaryPrompt = `Write a 2-sentence resume summary for \ tailored to: \ at \.
 
 RULES: Only use facts from the profile below. Do not invent anything.
-Emphasize these matched skills: ${analysis.matchedSkills.slice(0, 8).join(', ')}
-Avoid mentioning missing skills: ${analysis.missingRequired.slice(0, 5).join(', ')}
+Emphasize these matched skills: \
+Avoid mentioning missing skills: \
 
 PROFILE:
-${profile}
+\C:\Users\Zach\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1
 
-Write ONLY the 2-sentence summary. Start with the candidate's primary expertise.`,
-    }],
-    max_tokens: 150,
-    temperature: 0.3,
-  });
+Write ONLY the 2-sentence summary. Start with the candidate's primary expertise.`;
 
-  const summary = res.choices[0].message.content || '';
+  const summary = await generateResumeSummary(summaryPrompt);
   
   // Select best bullets for this job
   const allBullets = workHistory.flatMap(w => w.bullets.map(b => ({ content: b.content, company: w.company })));

@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       'PARAGRAPH 1 (2-3 sentences): Why this specific role at this specific company. Reference something specific from the job description.',
       'PARAGRAPH 2 (3-4 sentences): Your most relevant experience from the profile. Use real job titles, company names, and real accomplishments. Show direct overlap with job requirements.',
       'PARAGRAPH 3 (2 sentences): 2-3 specific skills/technologies that appear in BOTH the job description AND your profile. Be explicit.',
-      CLOSING: One sentence. Then blank line. Then: Sincerely, Then blank line. Then: ,
+      'CLOSING: One sentence. Then blank line. Then: Sincerely, Then blank line. Then: [full name]',
       '',
       'Begin writing from Paragraph 1 now:',
     ].join('\n');

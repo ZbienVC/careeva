@@ -5,12 +5,12 @@ import { buildApplicationPacket, autoApplyToJob } from '@/lib/auto-apply';
 // POST /api/jobs/[id]/apply
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: jobId } = await params;
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const jobId = params.id;
   const body = await request.json().catch(() => ({}));
   const mode = body.mode || 'review_first'; // 'auto' | 'prep_only' | 'review_first'
 
@@ -26,8 +26,9 @@ export async function POST(
 // GET /api/jobs/[id]/apply — preview the application packet without submitting
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: jobId } = await params;
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

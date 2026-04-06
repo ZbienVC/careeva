@@ -133,7 +133,126 @@ const QUESTION_PATTERNS: Array<{
     family: 'misc',
     patterns: [/how did you hear/i, /referral source/i, /where did you find/i],
   },
-];
+  {
+    key: 'cover_letter',
+    family: 'materials',
+    patterns: [/cover\s+letter/i, /letter\s+of\s+interest/i],
+  },
+  {
+    key: 'resume_url',
+    family: 'materials',
+    patterns: [/resume\s+url|cv\s+url|upload.*resume|resume.*link/i],
+  },
+  {
+    key: 'years_specific_skill',
+    family: 'experience',
+    patterns: [/years.*experience.*with|how\s+many\s+years.*sql|years.*python|years.*data/i],
+  },
+  {
+    key: 'highest_education',
+    family: 'background',
+    patterns: [/highest.*degree|education\s+level|highest.*education/i],
+  },
+  {
+    key: 'gpa',
+    family: 'background',
+    patterns: [/\bgpa\b|grade\s+point\s+average/i],
+  },
+  {
+    key: 'graduation_year',
+    family: 'background',
+    patterns: [/graduation\s+year|year.*graduated|when.*graduate/i],
+  },
+  {
+    key: 'degree_field',
+    family: 'background',
+    patterns: [/field.*study|major|degree.*in/i],
+  },
+  {
+    key: 'currently_employed',
+    family: 'logistics',
+    patterns: [/currently\s+employed|are\s+you\s+working|current.*employment\s+status/i],
+  },
+  {
+    key: 'reason_for_leaving',
+    family: 'experience',
+    patterns: [/reason.*leaving|why.*leave|why.*left.*current/i],
+  },
+  {
+    key: 'desired_job_title',
+    family: 'preferences',
+    patterns: [/desired.*title|what\s+title|preferred\s+title/i],
+  },
+  {
+    key: 'how_did_you_hear',
+    family: 'misc',
+    patterns: [/how\s+did\s+you\s+hear|referral\s+source|where\s+did\s+you\s+find|how.*learn.*about/i],
+  },
+  {
+    key: 'authorized_full_time',
+    family: 'legal',
+    patterns: [/authorized.*full[\s-]?time|full[\s-]?time.*authorized/i],
+  },
+  {
+    key: 'non_compete',
+    family: 'legal',
+    patterns: [/non[\s-]?compete|non-disclosure|confidentiality\s+agreement/i],
+  },
+  {
+    key: 'criminal_background',
+    family: 'legal',
+    patterns: [/criminal.*background|felony|conviction/i],
+  },
+  {
+    key: 'drug_test',
+    family: 'legal',
+    patterns: [/drug\s+test|substance\s+test/i],
+  },
+  {
+    key: 'security_clearance',
+    family: 'legal',
+    patterns: [/security\s+clearance|classified|secret\s+clearance/i],
+  },
+  {
+    key: 'diversity_background',
+    family: 'eeo',
+    patterns: [/first.*generation|socioeconomic|low[\s-]?income\s+background/i],
+  },
+  {
+    key: 'lgbtq_identity',
+    family: 'eeo',
+    patterns: [/lgbtq|sexual\s+orientation|gender.*identity/i],
+  },
+  {
+    key: 'commute_distance',
+    family: 'logistics',
+    patterns: [/commute|distance.*office|miles.*office|willing.*commute/i],
+  },
+  {
+    key: 'overtime_available',
+    family: 'logistics',
+    patterns: [/overtime|work.*extra.*hours|beyond.*regular\s+hours/i],
+  },
+  {
+    key: 'shift_preference',
+    family: 'logistics',
+    patterns: [/shift.*preference|day\s+shift|night\s+shift|evening\s+shift/i],
+  },
+  {
+    key: 'management_experience',
+    family: 'experience',
+    patterns: [/management\s+experience|managed.*people|direct\s+reports|team\s+management/i],
+  },
+  {
+    key: 'portfolio_work_samples',
+    family: 'materials',
+    patterns: [/portfolio|work\s+samples|writing\s+samples|case\s+stud/i],
+  },
+  {
+    key: 'expected_compensation',
+    family: 'compensation',
+    patterns: [/expected.*compensation|desired.*pay|total.*compensation/i],
+  },];
 
 export type QuestionNormalizationResult = {
   matched: boolean;

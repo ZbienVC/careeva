@@ -33,7 +33,7 @@ export async function GET(
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const packet = await buildApplicationPacket(user.id, params.id);
+    const packet = await buildApplicationPacket(user.id, jobId);
     return NextResponse.json(packet);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed' }, { status: 500 });

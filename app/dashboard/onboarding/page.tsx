@@ -95,6 +95,37 @@ function Inp({ label, value, onChange, type = 'text', placeholder = '', req = fa
   );
 }
 
+// Month/Year picker - much easier than native date input
+function MonthYearPicker({ label, value, onChange, hint = '', placeholder = 'Select...' }: any) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 40 }, (_, i) => currentYear - i);
+  const [month, year] = value ? value.split('-') : ['', ''];
+  const mIdx = month ? parseInt(month) - 1 : -1;
+  const selectCls = "flex-1 px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 bg-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 cursor-pointer";
+  const handleChange = (newMonth: string, newYear: string) => {
+    if (newMonth && newYear) onChange(newYear + '-' + newMonth);
+    else if (newYear && month) onChange(newYear + '-' + month);
+    else if (newMonth && year) onChange(year + '-' + newMonth);
+    else onChange('');
+  };
+  return (
+    <F label={label} hint={hint}>
+      <div className="flex gap-2">
+        <select value={mIdx >= 0 ? String(mIdx + 1).padStart(2,'0') : ''} onChange={e => handleChange(e.target.value, year)} className={selectCls}>
+          <option value="">Month</option>
+          {MONTHS.map((m, i) => <option key={m} value={String(i+1).padStart(2,'0')}>{m}</option>)}
+        </select>
+        <select value={year || ''} onChange={e => handleChange(month, e.target.value)} className={selectCls}>
+          <option value="">Year</option>
+          {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
+        </select>
+      </div>
+    </F>
+  );
+}
+
+
 function TA({ label, value, onChange, placeholder = '', rows = 4, req = false, hint = '' }: any) {
   return (
     <F label={label} req={req} hint={hint}>
@@ -749,7 +780,7 @@ export default function OnboardingPage() {
             <Inp label="Citizenship country" value={d.citizenshipCountry} onChange={s('citizenshipCountry')} placeholder="US" />
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Notice period (weeks)" type="number" value={d.noticePeriodWeeks} onChange={s('noticePeriodWeeks')} />
-              <Inp label="Earliest available date (optional)" type="month" value={d.availableDate} onChange={s('availableDate')} />
+              <MonthYearPicker label="Earliest available date (optional)" value={d.availableDate} onChange={s('availableDate')} />
             </div>
             <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Equal Opportunity / Voluntary Disclosures</p>
@@ -784,8 +815,8 @@ export default function OnboardingPage() {
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Job title" value={d.r1Title} onChange={s('r1Title')} req placeholder="Senior Data Analyst" />
               <Inp label="Company name" value={d.r1Company} onChange={s('r1Company')} req placeholder="Acme Corp" />
-              <Inp label="Start date" type="month" value={d.r1Start} onChange={s('r1Start')} />
-              <Inp label="End date" type="month" value={d.r1End} onChange={s('r1End')} hint="Leave blank if current" />
+              <MonthYearPicker label="Start date" value={d.r1Start} onChange={s('r1Start')} />
+              <MonthYearPicker label="End date" value={d.r1End} onChange={s('r1End')} hint="Leave blank if current" />
               <Inp label="Location" value={d.r1Location} onChange={s('r1Location')} placeholder="New York, NY" />
               <Radio label="Remote?" value={d.r1Remote} onChange={s('r1Remote')} options={['yes', 'no', 'hybrid']} />
               <Inp label="Team size" type="number" value={d.r1TeamSize} onChange={s('r1TeamSize')} placeholder="12" />
@@ -816,8 +847,8 @@ export default function OnboardingPage() {
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Job title" value={d.r2Title} onChange={s('r2Title')} placeholder="Data Analyst" />
               <Inp label="Company name" value={d.r2Company} onChange={s('r2Company')} placeholder="Previous Company" />
-              <Inp label="Start date" type="month" value={d.r2Start} onChange={s('r2Start')} />
-              <Inp label="End date" type="month" value={d.r2End} onChange={s('r2End')} />
+              <MonthYearPicker label="Start date" value={d.r2Start} onChange={s('r2Start')} />
+              <MonthYearPicker label="End date" value={d.r2End} onChange={s('r2End')} />
             </div>
             <TA label="Role summary" value={d.r2Summary} onChange={s('r2Summary')} placeholder="What did you own and accomplish in this role?" rows={3} />
             <TA label="Bullet points (one per line)" value={d.r2Bullets} onChange={s('r2Bullets')} placeholder="• Built X that achieved Y&#10;• Led initiative that resulted in Z" rows={5} />

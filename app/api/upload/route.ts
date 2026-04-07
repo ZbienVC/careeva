@@ -59,17 +59,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 2. Save to Resume model for structured storage
-    await prisma.resume.create({
-      data: {
-        userId: user.id,
-        name: `Uploaded ${new Date().toLocaleDateString()}`,
-        fileUrl: `/uploads/${filename}`,
-        fileType: file.type.includes('pdf') ? 'pdf' : 'docx',
-        isBase: true,
-        rawText: parsedResume.rawText || '',
-      },
-    });
+    // 2. Save to Resume model (only if authenticated)
+    if (user?.id) {
+      await prisma.resume.create({
+        data: {
+          userId: user.id,
+          name: `Uploaded \`,
+          fileUrl: `/uploads/\`,
+          fileType: file.type.includes('pdf') ? 'pdf' : 'docx',
+          isBase: true,
+          rawText: parsedResume.rawText || '',
+        },
+      });
+    }
 
     // 3. Bulk add skills (only if authenticated)
     if ((user?.id) && (parsedResume.skills.length > 0 || parsedResume.technologies.length > 0)) {

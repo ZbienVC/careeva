@@ -18,8 +18,12 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File;
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
 
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    if (!allowedTypes.includes(file.type)) return NextResponse.json({ error: 'PDF or DOCX only' }, { status: 400 });
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', ''];
+    const allowedExtensions = ['.pdf', '.docx', '.doc', '.txt'];
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(ext)) {
+      return NextResponse.json({ error: 'PDF or DOCX only' }, { status: 400 });
+    }
 
     const uploadsDir = join(process.cwd(), 'public', 'uploads');
     mkdirSync(uploadsDir, { recursive: true });
@@ -62,7 +66,7 @@ export async function POST(request: NextRequest) {
         fileUrl: `/uploads/${filename}`,
         fileType: file.type.includes('pdf') ? 'pdf' : 'docx',
         isBase: true,
-        rawText: '',
+        rawText: parsedResume.rawText || '',
       },
     });
 

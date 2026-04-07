@@ -28,7 +28,10 @@ export async function POST(
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
-  const { outcome, stage, notes, gotInterview, rejectionReason, responseTimeHours } = body;
+  // Accept both 'signal' (from UI) and 'outcome' (API direct), normalize 'rejection' -> 'rejected'
+  const rawSignal = body.signal || body.outcome || 'no_response';
+  const outcome = rawSignal === 'rejection' ? 'rejected' : rawSignal;
+  const { stage, notes, gotInterview, rejectionReason, responseTimeHours } = body;
 
   const application = await prisma.application.findFirst({
     where: { id: applicationId, userId: user.id },

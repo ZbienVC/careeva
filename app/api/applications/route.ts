@@ -14,6 +14,18 @@ export async function GET(req: NextRequest) {
       orderBy: { appliedAt: 'desc' },
     });
 
+    // Fetch cover letters for each application that has a jobId
+    const jobIds = applications.filter(a => a.jobId).map(a => a.jobId as string);
+    const coverLetters = jobIds.length > 0 ? await prisma.coverLetter.findMany({
+      where: { userId: user.id, jobId: { in: jobIds } },
+      orderBy: { createdAt: 'desc' },
+      select: { jobId: true, content: true },
+    }) : [];
+    const clByJobId: Record<string, string> = {};
+    for (const cl of coverLetters) {
+      if (cl.jobId && !clByJobId[cl.jobId]) clByJobId[cl.jobId] = cl.content;
+    }
+
     const formatted = applications.map((app) => ({
       id: app.id,
       company: app.company,
@@ -22,6 +34,8 @@ export async function GET(req: NextRequest) {
       dateApplied: app.dateApplied || app.appliedAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       notes: app.notes || '',
       url: app.url || '',
+      coverLetter: app.jobId ? (clByJobId[app.jobId] || '') : '',
+      jobId: app.jobId,
     }));
 
     return NextResponse.json(formatted);

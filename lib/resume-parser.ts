@@ -11,6 +11,7 @@ interface ParsedResume {
   yearsExperience: number;
   education: string[];
   technologies: string[];
+  rawText: string;
 }
 
 async function extractTextFromPDF(filePath: string): Promise<string> {
@@ -83,6 +84,7 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
       yearsExperience: parsed.yearsExperience || 0,
       education: parsed.education || [],
       technologies: parsed.technologies || [],
+      rawText: rawText || '',
     };
   } catch (error) {
     throw new Error("Failed to parse OpenAI response");

@@ -635,8 +635,10 @@ export default function OnboardingPage() {
         {step.id === 'resume_upload' && (
           <StepCard step={step}>
             <UploadZone label="Upload resume (PDF or DOCX)" onFile={handleResumeFile} uploaded={d.resumes.length > 0}
-              hint="Upload your primary resume. You can upload multiple versions." />
-            {d.resumes.length > 0 && d.resumes.map((r, i) => (
+              uploading={d.resumeUploading}
+              fileName={d.resumes[d.resumes.length - 1]?.name}
+              extractedText={d.resumes[d.resumes.length - 1]?.extractedText}
+              hint="Upload your primary resume. Skills and experience will be auto-extracted." />
               <div key={i} className="text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">✓ {r.name}</div>
             ))}
             <TA label="Paste additional resume text (optional — if you have multiple versions)" value={d.resumeText} onChange={s('resumeText')}

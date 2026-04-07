@@ -323,12 +323,31 @@ export default function OnboardingPage() {
   const totalSteps = STEPS.length - 2;
 
   const handleResumeFile = async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    const result = await res.json();
-    if (result.success) {
-      setD(prev => ({ ...prev, resumes: [...prev.resumes, { name: file.name, uploaded: true }] }));
+    setD(prev => ({ ...prev, resumeUploading: true }));
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      const result = await res.json().catch(() => ({ success: false, error: 'Server error' }));
+      if (result.success || result.profile) {
+        const extractedText = result.resume?.rawText || result.profile?.rawText || '';
+        setD(prev => ({
+          ...prev,
+          resumes: [...prev.resumes.filter(r => r.name !== file.name), { name: file.name, uploaded: true, extractedText }],
+          resumeUploading: false,
+        }));
+      } else {
+        setD(prev => ({ ...prev, resumeUploading: false }));
+        alert('Upload failed: ' + (result.error || 'Unknown error. Please try again.'));
+      }
+    } catch (err) {
+      setD(prev => ({ ...prev, resumeUploading: false }));
+      alert('Upload failed — check your connection and try again.');
+      console.error('Upload error:', err);
     }
   };
 

@@ -36,8 +36,9 @@ export default function Navbar({ showAuth = false, showDashboard = false }: Navb
   }, []);
 
   const handleLogout = async () => {
-    await fetch('/api/auth/signout', { method: 'POST' });
-    router.push('/');
+    await fetch('/api/auth/signout', { method: 'POST', credentials: 'include' });
+    // Force hard reload so cookie state fully clears from browser
+    window.location.href = '/login';
   };
 
   const isDashboard = pathname?.startsWith('/dashboard');

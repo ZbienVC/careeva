@@ -12,7 +12,8 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request);
-    if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Allow unauthenticated uploads (parses resume but skips DB save)
+    // This lets the onboarding flow work before auth is fully established
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -34,8 +35,8 @@ export async function POST(request: NextRequest) {
 
     const parsedResume = await parseResume(filepath);
 
-    // 1. Update flat UserProfile (backward compat)
-    await prisma.userProfile.upsert({
+    // 1. Update flat UserProfile (only if authenticated)
+    if (user?.id) await prisma.userProfile.upsert({
       where: { userId: user.id },
       create: {
         userId: user.id,
@@ -70,8 +71,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 3. Bulk add skills (skip duplicates)
-    if (parsedResume.skills.length > 0 || parsedResume.technologies.length > 0) {
+    // 3. Bulk add skills (only if authenticated)
+    if ((user?.id) && (parsedResume.skills.length > 0 || parsedResume.technologies.length > 0)) {
       const allSkills = [...new Set([...parsedResume.skills, ...parsedResume.technologies])];
       const existing = await prisma.skill.findMany({ where: { userId: user.id }, select: { name: true } });
       const existingNames = new Set(existing.map(s => s.name.toLowerCase()));

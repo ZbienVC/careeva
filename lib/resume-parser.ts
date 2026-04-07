@@ -25,6 +25,45 @@ async function extractTextFromDOCX(filePath: string): Promise<string> {
   return result.value;
 }
 
+// ─── Fallback: keyword-based parse when OpenAI unavailable ───────────────────
+
+function basicParse(text: string): ParsedResume {
+  const lower = text.toLowerCase();
+
+  const techKeywords = ['python', 'javascript', 'typescript', 'java', 'sql', 'react', 'node.js',
+    'aws', 'gcp', 'azure', 'docker', 'kubernetes', 'git', 'postgresql', 'mysql', 'mongodb',
+    'graphql', 'rest api', 'next.js', 'vue', 'angular', 'tensorflow', 'pytorch', 'spark',
+    'tableau', 'snowflake', 'databricks', 'dbt', 'kafka', 'redis', 'elasticsearch',
+    'solidity', 'rust', 'go', 'scala', 'r', 'matlab', 'excel', 'figma', 'sketch'];
+
+  const technologies = techKeywords.filter(kw => lower.includes(kw));
+  const skills = technologies.slice(0, 20);
+
+  // Rough years experience from text
+  const yearsMatch = text.match(/(\d+)\+?\s*years?\s+(?:of\s+)?(?:experience|exp)/i);
+  const yearsExperience = yearsMatch ? parseInt(yearsMatch[1]) : 0;
+
+  // Rough roles from common patterns
+  const rolePatterns = ['engineer', 'developer', 'analyst', 'manager', 'director', 'designer',
+    'scientist', 'architect', 'lead', 'consultant', 'specialist', 'coordinator'];
+  const roles: string[] = [];
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0 && trimmed.length < 60 && rolePatterns.some(r => trimmed.toLowerCase().includes(r))) {
+      roles.push(trimmed);
+    }
+  }
+
+  return {
+    skills,
+    roles: roles.slice(0, 5),
+    industries: [],
+    yearsExperience,
+    education: [],
+    technologies,
+    rawText: text,
+  };
+}
 export async function parseResume(filePath: string): Promise<ParsedResume> {
   let resumeText: string;
 
@@ -38,8 +77,9 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
     throw new Error("Unsupported file format. Please upload PDF or DOCX.");
   }
 
+  // If no OpenAI key, return basic keyword extraction from raw text
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not configured");
+    return basicParse(resumeText);
   }
 
   const openai = new OpenAI({
@@ -84,9 +124,10 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
       yearsExperience: parsed.yearsExperience || 0,
       education: parsed.education || [],
       technologies: parsed.technologies || [],
-      rawText: rawText || '',
+      rawText: resumeText || '',
     };
-  } catch (error) {
-    throw new Error("Failed to parse OpenAI response");
+  } catch {
+    // If OpenAI response parsing fails, fall back to basic extraction
+    return basicParse(resumeText);
   }
 }

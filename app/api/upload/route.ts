@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       profile: parsedResume,
-      message: `Resume parsed: ${parsedResume.skills.length} skills, ${parsedResume.technologies.length} technologies, ${parsedResume.yearsExperience} years experience detected`,
+      resume: { rawText: parsedResume.rawText || '' },
+      message: `Resume parsed: \ skills, \ technologies, \ years experience detected`,
       skillsAdded: parsedResume.skills.length,
     });
   } catch (error) {

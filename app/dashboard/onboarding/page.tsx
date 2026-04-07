@@ -639,7 +639,8 @@ export default function OnboardingPage() {
               fileName={d.resumes[d.resumes.length - 1]?.name}
               extractedText={d.resumes[d.resumes.length - 1]?.extractedText}
               hint="Upload your primary resume. Skills and experience will be auto-extracted." />
-              <div key={i} className="text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">✓ {r.name}</div>
+            {d.resumes.length > 0 && d.resumes.map((r, i) => (
+              <div key={i} className="text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">&#10003; {r.name}</div>
             ))}
             <TA label="Paste additional resume text (optional — if you have multiple versions)" value={d.resumeText} onChange={s('resumeText')}
               hint="Paste the text of a different resume variant here. The more versions you provide, the more the system learns about your full experience."

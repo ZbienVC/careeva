@@ -159,27 +159,65 @@ function NavBar({ onBack, onNext, nextLabel = 'Continue →', nextDisabled = fal
   );
 }
 
-function UploadZone({ label, onFile, uploaded, hint }: { label: string; onFile: (f: File) => void; uploaded: boolean; hint?: string }) {
+function UploadZone({ label, onFile, uploaded, hint, fileName, uploading, extractedText }: {
+  label: string; onFile: (f: File) => void; uploaded: boolean; hint?: string;
+  fileName?: string; uploading?: boolean; extractedText?: string;
+}) {
   const ref = useRef<HTMLInputElement>(null);
   return (
-    <div>
-      {label && <p className="text-sm font-semibold text-slate-700 mb-1.5">{label}</p>}
-      {hint && <p className="text-xs text-slate-400 mb-2">{hint}</p>}
-      <input ref={ref} type="file" accept=".pdf,.docx,.doc,.txt" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
-      <div onClick={() => ref.current?.click()} className={`border-2 border-dashed rounded-xl p-5 cursor-pointer transition-all text-center ${uploaded ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'}`}>
-        {uploaded ? (
-          <div className="flex items-center justify-center gap-2 text-emerald-700">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span className="text-sm font-semibold">Uploaded ✓</span>
-            <span className="text-xs text-emerald-500 ml-1">Click to replace</span>
+    <div className="space-y-2">
+      {label && <p className="text-sm font-semibold text-slate-700">{label}</p>}
+      {hint && <p className="text-xs text-slate-400">{hint}</p>}
+      <input ref={ref} type="file" accept=".pdf,.docx,.doc,.txt" className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
+      <div
+        onClick={() => !uploading && ref.current?.click()}
+        className={`border-2 border-dashed rounded-xl p-5 transition-all text-center ${
+          uploading ? 'border-indigo-300 bg-indigo-50 cursor-wait' :
+          uploaded ? 'border-emerald-300 bg-emerald-50 cursor-pointer' :
+          'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer'
+        }`}
+      >
+        {uploading ? (
+          <div className="flex items-center justify-center gap-3 text-indigo-600">
+            <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+            </svg>
+            <div className="text-left">
+              <p className="text-sm font-semibold">Uploading & extracting...</p>
+              <p className="text-xs text-indigo-400 mt-0.5">Parsing your resume now</p>
+            </div>
+          </div>
+        ) : uploaded ? (
+          <div className="space-y-1">
+            <div className="flex items-center justify-center gap-2 text-emerald-700">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span className="text-sm font-bold">Resume saved ✓</span>
+            </div>
+            {fileName && <p className="text-xs text-emerald-600 font-medium">{fileName}</p>}
+            <p className="text-xs text-emerald-500">Click to replace</p>
           </div>
         ) : (
           <div className="text-slate-400">
-            <svg className="w-8 h-8 mx-auto mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <p className="text-sm font-medium">Click to upload PDF or DOCX</p>
+            <svg className="w-8 h-8 mx-auto mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p className="text-sm font-medium text-slate-600">Click to upload PDF or DOCX</p>
+            <p className="text-xs text-slate-400 mt-1">Skills and experience will be auto-extracted</p>
           </div>
         )}
       </div>
+      {/* Show extracted text preview after upload */}
+      {uploaded && extractedText && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">✓ Extracted from your resume</p>
+          <p className="text-xs text-slate-600 leading-relaxed line-clamp-4">{extractedText.slice(0, 400)}{extractedText.length > 400 ? '...' : ''}</p>
+          <p className="text-xs text-emerald-600 font-semibold mt-1.5">Skills, experience & education saved to your profile</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -194,8 +232,9 @@ export default function OnboardingPage() {
   // ── ALL data fields ────────────────────────────────────────────────────────
   const [d, setD] = useState({
     // Resumes
-    resumes: [] as { name: string; uploaded: boolean }[],
+    resumes: [] as { name: string; uploaded: boolean; extractedText?: string }[],
     resumeText: '',
+    resumeUploading: false,
     // Cover letters
     coverLetters: [] as string[],
     coverLetterInput: '',

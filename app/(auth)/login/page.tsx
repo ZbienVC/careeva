@@ -13,6 +13,7 @@ const HIGHLIGHTS = [
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState('');
@@ -36,7 +37,7 @@ export default function LoginPage() {
       const response = await fetch('/api/auth/signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
@@ -117,7 +118,21 @@ export default function LoginPage() {
                 <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>
               )}
 
-              <button type="submit" disabled={loading || !email} className="btn-primary w-full disabled:opacity-50">
+              <div>
+                <label htmlFor="password" className="field-label">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="current-password"
+                  placeholder="Your password"
+                  className="field-input mt-1 w-full"
+                />
+              </div>
+              <button type="submit" disabled={loading || !email || !password} className="btn-primary w-full disabled:opacity-50">
                 {loading && <LoadingSpinner />}
                 {loading ? 'Signing you in...' : 'Continue to dashboard'}
               </button>

@@ -86,48 +86,38 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
     apiKey: process.env.OPENAI_API_KEY,
   });
 
-  // Use OpenAI to extract structured data
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: `You are an expert resume parser. Extract the following information from the resume text and return a JSON object with these exact keys:
-        - skills: array of technical and soft skills
-        - roles: array of job titles/roles held
-        - industries: array of industries worked in
-        - yearsExperience: total years of work experience (number)
-        - education: array of degrees/certifications
-        - technologies: array of programming languages, frameworks, and tools used
-        
-        Return ONLY valid JSON, no markdown formatting.`,
-      },
-      {
-        role: "user",
-        content: `Parse this resume:\n\n${resumeText}`,
-      },
-    ],
-    temperature: 0.3,
-  });
-
-  const content = response.choices[0].message.content;
-  if (!content) {
-    throw new Error("Failed to parse resume with OpenAI");
-  }
-
+  // Try OpenAI for structured extraction - fall back to keyword parse on any error (quota, network, etc.)
   try {
-    const parsed = JSON.parse(content);
-    return {
-      skills: parsed.skills || [],
-      roles: parsed.roles || [],
-      industries: parsed.industries || [],
-      yearsExperience: parsed.yearsExperience || 0,
-      education: parsed.education || [],
-      technologies: parsed.technologies || [],
-      rawText: resumeText || '',
-    };
-  } catch {
-    // If OpenAI response parsing fails, fall back to basic extraction
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert resume parser. Extract JSON with keys: skills (string[]), roles (string[]), industries (string[]), yearsExperience (number), education (string[]), technologies (string[]). Return ONLY valid JSON.',
+        },
+        { role: 'user', content: 'Parse this resume:\n\n' + resumeText.slice(0, 6000) },
+      ],
+      temperature: 0.3,
+    });
+    const content = response.choices[0].message.content;
+    if (!content) return basicParse(resumeText);
+    try {
+      const parsed = JSON.parse(content);
+      return {
+        skills: parsed.skills || [],
+        roles: parsed.roles || [],
+        industries: parsed.industries || [],
+        yearsExperience: parsed.yearsExperience || 0,
+        education: parsed.education || [],
+        technologies: parsed.technologies || [],
+        rawText: resumeText || '',
+      };
+    } catch {
+      return basicParse(resumeText);
+    }
+  } catch (err) {
+    // Quota exceeded, network error, or any other OpenAI failure - use keyword extraction
+    console.warn('OpenAI parse failed, using basicParse fallback:', err instanceof Error ? err.message : err);
     return basicParse(resumeText);
   }
 }

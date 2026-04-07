@@ -42,6 +42,9 @@ export interface Job {
   jobType: string;
   url?: string;
   source: string;
+  applyUrl?: string;
+  atsType?: string;
+  externalId?: string;
   createdAt: string;
   updatedAt: string;
 }

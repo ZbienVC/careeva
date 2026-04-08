@@ -109,6 +109,8 @@ export default function ProfileBuilderPage() {
   // Work history
   const [workHistory, setWorkHistory] = useState<any[]>([]);
   const [newWork, setNewWork] = useState<any>({ company: '', title: '', startDate: '', endDate: '', isCurrent: false, summary: '', skills: '', technologies: '' });
+  const [parsing, setParsing] = useState(false);
+  const [parseMsg, setParseMsg] = useState('');
   // Education
   const [education, setEducation] = useState<any[]>([]);
   const [newEdu, setNewEdu] = useState<any>({ institution: '', degree: '', fieldOfStudy: '', startDate: '', endDate: '', isCurrent: false });
@@ -156,6 +158,26 @@ export default function ProfileBuilderPage() {
     } catch { /* handle */ }
     setSaving(s => ({ ...s, [key]: false }));
   }, []);
+
+  const parseFromResume = async () => {
+    setParsing(true);
+    setParseMsg('');
+    try {
+      const profileRes = await fetch('/api/profile/full', { credentials: 'include' });
+      const profile = profileRes.ok ? await profileRes.json() : null;
+      const roles: string[] = profile?.userProfile?.roles || [];
+      if (roles.length === 0) {
+        setParseMsg('No resume data found. Upload your resume first, then return here to import.');
+        return;
+      }
+      setNewWork((w: any) => ({ ...w, title: roles[0] || '' }));
+      setParseMsg('Job title pre-filled from your resume. Edit details and click + Add Position for each role.');
+    } catch {
+      setParseMsg('Could not read resume data. Please fill in manually.');
+    } finally {
+      setParsing(false);
+    }
+  };
 
   const addWork = async () => {
     if (!newWork.company || !newWork.title) return;
@@ -287,6 +309,18 @@ export default function ProfileBuilderPage() {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Import from resume CTA */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs text-slate-400">Add each position you have held</p>
+          <button onClick={parseFromResume} disabled={parsing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
+            {parsing ? '⏳ Parsing...' : '📄 Import from Resume'}
+          </button>
+        </div>
+        {parseMsg && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">{parseMsg}</p>
         )}
 
         {/* Add new */}

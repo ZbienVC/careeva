@@ -45,6 +45,37 @@ function Input({ label, value, onChange, type = 'text', placeholder = '', requir
   );
 }
 
+function MonthYearPicker({ label, value, onChange, required = false }: any) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 45 }, (_, i) => currentYear - i);
+  const parts = value ? value.substring(0,7).split('-') : ['',''];
+  const [yr, mo] = [parts[0] || '', parts[1] || ''];
+  const sel = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 transition-all bg-white cursor-pointer';
+  const update = (newYr: string, newMo: string) => {
+    if (newYr && newMo) onChange(newYr + '-' + newMo + '-01');
+    else onChange('');
+  };
+  return (
+    <div>
+      <label className='block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5'>
+        {label}{required && <span className='text-red-400 ml-1'>*</span>}
+      </label>
+      <div className='flex gap-2'>
+        <select value={mo} onChange={e => update(yr, e.target.value)} className={sel}>
+          <option value=''>Month</option>
+          {MONTHS.map((m, i) => <option key={m} value={String(i+1).padStart(2,'0')}>{m}</option>)}
+        </select>
+        <select value={yr} onChange={e => update(e.target.value, mo)} className={sel}>
+          <option value=''>Year</option>
+          {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+
 function TextArea({ label, value, onChange, placeholder = '', rows = 3 }: any) {
   return (
     <div>
@@ -264,8 +295,8 @@ export default function ProfileBuilderPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Job Title" value={newWork.title} onChange={(v: string) => setNewWork((w: any) => ({ ...w, title: v }))} placeholder="Senior Data Analyst" required />
             <Input label="Company" value={newWork.company} onChange={(v: string) => setNewWork((w: any) => ({ ...w, company: v }))} placeholder="Company Name" required />
-                <Input label="Start Date" type="month" value={newWork.startDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, startDate: v + '-01' }))} />
-                <Input label="End Date" type="month" value={newWork.endDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, endDate: v + '-01' }))} />
+                <MonthYearPicker label="Start Date" value={newWork.startDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, startDate: v }))} />
+                <MonthYearPicker label="End Date" value={newWork.endDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, endDate: v }))} />
           </div>
           <TextArea label="Summary / Key responsibilities" value={newWork.summary} onChange={(v: string) => setNewWork((w: any) => ({ ...w, summary: v }))} placeholder="Describe what you did and the impact you had..." rows={3} />
           <div className="grid grid-cols-2 gap-3">

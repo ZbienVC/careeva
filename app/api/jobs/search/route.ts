@@ -22,7 +22,12 @@ export async function POST(request: NextRequest) {
         profile?.jobTitle ? [profile.jobTitle] : [],
       ].flat().filter(Boolean).slice(0, 5);
 
-      if (queries.length === 0) queries = ['data analyst', 'operations'];
+      if (queries.length === 0) {
+        // Fallback: use work history titles
+        const wh = await prisma.workHistory.findMany({ where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 2 });
+        queries = wh.map(w => w.title).filter(Boolean);
+      }
+      if (queries.length === 0) return NextResponse.json({ error: 'Add target job titles in your profile to enable job search' }, { status: 400 });
     }
 
     const sources = body.sources || ['google', 'remotive', 'adzuna', 'themuse'];

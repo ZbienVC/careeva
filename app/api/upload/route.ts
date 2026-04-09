@@ -10,24 +10,18 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    // Auth is optional — parse for everyone, save to DB only when signed in
+    // Auth optional — parse for everyone, save to DB only when signed in
     const user = await getCurrentUserFromRequest(request);
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
 
-    // Accept by extension when MIME type is blank (common in some browsers)
+    // Accept by extension when MIME type is blank
     const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '');
-    const allowedTypes = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
-      '',
-    ];
     const allowedExts = ['.pdf', '.docx', '.doc', '.txt'];
-    if (!allowedTypes.includes(file.type) && !allowedExts.includes(ext)) {
-      return NextResponse.json({ error: 'PDF or DOCX only' }, { status: 400 });
+    if (!allowedExts.includes(ext)) {
+      return NextResponse.json({ error: 'Please upload a PDF, DOCX, or TXT file' }, { status: 400 });
     }
 
     const uploadsDir = join(process.cwd(), 'public', 'uploads');
@@ -37,30 +31,30 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     writeFileSync(filepath, Buffer.from(bytes));
 
-    const parsedResume = await parseResume(filepath);
+    const parsed = await parseResume(filepath);
 
-    // Save to DB only if authenticated
+    // Save to DB only when authenticated
     if (user?.id) {
-      // 1. Update flat UserProfile
+      // 1. Update flat UserProfile (backward compat for scoring)
       await prisma.userProfile.upsert({
         where: { userId: user.id },
         create: {
           userId: user.id,
-          skills: parsedResume.skills,
-          roles: parsedResume.roles,
-          industries: parsedResume.industries,
-          yearsExperience: parsedResume.yearsExperience,
-          education: parsedResume.education,
-          technologies: parsedResume.technologies,
+          skills: parsed.skills,
+          roles: parsed.roles,
+          industries: parsed.industries,
+          yearsExperience: parsed.yearsExperience,
+          education: parsed.education,
+          technologies: parsed.technologies,
           resumeUrl: '/uploads/' + filename,
         },
         update: {
-          skills: parsedResume.skills,
-          roles: parsedResume.roles,
-          industries: parsedResume.industries,
-          yearsExperience: parsedResume.yearsExperience,
-          education: parsedResume.education,
-          technologies: parsedResume.technologies,
+          skills: parsed.skills,
+          roles: parsed.roles,
+          industries: parsed.industries,
+          yearsExperience: parsed.yearsExperience,
+          education: parsed.education,
+          technologies: parsed.technologies,
           resumeUrl: '/uploads/' + filename,
         },
       });
@@ -71,21 +65,69 @@ export async function POST(request: NextRequest) {
           userId: user.id,
           name: 'Uploaded ' + new Date().toLocaleDateString(),
           fileUrl: '/uploads/' + filename,
-          fileType: file.type.includes('pdf') || ext === '.pdf' ? 'pdf' : 'docx',
+          fileType: ext === '.pdf' ? 'pdf' : ext === '.txt' ? 'txt' : 'docx',
           isBase: true,
-          rawText: parsedResume.rawText || '',
+          rawText: parsed.rawText || '',
         },
       });
 
-      // 3. Bulk add skills (skip duplicates)
-      const allSkills = [...new Set([...parsedResume.skills, ...parsedResume.technologies])];
+      // 3. Auto-create WorkHistory records from parsed positions
+      if (parsed.workHistory && parsed.workHistory.length > 0) {
+        for (const wh of parsed.workHistory) {
+          if (!wh.company || !wh.title) continue;
+          // Skip if this company+title already exists
+          const exists = await prisma.workHistory.findFirst({
+            where: { userId: user.id, company: wh.company, title: wh.title },
+          });
+          if (exists) continue;
+
+          await prisma.workHistory.create({
+            data: {
+              userId: user.id,
+              company: wh.company,
+              title: wh.title,
+              startDate: wh.startDate ? new Date(wh.startDate + '-01') : null,
+              endDate: wh.endDate ? new Date(wh.endDate + '-01') : null,
+              isCurrent: wh.isCurrent || false,
+              summary: wh.summary || '',
+              skills: wh.skills || [],
+              technologies: wh.technologies || [],
+            },
+          });
+        }
+      }
+
+      // 4. Auto-create EducationEntry records
+      if (parsed.educationEntries && parsed.educationEntries.length > 0) {
+        for (const edu of parsed.educationEntries) {
+          if (!edu.institution) continue;
+          const exists = await prisma.educationEntry.findFirst({
+            where: { userId: user.id, institution: edu.institution },
+          });
+          if (exists) continue;
+
+          await prisma.educationEntry.create({
+            data: {
+              userId: user.id,
+              institution: edu.institution,
+              degree: edu.degree || '',
+              fieldOfStudy: edu.fieldOfStudy || '',
+              endDate: edu.endDate ? new Date(edu.endDate + '-06-01') : null,
+              isCurrent: false,
+            },
+          });
+        }
+      }
+
+      // 5. Bulk add skills (skip duplicates)
+      const allSkills = [...new Set([...parsed.skills, ...parsed.technologies])];
       if (allSkills.length > 0) {
         const existing = await prisma.skill.findMany({
           where: { userId: user.id },
           select: { name: true },
         });
         const existingNames = new Set(existing.map(s => s.name.toLowerCase()));
-        const toAdd = allSkills.filter(s => !existingNames.has(s.toLowerCase())).slice(0, 50);
+        const toAdd = allSkills.filter(s => !existingNames.has(s.toLowerCase())).slice(0, 60);
         if (toAdd.length > 0) {
           await prisma.skill.createMany({
             data: toAdd.map(name => ({ userId: user.id!, name, category: 'technical' })),
@@ -97,17 +139,25 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      profile: parsedResume,
+      profile: parsed,
       resume: {
-        rawText: parsedResume.rawText || '',
-        skills: parsedResume.skills,
-        technologies: parsedResume.technologies,
-        roles: parsedResume.roles,
-        yearsExperience: parsedResume.yearsExperience,
+        rawText: parsed.rawText || '',
+        skills: parsed.skills,
+        technologies: parsed.technologies,
+        roles: parsed.roles,
+        yearsExperience: parsed.yearsExperience,
+        workHistory: parsed.workHistory || [],
+        educationEntries: parsed.educationEntries || [],
+        education: parsed.education || [],
       },
-      message: parsedResume.skills.length + ' skills, ' + parsedResume.technologies.length + ' technologies, ' + parsedResume.yearsExperience + ' years experience detected',
-      skillsAdded: parsedResume.skills.length,
+      message: parsed.skills.length + ' skills, ' +
+        (parsed.workHistory?.length || 0) + ' positions, ' +
+        (parsed.educationEntries?.length || 0) + ' education entries extracted',
+      skillsAdded: parsed.skills.length,
+      positionsFound: parsed.workHistory?.length || 0,
+      educationFound: parsed.educationEntries?.length || 0,
     });
+
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(

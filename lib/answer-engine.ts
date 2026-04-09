@@ -351,7 +351,9 @@ export async function resolveAnswerFromProfile(
     case 'years_experience':
       if (workHistory.length > 0) {
         const earliest = workHistory[0].startDate;
+        if (!earliest) return null; // startDate is now optional
         const years = Math.floor((Date.now() - new Date(earliest).getTime()) / (1000 * 60 * 60 * 24 * 365));
+        if (isNaN(years) || years < 0) return null;
         return { answer: String(years), confidence: 0.85, source: 'work_history' };
       }
       return null;

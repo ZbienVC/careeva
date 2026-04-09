@@ -12,12 +12,12 @@ const STEPS = [
   { id: 'cover_letters', title: 'Upload your cover letters', subtitle: 'Every cover letter teaches the system your voice and what works for you.' },
   { id: 'portfolio_links', title: 'Portfolio, websites & samples', subtitle: 'Links to your work, GitHub projects, writing samples, case studies.' },
   // Identity & Contact
-  { id: 'contact_info', title: 'Contact & identity', subtitle: 'Pre-filled on every application — be thorough.' },
+  { id: 'contact_info', title: 'Contact & identity', subtitle: 'Pre-filled on every application - be thorough.' },
   { id: 'demographics', title: 'Work authorization & personal details', subtitle: 'Used to answer eligibility questions accurately on every application.' },
   // Work history
-  { id: 'work_history_1', title: 'Work history — most recent role', subtitle: 'Tell us everything. The more detail, the better your applications.' },
+  { id: 'work_history_1', title: 'Work history - most recent role', subtitle: 'Tell us everything. The more detail, the better your applications.' },
   { id: 'work_history_2', title: 'Previous roles', subtitle: 'Add as many roles as you want. Each one expands your answer bank.' },
-  { id: 'achievements', title: 'Specific achievements & metrics', subtitle: 'Concrete wins with numbers — these go directly into cover letters and answers.' },
+  { id: 'achievements', title: 'Specific achievements & metrics', subtitle: 'Concrete wins with numbers - these go directly into cover letters and answers.' },
   // Education & certs
   { id: 'education', title: 'Education', subtitle: 'Degrees, bootcamps, certifications, courses.' },
   { id: 'certifications', title: 'Certifications & credentials', subtitle: 'Professional certifications, licenses, and credentials.' },
@@ -26,16 +26,16 @@ const STEPS = [
   { id: 'skills_soft', title: 'Soft skills & competencies', subtitle: 'Communication, leadership, domain expertise, functional skills.' },
   { id: 'skills_domain', title: 'Domain knowledge & specializations', subtitle: 'Industries, functions, and areas where you have deep expertise.' },
   // Career targets
-  { id: 'job_preferences', title: 'Target roles & preferences', subtitle: 'What you want — drives all scoring and job discovery.' },
+  { id: 'job_preferences', title: 'Target roles & preferences', subtitle: 'What you want - drives all scoring and job discovery.' },
   { id: 'company_preferences', title: 'Company preferences', subtitle: 'Specific companies, company types, cultures you want to target.' },
-  { id: 'compensation', title: 'Compensation expectations', subtitle: 'Salary, equity, benefits expectations — used to filter and answer salary questions.' },
+  { id: 'compensation', title: 'Compensation expectations', subtitle: 'Salary, equity, benefits expectations - used to filter and answer salary questions.' },
   // Background & narrative
   { id: 'career_narrative', title: 'Your career story', subtitle: 'How you describe yourself, what drives you, and what you are looking for.' },
-  { id: 'accomplishments', title: 'Key projects & case studies', subtitle: 'Deep dives on your most impactful work — used in detailed application answers.' },
-  { id: 'interests_background', title: 'Background, interests & personality', subtitle: 'Hobbies, volunteer work, side projects — humanizes your applications.' },
+  { id: 'accomplishments', title: 'Key projects & case studies', subtitle: 'Deep dives on your most impactful work - used in detailed application answers.' },
+  { id: 'interests_background', title: 'Background, interests & personality', subtitle: 'Hobbies, volunteer work, side projects - humanizes your applications.' },
   // Standard application questions
   { id: 'standard_questions', title: 'Standard application questions', subtitle: 'Pre-answered for every application you submit.' },
-  { id: 'behavioral_answers', title: 'Behavioral & situational answers', subtitle: 'Pre-written answers to common interview questions — reused in applications.' },
+  { id: 'behavioral_answers', title: 'Behavioral & situational answers', subtitle: 'Pre-written answers to common interview questions - reused in applications.' },
   { id: 'industry_answers', title: 'Industry-specific answers', subtitle: 'Answers specific to your target roles and industries.' },
   // Writing style
   { id: 'writing_style', title: 'Your writing voice', subtitle: 'Guides every sentence the system writes for you.' },
@@ -366,11 +366,58 @@ export default function OnboardingPage() {
       const result = await res.json().catch(() => ({ success: false, error: 'Server error' }));
       if (result.success || result.profile) {
         const extractedText = result.resume?.rawText || result.profile?.rawText || '';
-        setD(prev => ({
-          ...prev,
-          resumes: [...prev.resumes.filter(r => r.name !== file.name), { name: file.name, uploaded: true, extractedText }],
-          resumeUploading: false,
-        }));
+        const workHist: any[] = result.resume?.workHistory || [];
+        const eduList: any[] = result.resume?.educationEntries || [];
+        const skillsList: string[] = result.resume?.skills || [];
+        const techList: string[] = result.resume?.technologies || [];
+
+        // Auto-populate form fields from parsed resume
+        setD(prev => {
+          const updates: any = {
+            ...prev,
+            resumes: [...prev.resumes.filter((r: any) => r.name !== file.name), { name: file.name, uploaded: true, extractedText }],
+            resumeUploading: false,
+          };
+
+          // Auto-fill work history role 1 if available
+          if (workHist.length > 0) {
+            const w0 = workHist[0];
+            updates.r1Title = w0.title || prev.r1Title;
+            updates.r1Company = w0.company || prev.r1Company;
+            updates.r1Start = w0.startDate ? w0.startDate.substring(0, 7) : prev.r1Start;
+            updates.r1End = w0.endDate ? w0.endDate.substring(0, 7) : prev.r1End;
+            updates.r1Current = w0.isCurrent ? 'yes' : prev.r1Current;
+            updates.r1Summary = w0.summary || prev.r1Summary;
+            updates.r1Skills = (w0.skills || []).join(', ') || prev.r1Skills;
+            updates.r1Tech = (w0.technologies || []).join(', ') || prev.r1Tech;
+          }
+          if (workHist.length > 1) {
+            const w1 = workHist[1];
+            updates.r2Title = w1.title || prev.r2Title;
+            updates.r2Company = w1.company || prev.r2Company;
+            updates.r2Start = w1.startDate ? w1.startDate.substring(0, 7) : prev.r2Start;
+            updates.r2End = w1.endDate ? w1.endDate.substring(0, 7) : prev.r2End;
+            updates.r2Summary = w1.summary || prev.r2Summary;
+            updates.r2Skills = (w1.skills || []).join(', ') || prev.r2Skills;
+          }
+
+          // Auto-fill education
+          if (eduList.length > 0) {
+            const e0 = eduList[0];
+            updates.degree1 = e0.degree || prev.degree1;
+            updates.degree1Field = e0.fieldOfStudy || prev.degree1Field;
+            updates.degree1School = e0.institution || prev.degree1School;
+            updates.degree1Year = e0.endDate ? e0.endDate.substring(0, 4) : prev.degree1Year;
+          }
+
+          // Auto-fill skills from resume
+          const allSkills = [...new Set([...skillsList, ...techList])];
+          if (allSkills.length > 0 && !prev.technicalSkills) {
+            updates.technicalSkills = allSkills.slice(0, 20);
+          }
+
+          return updates;
+        });
       } else {
         setD(prev => ({ ...prev, resumeUploading: false }));
         alert('Upload failed: ' + (result.error || 'Unknown error. Please try again.'));
@@ -521,7 +568,7 @@ export default function OnboardingPage() {
         { key: 'linkedin_url', family: 'links', answer: d.linkedinUrl },
         { key: 'github_url', family: 'links', answer: d.githubUrl },
         { key: 'portfolio_url', family: 'links', answer: d.websiteUrl || d.portfolioLinks },
-        { key: 'salary_expectation', family: 'compensation', answer: d.salaryMin ? `$${parseInt(d.salaryMin).toLocaleString()}${d.salaryMax ? ' – $' + parseInt(d.salaryMax).toLocaleString() : '+'}` : '' },
+        { key: 'salary_expectation', family: 'compensation', answer: d.salaryMin ? `$${parseInt(d.salaryMin).toLocaleString()}${d.salaryMax ? ' - $' + parseInt(d.salaryMax).toLocaleString() : '+'}` : '' },
         { key: 'willing_to_relocate', family: 'logistics', answer: d.willingToRelocate === 'yes' ? 'Yes' : 'No' },
         { key: 'remote_preference', family: 'logistics', answer: { remote_only: 'Remote only', hybrid_ok: 'Open to hybrid or remote', onsite_ok: 'Open to onsite', any: 'Flexible' }[d.remotePreference] || d.remotePreference },
         // Behavioral
@@ -617,7 +664,7 @@ export default function OnboardingPage() {
           </div>
           <h1 className="text-3xl font-black text-slate-900 mb-3">Build your job-search profile</h1>
           <p className="text-slate-500 text-base leading-relaxed mb-6">
-            This is not a quick setup. This is a comprehensive data collection — the more you provide, the more precisely Careeva can match jobs, write in your voice, and answer application questions correctly the first time.
+            This is not a quick setup. This is a comprehensive data collection - the more you provide, the more precisely Careeva can match jobs, write in your voice, and answer application questions correctly the first time.
           </p>
           <div className="bg-white rounded-2xl border border-slate-100 p-5 mb-8 text-left space-y-2">
             {[
@@ -635,7 +682,7 @@ export default function OnboardingPage() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-slate-400 mb-4">Takes 15–20 minutes. Every field you fill improves automation quality.</p>
+          <p className="text-xs text-slate-400 mb-4">Takes 15-20 minutes. Every field you fill improves automation quality.</p>
           <button onClick={next} className="w-full py-4 rounded-2xl text-white font-bold text-base"
             style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 6px 20px rgba(16,185,129,0.35)' }}>
             Start Building My Profile →
@@ -653,7 +700,7 @@ export default function OnboardingPage() {
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
           <h1 className="text-3xl font-black text-slate-900 mb-3">Profile complete.</h1>
-          <p className="text-slate-500 mb-2">Careeva now has everything it needs to find, match, and apply to jobs for you — in your voice, with your actual experience.</p>
+          <p className="text-slate-500 mb-2">Careeva now has everything it needs to find, match, and apply to jobs for you - in your voice, with your actual experience.</p>
           <p className="text-slate-400 text-sm mb-8">You can always go back and add more. More data = better results.</p>
           <div className="space-y-3 mb-6">
             <button onClick={() => router.push('/dashboard/automation')}
@@ -692,7 +739,7 @@ export default function OnboardingPage() {
             {d.resumes.length > 0 && d.resumes.map((r, i) => (
               <div key={i} className="text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg">&#10003; {r.name}</div>
             ))}
-            <TA label="Paste additional resume text (optional — if you have multiple versions)" value={d.resumeText} onChange={s('resumeText')}
+            <TA label="Paste additional resume text (optional - if you have multiple versions)" value={d.resumeText} onChange={s('resumeText')}
               hint="Paste the text of a different resume variant here. The more versions you provide, the more the system learns about your full experience."
               placeholder="Paste resume text here..." rows={6} />
             <NavBar onBack={back} onNext={next} />
@@ -809,9 +856,19 @@ export default function OnboardingPage() {
         {/* WORK HISTORY 1 */}
         {step.id === 'work_history_1' && (
           <StepCard step={step}>
-            <p className="text-xs text-indigo-600 bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100">
-              💡 Be thorough here — every detail feeds directly into your cover letters and application answers. Include metrics whenever possible.
-            </p>
+            {d.resumes.length > 0 && d.r1Title ? (
+              <p className="text-xs text-emerald-700 bg-emerald-50 rounded-xl px-3 py-2 border border-emerald-100 mb-1">
+                ✓ Auto-filled from your resume — review and edit anything that looks wrong.
+              </p>
+            ) : d.resumes.length > 0 ? (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 border border-amber-100 mb-1">
+                ℹ️ Resume uploaded but positions couldn't be auto-detected — please fill in manually.
+              </p>
+            ) : (
+              <p className="text-xs text-indigo-600 bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100">
+                💡 Be thorough — every detail feeds directly into your cover letters and application answers.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <Inp label="Job title" value={d.r1Title} onChange={s('r1Title')} req placeholder="Senior Data Analyst" />
               <Inp label="Company name" value={d.r1Company} onChange={s('r1Company')} req placeholder="Acme Corp" />
@@ -853,9 +910,9 @@ export default function OnboardingPage() {
             <TA label="Role summary" value={d.r2Summary} onChange={s('r2Summary')} placeholder="What did you own and accomplish in this role?" rows={3} />
             <TA label="Bullet points (one per line)" value={d.r2Bullets} onChange={s('r2Bullets')} placeholder="• Built X that achieved Y&#10;• Led initiative that resulted in Z" rows={5} />
             <Inp label="Skills used" value={d.r2Skills} onChange={s('r2Skills')} placeholder="Skills, tools, technologies..." />
-            <TA label="Additional roles (earlier in your career — paste or summarize)" value={d.additionalRoles} onChange={s('additionalRoles')}
+            <TA label="Additional roles (earlier in your career - paste or summarize)" value={d.additionalRoles} onChange={s('additionalRoles')}
               hint="Include company, title, dates, and 1-2 key accomplishments per role. Everything you add improves matching."
-              placeholder="2018–2019: Operations Coordinator at XYZ. Managed logistics for 50+ client accounts. Reduced fulfillment errors by 30%.&#10;2016–2018: Business Analyst at ABC. Built dashboards used by C-suite. Saved $200K through process optimization." rows={6} />
+              placeholder="2018-2019: Operations Coordinator at XYZ. Managed logistics for 50+ client accounts. Reduced fulfillment errors by 30%.&#10;2016-2018: Business Analyst at ABC. Built dashboards used by C-suite. Saved $200K through process optimization." rows={6} />
             <NavBar onBack={back} onNext={next} />
           </StepCard>
         )}
@@ -916,7 +973,7 @@ export default function OnboardingPage() {
         {step.id === 'certifications' && (
           <StepCard step={step}>
             <TA label="Certifications & credentials (one per line)" value={d.certs} onChange={s('certs')}
-              hint="Include every certification, license, or credential — technical, professional, industry-specific."
+              hint="Include every certification, license, or credential - technical, professional, industry-specific."
               placeholder="AWS Certified Solutions Architect (2023)&#10;PMP - Project Management Professional (2022)&#10;Series 65 - Investment Advisor (2021)&#10;Google Analytics Certified&#10;Salesforce Administrator Certification&#10;CFA Level 1 (in progress)" rows={8} />
             <NavBar onBack={back} onNext={next} />
           </StepCard>
@@ -946,7 +1003,7 @@ export default function OnboardingPage() {
         {step.id === 'skills_soft' && (
           <StepCard step={step}>
             <TA label="Soft skills & professional competencies" value={d.softSkills} onChange={s('softSkills')}
-              hint="Think beyond buzzwords — describe your actual capabilities."
+              hint="Think beyond buzzwords - describe your actual capabilities."
               placeholder="Executive stakeholder communication, cross-functional project leadership, data storytelling, translating complex analysis for non-technical audiences, building trust with C-suite..." rows={4} />
             <TA label="Leadership & management experience" value={d.leadershipExp} onChange={s('leadershipExp')}
               hint="Include formal management, informal leadership, mentorship, project leadership."
@@ -1042,7 +1099,7 @@ export default function OnboardingPage() {
               <Inp label="Target / ideal salary (USD)" type="number" value={d.salaryMax} onChange={s('salaryMax')} placeholder="120000" hint="What you are actually targeting" />
             </div>
             <Radio label="How important is equity/stock?" value={d.equityImportance} onChange={s('equityImportance')} options={[
-              { value: 'critical', label: 'Critical — equity-first' },
+              { value: 'critical', label: 'Critical - equity-first' },
               { value: 'important', label: 'Important factor' },
               { value: 'nice_to_have', label: 'Nice to have' },
               { value: 'not_important', label: 'Not a factor' },
@@ -1056,17 +1113,17 @@ export default function OnboardingPage() {
         {/* CAREER NARRATIVE */}
         {step.id === 'career_narrative' && (
           <StepCard step={step}>
-            <TA label="Elevator pitch — how you describe yourself in 2-3 sentences" value={d.elevatorPitch} onChange={s('elevatorPitch')} req
+            <TA label="Elevator pitch - how you describe yourself in 2-3 sentences" value={d.elevatorPitch} onChange={s('elevatorPitch')} req
               hint="This becomes your default 'tell me about yourself' answer and is used in cover letter openers."
               placeholder="I am a data professional with 6 years of experience turning messy data into business decisions. I specialize in building analytics systems at fintech and crypto companies, and I have a track record of shipping work that directly influences product strategy and revenue." rows={4} />
             <TA label="Why are you looking for a new role right now?" value={d.whyJobSearch} onChange={s('whyJobSearch')}
-              hint="Used to authentically explain transitions. Be honest — the system uses this to frame your story correctly."
+              hint="Used to authentically explain transitions. Be honest - the system uses this to frame your story correctly."
               placeholder="After 4 years at the same company, I have maxed out the growth trajectory and am looking for a role with greater scope and impact. I want to work at a faster-moving company where data is more central to decision-making." rows={4} />
             <TA label="Your career goals for the next 3-5 years" value={d.careerGoals} onChange={s('careerGoals')}
               placeholder="I want to move into a Head of Analytics role at a growth-stage company. In 5 years, I see myself either as a VP-level data leader or founding the data function at a Series A/B company." rows={3} />
             <TA label="What makes you distinctly valuable? Your unique edge." value={d.uniqueValue} onChange={s('uniqueValue')} req
               hint="What can you do that most people with your title cannot? This is your differentiator."
-              placeholder="I can communicate complex analysis to non-technical executives in a way that drives actual decisions — not just nods. I have built end-to-end data pipelines and dashboards from scratch, which means I understand the full stack from ingestion to insight." rows={4} />
+              placeholder="I can communicate complex analysis to non-technical executives in a way that drives actual decisions - not just nods. I have built end-to-end data pipelines and dashboards from scratch, which means I understand the full stack from ingestion to insight." rows={4} />
             <TA label="Full personal / professional statement" value={d.personalStatement} onChange={s('personalStatement')}
               hint="A longer version (4-5 sentences) used in cover letters and long-form answer fields."
               placeholder="A comprehensive statement about who you are professionally, what you have built, what you are looking for, and why you are a strong candidate for your target roles..." rows={5} />
@@ -1088,7 +1145,7 @@ export default function OnboardingPage() {
                 <TA label="Description" value={(d as any)[`project${n}Desc`]} onChange={s(`project${n}Desc`)}
                   placeholder="What you built, the problem it solved, your specific contribution..." rows={3} />
                 <TA label="Impact & results" value={(d as any)[`project${n}Impact`]} onChange={s(`project${n}Impact`)}
-                  placeholder="Quantified outcomes — revenue saved, time reduced, users impacted, decisions influenced..." rows={2} />
+                  placeholder="Quantified outcomes - revenue saved, time reduced, users impacted, decisions influenced..." rows={2} />
               </div>
             ))}
             <NavBar onBack={back} onNext={next} />
@@ -1109,7 +1166,7 @@ export default function OnboardingPage() {
             <TA label="Personal values (what matters to you in a workplace)" value={d.personalValues} onChange={s('personalValues')}
               placeholder="Autonomy, ownership, rapid iteration, intellectual honesty, strong documentation culture, diverse teams, mission-driven work, learning budget..." rows={3} />
             <TA label="Fun fact or memorable personal detail" value={d.funFact} onChange={s('funFact')}
-              hint="Optional — but a good one makes cover letters more human."
+              hint="Optional - but a good one makes cover letters more human."
               placeholder="I ran my first marathon at 32 while working full time and completing an online ML course. I have visited 47 countries. I taught myself to code at 28 with no formal background..." rows={2} />
             <NavBar onBack={back} onNext={next} />
           </StepCard>
@@ -1121,7 +1178,7 @@ export default function OnboardingPage() {
             <p className="text-xs text-indigo-600 bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100 mb-2">
               These answers are stored and reused across all applications. Write them once, get them auto-inserted everywhere.
             </p>
-            <TA label='"Tell me about yourself" — 3-4 sentence professional summary' value={d.elevatorPitch} onChange={s('elevatorPitch')} rows={4} />
+            <TA label='"Tell me about yourself" - 3-4 sentence professional summary' value={d.elevatorPitch} onChange={s('elevatorPitch')} rows={4} />
             <TA label='"What is your greatest professional achievement?"' value={d.greatestAchievement} onChange={s('greatestAchievement')}
               hint="Use the STAR format: Situation, Task, Action, Result. Include a metric."
               placeholder="When I joined XYZ, the analytics team was spending 20 hours per week manually pulling reports... I built an automated pipeline that... resulting in a 95% reduction in manual effort and saving $140K/year in analyst time." rows={5} />
@@ -1140,12 +1197,12 @@ export default function OnboardingPage() {
         {step.id === 'behavioral_answers' && (
           <StepCard step={step}>
             <TA label='"Why are you interested in this role?" (template)' value={d.whyThisRole} onChange={s('whyThisRole')}
-              hint="Write a template — the system will customize it per application."
+              hint="Write a template - the system will customize it per application."
               placeholder="I am drawn to this role because [it aligns with my background in X and my goal to Y]. The opportunity to [do Z] is particularly compelling given my experience with [specific thing]." rows={4} />
             <TA label='"Why do you want to work at [Company]?" (template)' value={d.whyThisCompany} onChange={s('whyThisCompany')}
               placeholder="I have followed [Company] since [specific thing that shows genuine knowledge]. What draws me most is [specific aspect of their product, culture, or mission] because [authentic reason tied to your experience or values]." rows={4} />
             <TA label='"What salary are you expecting?"' value={d.salaryAnswer} onChange={s('salaryAnswer')}
-              placeholder="Based on my experience and current market data, I am targeting $[X]–$[Y]. I am open to discussing the full compensation package." rows={2} />
+              placeholder="Based on my experience and current market data, I am targeting $[X]-$[Y]. I am open to discussing the full compensation package." rows={2} />
             <NavBar onBack={back} onNext={next} />
           </StepCard>
         )}
@@ -1161,7 +1218,7 @@ export default function OnboardingPage() {
             <TA label="Describe your data analytics experience in depth" value={d.dataAnalyticsExp} onChange={s('dataAnalyticsExp')}
               placeholder="My analytics experience includes... I have built [data models, dashboards, pipelines, ML models]... The tools I am most proficient in are... I have presented analysis to [C-suite, investors, clients]..." rows={5} />
             <TA label="Any other industry-specific context you want pre-written" value={d.industryAnswer1} onChange={s('industryAnswer1')}
-              placeholder="Healthcare, operations, e-commerce, real estate, government, consulting — write your domain experience here..." rows={5} />
+              placeholder="Healthcare, operations, e-commerce, real estate, government, consulting - write your domain experience here..." rows={5} />
             <NavBar onBack={back} onNext={next} />
           </StepCard>
         )}
@@ -1171,7 +1228,7 @@ export default function OnboardingPage() {
           <StepCard step={step}>
             <Multi label="How would you describe your professional writing voice?" values={d.toneWords} onChange={s('toneWords')} options={['Direct', 'Concise', 'Warm', 'Analytical', 'Data-driven', 'Strategic', 'Humble', 'Confident', 'Human', 'Formal', 'Casual', 'Creative', 'Precise']} />
             <TA label="Phrases, words, or styles to AVOID in your applications" value={d.avoidPhrases} onChange={s('avoidPhrases')}
-              hint="Words and phrases that don't sound like you — the system will never use them."
+              hint="Words and phrases that don't sound like you - the system will never use them."
               placeholder="passionate, synergy, leverage, rockstar, ninja, disruptive, utilize, stakeholders, impactful, dynamic, hardworking, team player..." rows={3} />
             <TA label="Cover letter style notes" value={d.coverLetterStyle} onChange={s('coverLetterStyle')}
               hint="Describe how your cover letters should be structured and what tone they should strike."

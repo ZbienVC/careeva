@@ -181,7 +181,7 @@ export default function JobsPage() {
   const triggerSearch = async () => {
     setSearching(true);
     try {
-      const res = await fetch('/api/jobs/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources: ['remotive', 'themuse'] }) });
+      const res = await fetch('/api/jobs/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources: ['remotive', 'themuse', 'adzuna', 'arbeitnow', 'weworkremotely', 'authenticjobs', 'indeed', 'dice'] }) });
       const data = await res.json();
       setSearchResult({ total: data.total || 0, new: data.new || 0 });
       // Reload jobs

@@ -133,7 +133,7 @@ model WorkHistory {
 
   company     String
   title       String
-  startDate   DateTime
+  startDate   DateTime?
   endDate     DateTime?
   isCurrent   Boolean  @default(false)
   location    String?

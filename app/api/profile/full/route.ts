@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
 
   const [
     personalInfo,
+    userProfile,
     workHistory,
     education,
     projects,
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
     resumes,
   ] = await Promise.all([
     prisma.personalInfo.findUnique({ where: { userId: user.id } }),
+    prisma.userProfile.findUnique({ where: { userId: user.id } }),
     prisma.workHistory.findMany({
       where: { userId: user.id },
       include: { bullets: true },

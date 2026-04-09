@@ -405,6 +405,39 @@ export async function resolveAnswerFromProfile(
       }
       return null;
 
+    case 'why_this_company':
+    case 'why_this_role':
+      return null; // Generated per-job by AI at apply time
+
+    case 'describe_yourself':
+    case 'tell_me_about_yourself': {
+      const storedPitch = await prisma.reusableAnswer.findFirst({ where: { userId, questionKey: 'describe_yourself' } });
+      if (storedPitch?.answer) return { answer: storedPitch.answer, confidence: 0.9, source: 'stored' };
+      if (workHistory.length > 0) {
+        const latest = workHistory[workHistory.length - 1];
+        const base = latest.title + ' at ' + latest.company;
+        return { answer: 'I am a ' + base + '. ' + (latest.summary || ''), confidence: 0.6, source: 'profile' };
+      }
+      return null;
+    }
+
+    case 'greatest_strength': {
+      const s1 = await prisma.reusableAnswer.findFirst({ where: { userId, questionKey: 'greatest_strength' } });
+      return s1 ? { answer: s1.answer, confidence: 0.9, source: 'stored' } : null;
+    }
+
+    case 'greatest_weakness': {
+      const s2 = await prisma.reusableAnswer.findFirst({ where: { userId, questionKey: 'greatest_weakness' } });
+      return s2 ? { answer: s2.answer, confidence: 0.9, source: 'stored' } : null;
+    }
+
+    case 'greatest_achievement':
+    case 'proudest_accomplishment': {
+      const s3 = await prisma.reusableAnswer.findFirst({ where: { userId, questionKey: 'greatest_achievement' } });
+      return s3 ? { answer: s3.answer, confidence: 0.9, source: 'stored' } : null;
+    }
+
+
     // EEO fields â€” only answer if user has stored a preference
     case 'gender':
     case 'ethnicity':

@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
         const searchResult = await aggregateJobSearch({
           userId: user.id,
           queries,
-          sources: ['remotive', 'themuse', 'adzuna'],
+          sources: ['remotive', 'themuse', 'adzuna', 'arbeitnow', 'weworkremotely', 'authenticjobs', 'indeed', 'dice', 'jsearch'],
         });
         stats.searched = searchResult.new;
         runLog.push(`✓ Found ${searchResult.total} jobs, ${searchResult.new} new added`);

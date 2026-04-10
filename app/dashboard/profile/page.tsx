@@ -141,7 +141,7 @@ export default function ProfileBuilderPage() {
           fetch('/api/skills').then(r => r.json()),
           fetch('/api/job-preferences').then(r => r.json()),
           fetch('/api/answers').then(r => r.json()),
-          fetch('/api/profile/full', { credentials: 'include' }).then(r => r.ok ? r.json() : {}),
+          fetch('/api/profile/full', { credentials: 'include' }).then(r => r.ok ? r.json() : ({} as any)),
         ]);
         setPersonal(piRes.info || {});
         setWorkHistory(whRes.workHistory || []);
@@ -149,7 +149,7 @@ export default function ProfileBuilderPage() {
         setSkills(skillsRes.skills || []);
         setPrefs(prefsRes.prefs || {});
         setAnswers(answersRes.answers || []);
-        setResumes(resumesRes.resumes || []);
+        setResumes((resumesRes as any).resumes || []);
       } catch {
         // first load
       }

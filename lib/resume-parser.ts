@@ -137,11 +137,11 @@ function basicParse(text: string): ParsedResume {
     let isCurrent = /present|current/i.test(context);
 
     if (dates.length >= 1) {
-      startDate = normalizeDateStr(dates[0]);
-    }
+    if (dates.length >= 1 && dates[0]) {
+      startDate = normalizeDateStr(dates[0] as string);
     if (dates.length >= 2) {
-      endDate = isCurrent ? undefined : normalizeDateStr(dates[1]);
-    }
+    if (dates.length >= 2 && dates[1]) {
+      endDate = isCurrent ? undefined : normalizeDateStr(dates[1] as string);
 
     // Grab up to 3 lines after as summary
     const summaryLines = lines.slice(i + 1, i + 4)

@@ -404,7 +404,7 @@ export default function OnboardingPage() {
           // Auto-fill education
           if (eduList.length > 0) {
             const e0 = eduList[0];
-            updates.degree1 = e0.degree || prev.degree1;
+            updates.degree1Type = e0.degree || prev.degree1Type;
             updates.degree1Field = e0.fieldOfStudy || prev.degree1Field;
             updates.degree1School = e0.institution || prev.degree1School;
             updates.degree1Year = e0.endDate ? e0.endDate.substring(0, 4) : prev.degree1Year;

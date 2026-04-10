@@ -166,9 +166,10 @@ export default function ProfileBuilderPage() {
       const profileRes = await fetch('/api/profile/full', { credentials: 'include' });
       const profile = profileRes.ok ? await profileRes.json() : null;
 
-      // Use structured workHistory already saved to DB from resume upload
+      // Use structured data already saved to DB from resume upload
       const savedWorkHistory: any[] = profile?.workHistory || [];
-      const savedEducation: any[] = profile?.education || [];
+      // educationEntries are the structured EducationEntry records, profile.education is flat strings
+      const savedEducation: any[] = profile?.educationEntries || profile?.education?.map((e: string) => ({ institution: e, degree: '', fieldOfStudy: '' })) || [];
       const userProfile = profile?.userProfile;
 
       if (savedWorkHistory.length === 0 && savedEducation.length === 0 && !userProfile?.roles?.length) {
@@ -341,13 +342,25 @@ export default function ProfileBuilderPage() {
           <div className="space-y-3 mb-6">
             {workHistory.map((wh: any) => (
               <div key={wh.id} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <div className="flex items-start justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-900 text-sm">{wh.title}</p>
-                    <p className="text-slate-500 text-xs mt-0.5">{wh.company} · {wh.isCurrent ? 'Present' : (wh.endDate ? new Date(wh.endDate).getFullYear() : '')}</p>
+                    <p className="text-slate-500 text-xs mt-0.5">{wh.company}{wh.startDate || wh.endDate ? ' · ' + (wh.startDate ? new Date(wh.startDate).getFullYear() : '') + (wh.isCurrent ? '–Present' : wh.endDate ? '–' + new Date(wh.endDate).getFullYear() : '') : ''}</p>
                     {wh.summary && <p className="text-slate-400 text-xs mt-1 line-clamp-2">{wh.summary}</p>}
+                    {(wh.skills?.length > 0 || wh.technologies?.length > 0) && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {[...(wh.skills || []), ...(wh.technologies || [])].slice(0, 6).map((s: string) => (
+                          <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">{s}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{(wh.bullets || []).length} bullets</span>
+                  <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{(wh.bullets || []).length} bullets</span>
+                    <button
+                      onClick={() => fetch('/api/work-history?id=' + wh.id, { method: 'DELETE', credentials: 'include' }).then(() => setWorkHistory((w: any[]) => w.filter(x => x.id !== wh.id)))}
+                      className="text-slate-300 hover:text-red-400 text-xs transition-colors" title="Remove">✕</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -408,15 +421,13 @@ export default function ProfileBuilderPage() {
             ))}
           </div>
         )}
-        {education.length === 0 && (
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs text-slate-400">No education entries yet</p>
-            <button onClick={parseFromResume} disabled={parsing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
-              {parsing ? '⏳ Importing...' : '📄 Import from Resume'}
-            </button>
-          </div>
-        )}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs text-slate-400">{education.length === 0 ? 'No education entries yet' : education.length + ' ' + (education.length === 1 ? 'entry' : 'entries') + ' imported'}</p>
+          <button onClick={parseFromResume} disabled={parsing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
+            {parsing ? '⏳ Importing...' : '📄 Import from Resume'}
+          </button>
+        </div>
         <div className="border border-dashed border-slate-200 rounded-xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Institution" value={newEdu.institution} onChange={(v: string) => setNewEdu((e: any) => ({ ...e, institution: v }))} placeholder="University of..." required />

@@ -1,9 +1,9 @@
 /**
  * lib/resume-parser.ts
  *
- * Parses resume files (PDF, DOCX) into structured data.
- * Uses Claude/OpenAI when available, falls back to keyword extraction.
- * Extracts: skills, technologies, roles, work history positions, education, years experience, raw text.
+ * Parses PDF/DOCX/TXT resumes into structured data.
+ * Uses OpenAI when available; falls back to heuristic parsing.
+ * Always returns workHistory[], educationEntries[], skills[], technologies[].
  */
 
 import fs from 'fs';
@@ -15,8 +15,8 @@ import OpenAI from 'openai';
 export interface WorkHistoryEntry {
   company: string;
   title: string;
-  startDate?: string;   // YYYY-MM format
-  endDate?: string;     // YYYY-MM format or null if current
+  startDate?: string;   // YYYY-MM
+  endDate?: string;     // YYYY-MM or null if current
   isCurrent: boolean;
   summary: string;
   skills: string[];
@@ -27,7 +27,7 @@ export interface EducationEntry {
   institution: string;
   degree: string;
   fieldOfStudy: string;
-  endDate?: string;     // YYYY or YYYY-MM
+  endDate?: string;     // YYYY
 }
 
 export interface ParsedResume {
@@ -35,7 +35,7 @@ export interface ParsedResume {
   roles: string[];
   industries: string[];
   yearsExperience: number;
-  education: string[];            // flat strings for backward compat
+  education: string[];
   technologies: string[];
   rawText: string;
   workHistory: WorkHistoryEntry[];
@@ -59,11 +59,14 @@ function extractTextFromTXT(filePath: string): string {
   return fs.readFileSync(filePath, 'utf8');
 }
 
-// ─── Fallback keyword parser ──────────────────────────────────────────────────
+// ─── Heuristic fallback parser ───────────────────────────────────────────────
+// Used when OpenAI is unavailable. Extracts structured data from plain text.
 
 function basicParse(text: string): ParsedResume {
   const lower = text.toLowerCase();
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
+  // ── Skills / technologies ──
   const techKeywords = [
     'python', 'javascript', 'typescript', 'java', 'sql', 'react', 'node.js', 'nodejs',
     'aws', 'gcp', 'azure', 's3', 'lambda', 'ec2', 'docker', 'kubernetes', 'git',
@@ -72,36 +75,149 @@ function basicParse(text: string): ParsedResume {
     'spark', 'kafka', 'airflow', 'dbt', 'snowflake', 'databricks', 'tableau', 'looker',
     'solidity', 'rust', 'go', 'scala', 'r', 'excel', 'figma', 'sketch', 'jira',
     'github', 'gitlab', 'jenkins', 'terraform', 'ansible', 'fastapi', 'flask', 'django',
+    'stripe', 'twilio', 'salesforce', 'hubspot', 'zapier', 'notion', 'linear',
   ];
   const technologies = techKeywords.filter(kw => lower.includes(kw));
   const skills = technologies.slice(0, 20);
 
+  // ── Years of experience ──
   const yearsMatch = text.match(/(\d+)\+?\s*years?\s+(?:of\s+)?(?:experience|exp)/i);
   const yearsExperience = yearsMatch ? parseInt(yearsMatch[1]) : 0;
 
-  const rolePatterns = ['engineer', 'developer', 'analyst', 'manager', 'director', 'designer',
-    'scientist', 'architect', 'lead', 'consultant', 'specialist', 'coordinator', 'vp', 'head of'];
-  const roles: string[] = [];
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed.length > 3 && trimmed.length < 80 &&
-        rolePatterns.some(r => trimmed.toLowerCase().includes(r)) &&
-        !trimmed.includes('•') && !trimmed.includes('@')) {
-      roles.push(trimmed);
+  // ── Work history heuristic extraction ──
+  // Strategy: find lines that look like job titles (contain role keywords)
+  // followed by company names, then grab surrounding text as summary
+  const rolePatterns = [
+    'engineer', 'developer', 'analyst', 'manager', 'director', 'designer',
+    'scientist', 'architect', 'lead', 'consultant', 'specialist', 'coordinator',
+    'vp', 'vice president', 'head of', 'founder', 'cto', 'ceo', 'coo', 'cfo',
+    'product', 'marketing', 'operations', 'strategy', 'growth', 'data',
+  ];
+
+  const workHistory: WorkHistoryEntry[] = [];
+  const seenCompanies = new Set<string>();
+
+  // Date patterns like "Jan 2020", "2020 - 2022", "2020–Present"
+  const dateRe = /(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{4}|\d{4}\s*[-–—]\s*(?:\d{4}|present|current)/gi;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineLower = line.toLowerCase();
+
+    // Skip lines that are too short, too long, or are section headers
+    if (line.length < 5 || line.length > 100) continue;
+    if (/^(education|skills|certif|awards|projects|summary|experience|work|employment)/i.test(line)) continue;
+
+    const isRoleLine = rolePatterns.some(r => lineLower.includes(r));
+    if (!isRoleLine) continue;
+
+    // Try to find company on adjacent lines
+    const prevLine = i > 0 ? lines[i - 1] : '';
+    const nextLine = i < lines.length - 1 ? lines[i + 1] : '';
+
+    // Company heuristic: short line near role line, not a date, not a url
+    const companyCandidate = [prevLine, nextLine].find(l =>
+      l.length > 2 && l.length < 80 &&
+      !dateRe.test(l) &&
+      !l.includes('@') &&
+      !l.includes('http') &&
+      !/^\d/.test(l) &&
+      !rolePatterns.some(r => l.toLowerCase().includes(r))
+    );
+
+    const company = companyCandidate || '';
+    if (!company || seenCompanies.has(company.toLowerCase())) continue;
+    seenCompanies.add(company.toLowerCase());
+
+    // Extract dates from surrounding context
+    const context = lines.slice(Math.max(0, i - 2), i + 3).join(' ');
+    const dates = context.match(dateRe) || [];
+    let startDate: string | undefined;
+    let endDate: string | undefined;
+    let isCurrent = /present|current/i.test(context);
+
+    if (dates.length >= 1) {
+      startDate = normalizeDateStr(dates[0]);
     }
+    if (dates.length >= 2) {
+      endDate = isCurrent ? undefined : normalizeDateStr(dates[1]);
+    }
+
+    // Grab up to 3 lines after as summary
+    const summaryLines = lines.slice(i + 1, i + 4)
+      .filter(l => l.length > 20 && !dateRe.test(l) && l !== company)
+      .slice(0, 2);
+    const summary = summaryLines.join(' ').slice(0, 300);
+
+    workHistory.push({
+      company,
+      title: line,
+      startDate,
+      endDate,
+      isCurrent,
+      summary,
+      skills: technologies.slice(0, 5),
+      technologies: technologies.slice(0, 5),
+    });
+
+    if (workHistory.length >= 5) break;
+  }
+
+  // ── Education heuristic extraction ──
+  const educationEntries: EducationEntry[] = [];
+  const degreeKeywords = ["bachelor", "master", "phd", "doctor", "associate", "mba", "b.s", "m.s", "b.a", "m.a", "b.eng", "m.eng"];
+  const universityKeywords = ["university", "college", "institute", "school", "academy"];
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineLower = lines[i].toLowerCase();
+    const isDegree = degreeKeywords.some(d => lineLower.includes(d));
+    const isUniversity = universityKeywords.some(u => lineLower.includes(u));
+
+    if (!isDegree && !isUniversity) continue;
+
+    const institution = isUniversity ? lines[i] : (lines[i + 1] || lines[i - 1] || lines[i]);
+    const degree = isDegree ? lines[i] : '';
+    const yearMatch = lines.slice(Math.max(0, i - 1), i + 3).join(' ').match(/\b(19|20)\d{2}\b/);
+
+    educationEntries.push({
+      institution: institution.slice(0, 100),
+      degree: degree.slice(0, 80),
+      fieldOfStudy: '',
+      endDate: yearMatch ? yearMatch[0] : undefined,
+    });
+
+    if (educationEntries.length >= 3) break;
   }
 
   return {
     skills,
-    roles: [...new Set(roles)].slice(0, 8),
+    roles: workHistory.map(w => w.title).slice(0, 5),
     industries: [],
     yearsExperience,
-    education: [],
+    education: educationEntries.map(e => e.degree + (e.institution ? ' at ' + e.institution : '')),
     technologies,
     rawText: text,
-    workHistory: [],
-    educationEntries: [],
+    workHistory,
+    educationEntries,
   };
+}
+
+// ─── Date normalization helper ────────────────────────────────────────────────
+
+function normalizeDateStr(dateStr: string): string {
+  const monthMap: Record<string, string> = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+  };
+  const lower = dateStr.toLowerCase();
+  for (const [mon, num] of Object.entries(monthMap)) {
+    if (lower.includes(mon)) {
+      const yearMatch = dateStr.match(/\d{4}/);
+      if (yearMatch) return yearMatch[0] + '-' + num;
+    }
+  }
+  const yearMatch = dateStr.match(/\d{4}/);
+  return yearMatch ? yearMatch[0] + '-01' : '';
 }
 
 // ─── Main parse function ──────────────────────────────────────────────────────
@@ -117,7 +233,7 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
   } else if (ext === '.txt') {
     resumeText = extractTextFromTXT(filePath);
   } else {
-    throw new Error('Unsupported file format. Please upload PDF, DOCX, or TXT.');
+    throw new Error('Unsupported format. Upload PDF, DOCX, or TXT.');
   }
 
   if (!process.env.OPENAI_API_KEY) {
@@ -133,15 +249,15 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
         {
           role: 'system',
           content: `You are an expert resume parser. Extract ONLY information explicitly stated in the resume. Return a JSON object with these exact keys:
-- skills: string[] (technical and soft skills mentioned)
-- roles: string[] (job titles/roles held - exact titles from resume)
-- industries: string[] (industries the person has worked in)
+- skills: string[] (technical and soft skills)
+- roles: string[] (exact job titles from resume)
+- industries: string[] (industries worked in)
 - yearsExperience: number (total years of work experience)
-- education: string[] (degrees and certifications as plain strings)
-- technologies: string[] (programming languages, frameworks, tools)
-- workHistory: array of { company: string, title: string, startDate: string (YYYY-MM), endDate: string (YYYY-MM or null if current), isCurrent: boolean, summary: string (1-2 sentences), skills: string[], technologies: string[] }
-- educationEntries: array of { institution: string, degree: string, fieldOfStudy: string, endDate: string (YYYY) }
-Return ONLY valid JSON. Do not fabricate or infer anything not in the resume.`,
+- education: string[] (degrees as plain strings)
+- technologies: string[] (languages, frameworks, tools)
+- workHistory: array of { company: string, title: string, startDate: string (YYYY-MM or ""), endDate: string (YYYY-MM or ""), isCurrent: boolean, summary: string (1-2 sentences max), skills: string[], technologies: string[] }
+- educationEntries: array of { institution: string, degree: string, fieldOfStudy: string, endDate: string (YYYY or "") }
+Return ONLY valid JSON. Never fabricate or infer anything not explicitly in the resume.`,
         },
         {
           role: 'user',
@@ -152,41 +268,41 @@ Return ONLY valid JSON. Do not fabricate or infer anything not in the resume.`,
     });
 
     const content = response.choices[0].message.content || '';
-    // Strip markdown code blocks if present
     const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
     try {
       const parsed = JSON.parse(cleaned);
       return {
-        skills: parsed.skills || [],
-        roles: parsed.roles || [],
-        industries: parsed.industries || [],
-        yearsExperience: parsed.yearsExperience || 0,
-        education: parsed.education || [],
-        technologies: parsed.technologies || [],
+        skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+        roles: Array.isArray(parsed.roles) ? parsed.roles : [],
+        industries: Array.isArray(parsed.industries) ? parsed.industries : [],
+        yearsExperience: Number(parsed.yearsExperience) || 0,
+        education: Array.isArray(parsed.education) ? parsed.education : [],
+        technologies: Array.isArray(parsed.technologies) ? parsed.technologies : [],
         rawText: resumeText,
-        workHistory: (parsed.workHistory || []).map((w: any) => ({
-          company: w.company || '',
-          title: w.title || '',
-          startDate: w.startDate || null,
-          endDate: w.isCurrent ? null : (w.endDate || null),
-          isCurrent: !!w.isCurrent,
-          summary: w.summary || '',
-          skills: w.skills || [],
-          technologies: w.technologies || [],
+        workHistory: (Array.isArray(parsed.workHistory) ? parsed.workHistory : []).map((w: any) => ({
+          company: String(w.company || ''),
+          title: String(w.title || ''),
+          startDate: w.startDate || undefined,
+          endDate: w.isCurrent ? undefined : (w.endDate || undefined),
+          isCurrent: Boolean(w.isCurrent),
+          summary: String(w.summary || ''),
+          skills: Array.isArray(w.skills) ? w.skills : [],
+          technologies: Array.isArray(w.technologies) ? w.technologies : [],
         })),
-        educationEntries: (parsed.educationEntries || []).map((e: any) => ({
-          institution: e.institution || '',
-          degree: e.degree || '',
-          fieldOfStudy: e.fieldOfStudy || '',
-          endDate: e.endDate || null,
+        educationEntries: (Array.isArray(parsed.educationEntries) ? parsed.educationEntries : []).map((e: any) => ({
+          institution: String(e.institution || ''),
+          degree: String(e.degree || ''),
+          fieldOfStudy: String(e.fieldOfStudy || ''),
+          endDate: e.endDate || undefined,
         })),
       };
     } catch {
+      // JSON parse failed — fall back to heuristic
       return basicParse(resumeText);
     }
   } catch (err) {
-    console.warn('OpenAI parse failed, using basicParse:', err instanceof Error ? err.message : err);
+    console.warn('OpenAI parse failed, using heuristic fallback:', err instanceof Error ? err.message : err);
     return basicParse(resumeText);
   }
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import React from 'react';
 import { useRouter } from 'next/navigation';
 import { LoadingPage } from '@/components/Loading';
 
@@ -104,6 +105,12 @@ export default function ProfileBuilderPage() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
 
+  // Resume management
+  const [resumes, setResumes] = useState<any[]>([]);
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeUploadMsg, setResumeUploadMsg] = useState('');
+  const resumeInputRef = React.useRef<HTMLInputElement>(null);
+
   // Personal info
   const [personal, setPersonal] = useState<any>({});
   // Work history
@@ -127,13 +134,14 @@ export default function ProfileBuilderPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [piRes, whRes, eduRes, skillsRes, prefsRes, answersRes] = await Promise.all([
+        const [piRes, whRes, eduRes, skillsRes, prefsRes, answersRes, resumesRes] = await Promise.all([
           fetch('/api/personal-info').then(r => r.json()),
           fetch('/api/work-history').then(r => r.json()),
           fetch('/api/education').then(r => r.json()),
           fetch('/api/skills').then(r => r.json()),
           fetch('/api/job-preferences').then(r => r.json()),
           fetch('/api/answers').then(r => r.json()),
+          fetch('/api/profile/full', { credentials: 'include' }).then(r => r.ok ? r.json() : {}),
         ]);
         setPersonal(piRes.info || {});
         setWorkHistory(whRes.workHistory || []);
@@ -141,6 +149,7 @@ export default function ProfileBuilderPage() {
         setSkills(skillsRes.skills || []);
         setPrefs(prefsRes.prefs || {});
         setAnswers(answersRes.answers || []);
+        setResumes(resumesRes.resumes || []);
       } catch {
         // first load
       }
@@ -158,6 +167,49 @@ export default function ProfileBuilderPage() {
     } catch { /* handle */ }
     setSaving(s => ({ ...s, [key]: false }));
   }, []);
+
+  const handleResumeUpload = async (file: File) => {
+    setResumeUploading(true);
+    setResumeUploadMsg('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload', { method: 'POST', credentials: 'include', body: formData });
+      const result = await res.json().catch(() => ({ success: false, error: 'Server error' }));
+      if (result.success || result.profile) {
+        setResumeUploadMsg('✓ Resume uploaded and parsed successfully!');
+        // Reload resumes list
+        const profileRes = await fetch('/api/profile/full', { credentials: 'include' });
+        const profile = profileRes.ok ? await profileRes.json() : null;
+        setResumes(profile?.resumes || []);
+        // Auto-populate work history and education from parsed data
+        const savedWorkHistory: any[] = profile?.workHistory || [];
+        const savedEducation: any[] = profile?.educationEntries || [];
+        if (savedWorkHistory.length > 0) setWorkHistory(savedWorkHistory);
+        if (savedEducation.length > 0) setEducation(savedEducation);
+        // Reload skills too
+        const skillsRes = await fetch('/api/skills').then(r => r.json());
+        setSkills(skillsRes.skills || []);
+        const positions = savedWorkHistory.length;
+        const edus = savedEducation.length;
+        const skillCount = result.skillsAdded || 0;
+        setResumeUploadMsg('✓ Resume saved! ' + positions + ' position(s), ' + edus + ' education entry/entries, and ' + skillCount + ' skills imported. Review below.');
+      } else {
+        setResumeUploadMsg('✗ ' + (result.error || 'Upload failed. Please try again.'));
+      }
+    } catch {
+      setResumeUploadMsg('✗ Upload failed — check your connection and try again.');
+    } finally {
+      setResumeUploading(false);
+    }
+  };
+
+  const removeResume = async (resumeId: string) => {
+    try {
+      await fetch('/api/upload?id=' + resumeId, { method: 'DELETE', credentials: 'include' });
+      setResumes(r => r.filter((x: any) => x.id !== resumeId));
+    } catch { /* non-fatal */ }
+  };
 
   const parseFromResume = async () => {
     setParsing(true);
@@ -299,6 +351,90 @@ export default function ProfileBuilderPage() {
           </div>
         )}
       </div>
+
+      {/* 0. Resume Management — always first */}
+      <Section title="Resume" subtitle="Upload your resume to auto-populate work history, education, and skills" icon="📄" completeness={resumes.length > 0 ? 100 : 0}>
+        <input
+          ref={resumeInputRef}
+          type="file"
+          accept=".pdf,.docx,.doc,.txt"
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleResumeUpload(f); e.target.value = ''; }}
+        />
+
+        {/* Uploaded resumes list */}
+        {resumes.length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {resumes.map((r: any) => (
+              <div key={r.id} className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">📄</span>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-800">{r.name || 'Uploaded Resume'}</p>
+                    <p className="text-xs text-emerald-600">{r.fileType?.toUpperCase()} · Uploaded {new Date(r.createdAt).toLocaleDateString()}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => resumeInputRef.current?.click()}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-700 font-semibold hover:bg-emerald-50 transition-all"
+                  >
+                    Replace
+                  </button>
+                  <button
+                    onClick={() => removeResume(r.id)}
+                    className="text-xs px-2 py-1.5 rounded-lg text-slate-400 hover:text-red-500 transition-all"
+                    title="Remove resume"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-4 mb-4">
+            <p className="text-sm font-semibold text-amber-800 mb-1">No resume uploaded yet</p>
+            <p className="text-xs text-amber-700">Upload your resume to automatically populate your work history, education, and skills below.</p>
+          </div>
+        )}
+
+        {/* Upload button */}
+        <button
+          onClick={() => resumeInputRef.current?.click()}
+          disabled={resumeUploading}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-indigo-300 text-indigo-600 font-semibold text-sm hover:bg-indigo-50 transition-all disabled:opacity-60 disabled:cursor-wait"
+        >
+          {resumeUploading ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+              </svg>
+              Uploading & parsing resume...
+            </>
+          ) : (
+            <>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              {resumes.length > 0 ? 'Upload another resume' : 'Upload resume (PDF, DOCX, or TXT)'}
+            </>
+          )}
+        </button>
+
+        {/* Status message */}
+        {resumeUploadMsg && (
+          <p className={`text-xs mt-3 px-3 py-2 rounded-lg font-medium ${resumeUploadMsg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+            {resumeUploadMsg}
+          </p>
+        )}
+
+        {/* Info: what gets extracted */}
+        {resumes.length === 0 && (
+          <p className="text-xs text-slate-400 text-center mt-3">
+            After upload, your work history, education, and skills are automatically extracted and pre-filled below. You can edit everything afterward.
+          </p>
+        )}
+      </Section>
 
       {/* 1. Personal Info */}
       <Section title="Contact & Identity" subtitle="Used on every application" icon="👤" completeness={personalComplete}>

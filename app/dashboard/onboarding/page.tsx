@@ -410,10 +410,13 @@ export default function OnboardingPage() {
             updates.degree1Year = e0.endDate ? e0.endDate.substring(0, 4) : prev.degree1Year;
           }
 
-          // Auto-fill skills from resume
-          const allSkills = [...new Set([...skillsList, ...techList])];
-          if (allSkills.length > 0 && !prev.technicalSkills) {
-            updates.technicalSkills = allSkills.slice(0, 20);
+          // Auto-fill skills from resume into the correct field names
+          if (techList.length > 0 && !prev.programmingLanguages) {
+            updates.programmingLanguages = techList.slice(0, 10).join(', ');
+          }
+          if (skillsList.length > 0 && !prev.otherTech) {
+            const nonTech = skillsList.filter((s: string) => !techList.includes(s));
+            if (nonTech.length > 0) updates.otherTech = nonTech.slice(0, 10).join(', ');
           }
 
           return updates;

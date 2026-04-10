@@ -165,13 +165,56 @@ export default function ProfileBuilderPage() {
     try {
       const profileRes = await fetch('/api/profile/full', { credentials: 'include' });
       const profile = profileRes.ok ? await profileRes.json() : null;
-      const roles: string[] = profile?.userProfile?.roles || [];
-      if (roles.length === 0) {
-        setParseMsg('No resume data found. Upload your resume first, then return here to import.');
+
+      // Use structured workHistory already saved to DB from resume upload
+      const savedWorkHistory: any[] = profile?.workHistory || [];
+      const savedEducation: any[] = profile?.education || [];
+      const userProfile = profile?.userProfile;
+
+      if (savedWorkHistory.length === 0 && savedEducation.length === 0 && !userProfile?.roles?.length) {
+        setParseMsg('No resume data found. Upload your resume first (Resume step), then come back to import.');
         return;
       }
-      setNewWork((w: any) => ({ ...w, title: roles[0] || '' }));
-      setParseMsg('Job title pre-filled from your resume. Edit details and click + Add Position for each role.');
+
+      let imported = 0;
+
+      // Import all work history positions not already shown
+      for (const wh of savedWorkHistory) {
+        if (!wh.company || !wh.title) continue;
+        // Check if already in local state
+        const alreadyHave = workHistory.some(
+          (w: any) => w.company?.toLowerCase() === wh.company?.toLowerCase() &&
+                      w.title?.toLowerCase() === wh.title?.toLowerCase()
+        );
+        if (alreadyHave) continue;
+        // These are already in DB (saved by upload route) — just refresh local state
+        imported++;
+      }
+
+      // If work history is in DB, just reload it
+      if (savedWorkHistory.length > 0) {
+        setWorkHistory(savedWorkHistory);
+        imported += savedWorkHistory.length;
+      }
+
+      // Import education
+      if (savedEducation.length > 0) {
+        setEducation(savedEducation);
+        imported += savedEducation.length;
+      }
+
+      // Pre-fill newWork form with first role if work history is empty
+      if (savedWorkHistory.length === 0 && userProfile?.roles?.length > 0) {
+        setNewWork((w: any) => ({ ...w, title: userProfile.roles[0] || '' }));
+        setParseMsg('Job title pre-filled. Fill in details and click + Add Position for each role.');
+        return;
+      }
+
+      if (imported > 0) {
+        setParseMsg('✓ Imported ' + savedWorkHistory.length + ' position(s) and ' + savedEducation.length + ' education entry/entries from your resume. Review and edit anything that looks wrong.');
+      } else {
+        setParseMsg('All resume data is already loaded. Edit any field directly to make corrections.');
+      }
     } catch {
       setParseMsg('Could not read resume data. Please fill in manually.');
     } finally {
@@ -363,6 +406,15 @@ export default function ProfileBuilderPage() {
                   className="text-slate-300 hover:text-red-400 text-xs">✕</button>
               </div>
             ))}
+          </div>
+        )}
+        {education.length === 0 && (
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs text-slate-400">No education entries yet</p>
+            <button onClick={parseFromResume} disabled={parsing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
+              {parsing ? '⏳ Importing...' : '📄 Import from Resume'}
+            </button>
           </div>
         )}
         <div className="border border-dashed border-slate-200 rounded-xl p-4 space-y-3">

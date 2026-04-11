@@ -221,7 +221,8 @@ export default function ProfileBuilderPage() {
       // Use structured data already saved to DB from resume upload
       const savedWorkHistory: any[] = profile?.workHistory || [];
       // educationEntries are the structured EducationEntry records, profile.education is flat strings
-      const savedEducation: any[] = profile?.educationEntries || profile?.education?.map((e: string) => ({ institution: e, degree: '', fieldOfStudy: '' })) || [];
+      // Only use structured EducationEntry records — never fall back to flat string array
+      const savedEducation: any[] = profile?.educationEntries || [];
       const userProfile = profile?.userProfile;
 
       if (savedWorkHistory.length === 0 && savedEducation.length === 0 && !userProfile?.roles?.length) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUserFromRequest } from '@/lib/session';
 
-// GET /api/profile/full â€” returns the complete structured profile
+// GET /api/profile/full - returns the complete structured profile
 export async function GET(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -11,8 +11,7 @@ export async function GET(request: NextRequest) {
     personalInfo,
     userProfile,
     workHistory,
-    education,
-    educationEntries,
+    educationData,
     projects,
     certifications,
     socialLinks,
@@ -60,7 +59,7 @@ export async function GET(request: NextRequest) {
     !!personalInfo?.phone,
     !!personalInfo?.linkedinUrl,
     workHistory.length > 0,
-    education.length > 0,
+    educationData.length > 0,
     skills.length >= 5,
     !!jobPrefs?.targetTitles?.length,
     !!jobPrefs?.salaryMinUSD,
@@ -70,13 +69,13 @@ export async function GET(request: NextRequest) {
   ];
   const completeness = Math.round((checks.filter(Boolean).length / checks.length) * 100);
 
-  const educationEntries = education;
   return NextResponse.json({
     completeness,
     personalInfo,
+    userProfile,
     workHistory,
-    education,
-    educationEntries,
+    education: educationData,
+    educationEntries: educationData,   // alias so profile page can use either name
     projects,
     certifications,
     socialLinks,

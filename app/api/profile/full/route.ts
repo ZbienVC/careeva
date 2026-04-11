@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
     personalInfo,
     userProfile,
     workHistory,
-    educationEntries: education,
+    education,
+    educationEntries,
     projects,
     certifications,
     socialLinks,
@@ -69,11 +70,13 @@ export async function GET(request: NextRequest) {
   ];
   const completeness = Math.round((checks.filter(Boolean).length / checks.length) * 100);
 
+  const educationEntries = education;
   return NextResponse.json({
     completeness,
     personalInfo,
     workHistory,
-    educationEntries: education,
+    education,
+    educationEntries,
     projects,
     certifications,
     socialLinks,

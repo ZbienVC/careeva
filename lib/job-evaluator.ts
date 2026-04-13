@@ -388,8 +388,8 @@ function buildProfileContext(
   const lines: string[] = [];
 
   if (profile) {
-    if (profile.headline) lines.push(`Headline: ${profile.headline}`);
-    if (profile.summary) lines.push(`Summary: ${profile.summary}`);
+    if (profile.jobTitle) lines.push(`Current target role: ${profile.jobTitle}`);
+    if (profile.careerGoals) lines.push(`Career goals: ${profile.careerGoals}`);
     if (profile.location) lines.push(`Location: ${profile.location}`);
   }
 

@@ -104,27 +104,41 @@ function JobCard({ job, onApply, onScore }: {
 
       {/* Application packet preview */}
       {previewMode && packet && (
-        <div className="bg-slate-50 rounded-xl p-3 space-y-2 text-xs border border-slate-200">
-          <p className="font-semibold text-slate-700 flex items-center gap-1.5">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            Application packet ready
-            <span className={`ml-auto px-1.5 py-0.5 rounded-full ${packet.canAutoApply ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-              {packet.canAutoApply ? 'Can auto-submit' : 'Needs review'}
+          {/* Quality + archetype header */}
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            {(packet as any).archetype && (
+              <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px]">{(packet as any).archetype}</span>
+            )}
+            {(packet as any).qualityScore !== undefined && (
+              <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${(packet as any).qualityScore >= 80 ? "bg-emerald-100 text-emerald-700" : (packet as any).qualityScore >= 65 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`}>
+                Quality {(packet as any).qualityScore}/100
+              </span>
+            )}
+            <span className={`ml-auto px-2 py-0.5 rounded-full font-bold text-[10px] ${packet.canAutoApply ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+              {packet.canAutoApply ? "✓ Ready to submit" : "Review needed"}
             </span>
-          </p>
-          {packet.missingFields?.length > 0 && (
-            <p className="text-amber-600">Missing: {packet.missingFields.join(', ')}</p>
+          </div>
+          {(packet as any).keywords?.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {(packet as any).keywords.slice(0, 5).map((kw: string) => (
+                <span key={kw} className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px]">{kw}</span>
+              ))}
+            </div>
           )}
-          <p className="text-slate-500 line-clamp-3">{packet.coverLetter?.slice(0, 200)}...</p>
-          <div className="flex gap-2 pt-1">
+          {packet.missingFields?.length > 0 && (
+            <p className="text-amber-600 font-semibold text-[11px] mb-2">⚠ Missing: {packet.missingFields.join(", ")}</p>
+          )}
+          <p className="text-slate-500 line-clamp-3 text-[11px] leading-relaxed">{packet.coverLetter?.slice(0, 260)}…</p>
+          <div className="flex gap-2 pt-2 mt-2 border-t border-slate-200">
             <button onClick={() => setPreviewMode(false)} className="text-xs text-slate-400 hover:text-slate-600">Hide</button>
             {packet.canAutoApply && (
               <button
                 onClick={async () => {
-                  await fetch(`/api/jobs/${job.id}/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'auto' }) });
-                  setApplied(true);
+                  await fetch(`/api/jobs/${job.id}/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "auto" }) });
+                  setApplied(true); setPreviewMode(false);
                 }}
-                className="ml-auto text-xs font-semibold text-emerald-600 hover:text-emerald-700"
+                className="ml-auto text-xs font-bold text-white px-3 py-1.5 rounded-lg"
+                style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}
               >
                 Submit now →
               </button>

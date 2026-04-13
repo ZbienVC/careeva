@@ -341,171 +341,170 @@ export default function JobDetailPage() {
           </div>
         </div>
 
-          {/* ─── Career-ops Intelligence Panel ─────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-slate-800">Job Intelligence</h3>
-                <p className="text-xs text-slate-400 mt-0.5">7-block evaluation · LinkedIn outreach · Research brief</p>
-              </div>
-              <button
-                onClick={handleRunEvaluation}
-                disabled={runningEval}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all"
-                style={{ background: "linear-gradient(135deg,#6366f1,#4f46e5)" }}
-              >
-                {runningEval ? "Analyzing…" : (evaluation ? "↻ Re-run" : "▶ Run Evaluation")}
-              </button>
-            </div>
-
-            {evaluation ? (
-              <div className="p-5">
-                <div className="flex items-center gap-2 mb-4 flex-wrap">
-                  <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700">{evaluation.archetype}</span>
-                  <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${evaluation.score >= 4 ? "bg-emerald-50 text-emerald-700" : evaluation.score >= 3 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-600"}`}>
-                    {evaluation.score?.toFixed(1)}/5 fit
-                  </span>
-                  {evaluation.blockG?.tier && (
-                    <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${evaluation.blockG.tier === "High Confidence" ? "bg-emerald-50 text-emerald-700" : evaluation.blockG.tier === "Suspicious" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"}`}>
-                      {evaluation.blockG.tier}
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-1.5 mb-4 flex-wrap">
-                  {(["B","C","E","F","G"] as const).map(tab => (
-                    <button key={tab} onClick={() => setEvalTab(tab)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${evalTab === tab ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-                      {tab === "B" ? "CV Match" : tab === "C" ? "Strategy" : tab === "E" ? "Personalize" : tab === "F" ? "Interview" : "Legitimacy"}
-                    </button>
-                  ))}
-                </div>
-
-                {evalTab === "B" && evaluation.blockB && (
-                  <div className="space-y-2.5">
-                    <div className="flex gap-4 mb-3">
-                      <div className="bg-emerald-50 rounded-xl p-3 flex-1">
-                        <p className="text-xs font-bold text-emerald-700 mb-1.5">Strengths</p>
-                        {evaluation.blockB.topStrengths?.map((s: string, i: number) => <p key={i} className="text-xs text-emerald-800 mb-1">✓ {s}</p>)}
-                      </div>
-                      <div className="bg-amber-50 rounded-xl p-3 flex-1">
-                        <p className="text-xs font-bold text-amber-700 mb-1.5">Gaps</p>
-                        {evaluation.blockB.topGaps?.map((g: string, i: number) => <p key={i} className="text-xs text-amber-800 mb-1">△ {g}</p>)}
-                      </div>
-                    </div>
-                    {evaluation.blockB.matches?.slice(0,5).map((m: any, i: number) => (
-                      <div key={i} className="border border-slate-100 rounded-xl p-3">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <p className="text-xs font-semibold text-slate-700 flex-1">{m.requirement}</p>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${m.strength === "strong" ? "bg-emerald-100 text-emerald-700" : m.strength === "partial" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`}>{m.strength}</span>
-                        </div>
-                        <p className="text-xs text-slate-500">{m.match}</p>
-                        {m.mitigation && <p className="text-xs text-indigo-600 mt-1 italic">→ {m.mitigation}</p>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {evalTab === "C" && evaluation.blockC && (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-slate-50 rounded-xl p-3"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Role targets</p><p className="text-sm font-semibold text-slate-700">{evaluation.blockC.detectedLevel}</p></div>
-                      <div className="bg-indigo-50 rounded-xl p-3"><p className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Your level</p><p className="text-sm font-semibold text-indigo-700">{evaluation.blockC.userLevel}</p></div>
-                    </div>
-                    {evaluation.blockC.sellSeniorPhrases?.map((p: string, i: number) => (
-                      <div key={i} className="flex gap-2 bg-indigo-50 rounded-lg px-3 py-2"><span className="text-indigo-400 text-xs mt-0.5">→</span><p className="text-xs text-indigo-800">{p}</p></div>
-                    ))}
-                    {evaluation.blockC.downlevelPlan && <div className="bg-amber-50 rounded-xl p-3"><p className="text-xs font-bold text-amber-700 mb-1">If downleveled</p><p className="text-xs text-amber-800">{evaluation.blockC.downlevelPlan}</p></div>}
-                  </div>
-                )}
-
-                {evalTab === "E" && evaluation.blockE && (
-                  <div className="space-y-4">
-                    <div><p className="text-xs font-bold text-slate-600 mb-2">CV / Resume changes</p>{evaluation.blockE.cvChanges?.map((c: string, i: number) => <div key={i} className="flex gap-2 mb-2"><span className="text-slate-400 text-xs flex-shrink-0">{i+1}.</span><p className="text-xs text-slate-700">{c}</p></div>)}</div>
-                    <div><p className="text-xs font-bold text-slate-600 mb-2">LinkedIn changes</p>{evaluation.blockE.linkedinChanges?.map((c: string, i: number) => <div key={i} className="flex gap-2 mb-2"><span className="text-slate-400 text-xs flex-shrink-0">{i+1}.</span><p className="text-xs text-slate-700">{c}</p></div>)}</div>
-                  </div>
-                )}
-
-                {evalTab === "F" && evaluation.blockF && (
-                  <div className="space-y-3">
-                    {evaluation.blockF.stories?.map((story: any, i: number) => (
-                      <div key={i} className="border border-slate-100 rounded-xl p-4">
-                        <p className="text-xs font-bold text-indigo-700 mb-2">{story.requirement}</p>
-                        {(["situation","task","action","result","reflection"] as const).map(k => story[k] && (
-                          <div key={k} className="flex gap-2 mb-1.5"><span className="text-[10px] font-black uppercase text-slate-400 w-16 flex-shrink-0">{k === "reflection" ? "+R" : k.charAt(0).toUpperCase() + k.slice(1)}</span><p className="text-xs text-slate-600">{(story as any)[k]}</p></div>
-                        ))}
-                      </div>
-                    ))}
-                    {evaluation.blockF.redFlagQAs?.map((qa: any, i: number) => (
-                      <div key={i} className="bg-red-50 rounded-xl p-3 border border-red-100"><p className="text-xs font-bold text-red-700 mb-1">{qa.question}</p><p className="text-xs text-red-800">{qa.answer}</p></div>
-                    ))}
-                  </div>
-                )}
-
-                {evalTab === "G" && evaluation.blockG && (
-                  <div className="space-y-3">
-                    <div className={`rounded-xl p-4 border ${evaluation.blockG.tier === "High Confidence" ? "bg-emerald-50 border-emerald-200" : evaluation.blockG.tier === "Suspicious" ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
-                      <p className="text-sm font-bold">{evaluation.blockG.tier}</p>
-                      {evaluation.blockG.notes && <p className="text-xs mt-1 opacity-80">{evaluation.blockG.notes}</p>}
-                    </div>
-                    {evaluation.blockG.signals?.map((sig: any, i: number) => (
-                      <div key={i} className="flex gap-3 border border-slate-100 rounded-xl p-3">
-                        <span className="flex-shrink-0 text-sm">{sig.weight === "positive" ? "✅" : sig.weight === "concerning" ? "⚠️" : "➖"}</span>
-                        <div><p className="text-xs font-semibold text-slate-700">{sig.signal}</p><p className="text-xs text-slate-500 mt-0.5">{sig.finding}</p></div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="px-6 py-8 text-center"><p className="text-sm text-slate-400">Run an evaluation to unlock AI-powered insights</p><p className="text-xs text-slate-300 mt-1">CV match · Interview prep · Ghost job detection</p></div>
-            )}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-800">Job Intelligence</h3>
+            <p className="text-xs text-slate-400 mt-0.5">7-block evaluation · LinkedIn outreach · Research brief</p>
           </div>
+          <button
+            onClick={handleRunEvaluation}
+            disabled={runningEval}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all"
+            style={{ background: "linear-gradient(135deg,#6366f1,#4f46e5)" }}
+          >
+            {runningEval ? "Analyzing…" : (evaluation ? "↻ Re-run" : "▶ Run Evaluation")}
+          </button>
+        </div>
 
-          {/* ─── LinkedIn Outreach ─────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-            <h3 className="font-bold text-slate-800 mb-1">LinkedIn Outreach</h3>
-            <p className="text-xs text-slate-400 mb-4">Generate a 300-char connection message</p>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {[{type:"recruiter",label:"Recruiter"},{type:"hiring_manager",label:"Hiring Mgr"},{type:"peer",label:"Peer"},{type:"interviewer",label:"Interviewer"}].map(({type,label}) => (
-                <button key={type} onClick={() => handleOutreach(type)}
-                  className={`p-3 rounded-xl border text-xs font-bold transition-all text-left ${outreachType === type && outreachMsg ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"}`}>
-                  {label}
+        {evaluation ? (
+          <div className="p-5">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700">{evaluation.archetype}</span>
+              <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${evaluation.score >= 4 ? "bg-emerald-50 text-emerald-700" : evaluation.score >= 3 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-600"}`}>
+                {evaluation.score?.toFixed(1)}/5 fit
+              </span>
+              {evaluation.blockG?.tier && (
+                <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${evaluation.blockG.tier === "High Confidence" ? "bg-emerald-50 text-emerald-700" : evaluation.blockG.tier === "Suspicious" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"}`}>
+                  {evaluation.blockG.tier}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-1.5 mb-4 flex-wrap">
+              {(["B","C","E","F","G"] as const).map(tab => (
+                <button key={tab} onClick={() => setEvalTab(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${evalTab === tab ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                  {tab === "B" ? "CV Match" : tab === "C" ? "Strategy" : tab === "E" ? "Personalize" : tab === "F" ? "Interview" : "Legitimacy"}
                 </button>
               ))}
             </div>
-            {loadingOutreach && <p className="text-xs text-slate-400 py-2">Generating…</p>}
-            {outreachMsg && (
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <div className="flex justify-between mb-2">
-                  <p className="text-xs font-bold text-slate-500">{outreachMsg.length}/300 chars</p>
-                  <button onClick={() => copyText(outreachMsg, "outreach")} className="text-xs text-indigo-600 font-bold">{copied === "outreach" ? "✓ Copied" : "Copy"}</button>
-                </div>
-                <p className="text-sm text-slate-700 leading-relaxed">{outreachMsg}</p>
-              </div>
-            )}
-          </div>
 
-          {/* ─── Deep Research ─────────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="font-bold text-slate-800">Company Research Brief</h3>
-              <button onClick={handleResearch} className="text-xs font-bold text-indigo-600 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-all">
-                {showResearch ? "Hide" : "Generate"}
-              </button>
-            </div>
-            <p className="text-xs text-slate-400 mb-3">6-axis prompt to paste into Perplexity or Claude</p>
-            {showResearch && researchPrompt && (
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                <div className="flex justify-end mb-2">
-                  <button onClick={() => copyText(researchPrompt, "research")} className="text-xs text-indigo-600 font-bold">{copied === "research" ? "✓ Copied" : "Copy all"}</button>
+            {evalTab === "B" && evaluation.blockB && (
+              <div className="space-y-2.5">
+                <div className="flex gap-4 mb-3">
+                  <div className="bg-emerald-50 rounded-xl p-3 flex-1">
+                    <p className="text-xs font-bold text-emerald-700 mb-1.5">Strengths</p>
+                    {evaluation.blockB.topStrengths?.map((s: string, i: number) => <p key={i} className="text-xs text-emerald-800 mb-1">✓ {s}</p>)}
+                  </div>
+                  <div className="bg-amber-50 rounded-xl p-3 flex-1">
+                    <p className="text-xs font-bold text-amber-700 mb-1.5">Gaps</p>
+                    {evaluation.blockB.topGaps?.map((g: string, i: number) => <p key={i} className="text-xs text-amber-800 mb-1">△ {g}</p>)}
+                  </div>
                 </div>
-                <pre className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed font-sans overflow-x-auto">{researchPrompt}</pre>
+                {evaluation.blockB.matches?.slice(0,5).map((m: any, i: number) => (
+                  <div key={i} className="border border-slate-100 rounded-xl p-3">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <p className="text-xs font-semibold text-slate-700 flex-1">{m.requirement}</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${m.strength === "strong" ? "bg-emerald-100 text-emerald-700" : m.strength === "partial" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}`}>{m.strength}</span>
+                    </div>
+                    <p className="text-xs text-slate-500">{m.match}</p>
+                    {m.mitigation && <p className="text-xs text-indigo-600 mt-1 italic">→ {m.mitigation}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {evalTab === "C" && evaluation.blockC && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-50 rounded-xl p-3"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Role targets</p><p className="text-sm font-semibold text-slate-700">{evaluation.blockC.detectedLevel}</p></div>
+                  <div className="bg-indigo-50 rounded-xl p-3"><p className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Your level</p><p className="text-sm font-semibold text-indigo-700">{evaluation.blockC.userLevel}</p></div>
+                </div>
+                {evaluation.blockC.sellSeniorPhrases?.map((p: string, i: number) => (
+                  <div key={i} className="flex gap-2 bg-indigo-50 rounded-lg px-3 py-2"><span className="text-indigo-400 text-xs mt-0.5">→</span><p className="text-xs text-indigo-800">{p}</p></div>
+                ))}
+                {evaluation.blockC.downlevelPlan && <div className="bg-amber-50 rounded-xl p-3"><p className="text-xs font-bold text-amber-700 mb-1">If downleveled</p><p className="text-xs text-amber-800">{evaluation.blockC.downlevelPlan}</p></div>}
+              </div>
+            )}
+
+            {evalTab === "E" && evaluation.blockE && (
+              <div className="space-y-4">
+                <div><p className="text-xs font-bold text-slate-600 mb-2">CV / Resume changes</p>{evaluation.blockE.cvChanges?.map((c: string, i: number) => <div key={i} className="flex gap-2 mb-2"><span className="text-slate-400 text-xs flex-shrink-0">{i+1}.</span><p className="text-xs text-slate-700">{c}</p></div>)}</div>
+                <div><p className="text-xs font-bold text-slate-600 mb-2">LinkedIn changes</p>{evaluation.blockE.linkedinChanges?.map((c: string, i: number) => <div key={i} className="flex gap-2 mb-2"><span className="text-slate-400 text-xs flex-shrink-0">{i+1}.</span><p className="text-xs text-slate-700">{c}</p></div>)}</div>
+              </div>
+            )}
+
+            {evalTab === "F" && evaluation.blockF && (
+              <div className="space-y-3">
+                {evaluation.blockF.stories?.map((story: any, i: number) => (
+                  <div key={i} className="border border-slate-100 rounded-xl p-4">
+                    <p className="text-xs font-bold text-indigo-700 mb-2">{story.requirement}</p>
+                    {(["situation","task","action","result","reflection"] as const).map(k => story[k] && (
+                      <div key={k} className="flex gap-2 mb-1.5"><span className="text-[10px] font-black uppercase text-slate-400 w-16 flex-shrink-0">{k === "reflection" ? "+R" : k.charAt(0).toUpperCase() + k.slice(1)}</span><p className="text-xs text-slate-600">{(story as any)[k]}</p></div>
+                    ))}
+                  </div>
+                ))}
+                {evaluation.blockF.redFlagQAs?.map((qa: any, i: number) => (
+                  <div key={i} className="bg-red-50 rounded-xl p-3 border border-red-100"><p className="text-xs font-bold text-red-700 mb-1">{qa.question}</p><p className="text-xs text-red-800">{qa.answer}</p></div>
+                ))}
+              </div>
+            )}
+
+            {evalTab === "G" && evaluation.blockG && (
+              <div className="space-y-3">
+                <div className={`rounded-xl p-4 border ${evaluation.blockG.tier === "High Confidence" ? "bg-emerald-50 border-emerald-200" : evaluation.blockG.tier === "Suspicious" ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+                  <p className="text-sm font-bold">{evaluation.blockG.tier}</p>
+                  {evaluation.blockG.notes && <p className="text-xs mt-1 opacity-80">{evaluation.blockG.notes}</p>}
+                </div>
+                {evaluation.blockG.signals?.map((sig: any, i: number) => (
+                  <div key={i} className="flex gap-3 border border-slate-100 rounded-xl p-3">
+                    <span className="flex-shrink-0 text-sm">{sig.weight === "positive" ? "✅" : sig.weight === "concerning" ? "⚠️" : "➖"}</span>
+                    <div><p className="text-xs font-semibold text-slate-700">{sig.signal}</p><p className="text-xs text-slate-500 mt-0.5">{sig.finding}</p></div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
+        ) : (
+          <div className="px-6 py-8 text-center"><p className="text-sm text-slate-400">Run an evaluation to unlock AI-powered insights</p><p className="text-xs text-slate-300 mt-1">CV match · Interview prep · Ghost job detection</p></div>
+        )}
+      </div>
+
+      {/* ─── LinkedIn Outreach ─────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+        <h3 className="font-bold text-slate-800 mb-1">LinkedIn Outreach</h3>
+        <p className="text-xs text-slate-400 mb-4">Generate a 300-char connection message</p>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {[{type:"recruiter",label:"Recruiter"},{type:"hiring_manager",label:"Hiring Mgr"},{type:"peer",label:"Peer"},{type:"interviewer",label:"Interviewer"}].map(({type,label}) => (
+            <button key={type} onClick={() => handleOutreach(type)}
+              className={`p-3 rounded-xl border text-xs font-bold transition-all text-left ${outreachType === type && outreachMsg ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {loadingOutreach && <p className="text-xs text-slate-400 py-2">Generating…</p>}
+        {outreachMsg && (
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <div className="flex justify-between mb-2">
+              <p className="text-xs font-bold text-slate-500">{outreachMsg.length}/300 chars</p>
+              <button onClick={() => copyText(outreachMsg, "outreach")} className="text-xs text-indigo-600 font-bold">{copied === "outreach" ? "✓ Copied" : "Copy"}</button>
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed">{outreachMsg}</p>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Deep Research ─────────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-bold text-slate-800">Company Research Brief</h3>
+          <button onClick={handleResearch} className="text-xs font-bold text-indigo-600 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-all">
+            {showResearch ? "Hide" : "Generate"}
+          </button>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">6-axis prompt to paste into Perplexity or Claude</p>
+        {showResearch && researchPrompt && (
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <div className="flex justify-end mb-2">
+              <button onClick={() => copyText(researchPrompt, "research")} className="text-xs text-indigo-600 font-bold">{copied === "research" ? "✓ Copied" : "Copy all"}</button>
+            </div>
+            <pre className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed font-sans overflow-x-auto">{researchPrompt}</pre>
+          </div>
+        )}
+      </div>
+
 
       {/* Cover letter preview modal */}
-      {showCLModal && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between">

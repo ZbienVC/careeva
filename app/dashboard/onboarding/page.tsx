@@ -134,6 +134,59 @@ function TA({ label, value, onChange, placeholder = '', rows = 4, req = false, h
   );
 }
 
+// Tag input - type and press comma/Enter to add, × to remove
+function TagInput({ label, value, onChange, placeholder = '', req = false, hint = '' }: any) {
+  const [inputVal, setInputVal] = React.useState('');
+  const tags: string[] = value ? value.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+
+  const addTag = (raw: string) => {
+    const newTags = raw.split(',').map(s => s.trim()).filter(Boolean);
+    const merged = [...new Set([...tags, ...newTags])];
+    onChange(merged.join(', '));
+    setInputVal('');
+  };
+
+  const removeTag = (idx: number) => {
+    const next = tags.filter((_: string, i: number) => i !== idx);
+    onChange(next.join(', '));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === ',' || e.key === 'Enter') {
+      e.preventDefault();
+      if (inputVal.trim()) addTag(inputVal);
+    } else if (e.key === 'Backspace' && !inputVal && tags.length > 0) {
+      removeTag(tags.length - 1);
+    }
+  };
+
+  return (
+    <F label={label} req={req} hint={hint}>
+      <div className="min-h-[44px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 flex flex-wrap gap-1.5 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-50 cursor-text"
+        onClick={(e) => (e.currentTarget.querySelector('input') as HTMLInputElement)?.focus()}>
+        {tags.map((tag: string, i: number) => (
+          <span key={i} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 text-xs font-semibold px-2.5 py-1 rounded-full">
+            {tag}
+            <button type="button" onClick={(e) => { e.stopPropagation(); removeTag(i); }}
+              className="text-indigo-400 hover:text-indigo-700 leading-none text-base font-bold">×</button>
+          </span>
+        ))}
+        <input
+          value={inputVal}
+          onChange={e => setInputVal(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={() => { if (inputVal.trim()) addTag(inputVal); }}
+          placeholder={tags.length === 0 ? placeholder : 'Add more...'}
+          className="flex-1 min-w-[120px] outline-none text-sm text-slate-900 bg-transparent border-none p-0 m-0 focus:ring-0"
+          style={{ width: 'auto' }}
+        />
+      </div>
+      <p className="text-xs text-slate-400 mt-1">Press <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">Enter</kbd> or <kbd className="px-1 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">,</kbd> after each title</p>
+    </F>
+  );
+}
+
+
 function Radio({ label, value, onChange, options, hint = '' }: any) {
   return (
     <F label={label} hint={hint}>
@@ -1057,9 +1110,9 @@ export default function OnboardingPage() {
         {/* JOB PREFERENCES */}
         {step.id === 'job_preferences' && (
           <StepCard step={step}>
-            <TA label="Target job titles (comma-separated)" value={d.targetTitles} onChange={s('targetTitles')} req
-              hint="List every title you would accept. The more you list, the broader the job discovery net."
-              placeholder="Data Analyst, Senior Data Analyst, Business Intelligence Analyst, Analytics Engineer, Operations Analyst, Strategy & Analytics, Data & Insights Lead..." rows={2} />
+            <TagInput label="Target job titles" value={d.targetTitles} onChange={s('targetTitles')} req
+              hint="List every title you would accept. The more specific, the better the job matching."
+              placeholder="e.g. Senior Product Manager" />
             <Multi label="Target functions" values={d.targetFunctions} onChange={s('targetFunctions')} options={['Analytics', 'Operations', 'Finance', 'Product', 'Engineering', 'Strategy', 'Sales Ops', 'RevOps', 'Customer Success', 'Data Science', 'Business Intelligence', 'Growth']} />
             <Multi label="Target industries" values={d.targetIndustries} onChange={s('targetIndustries')} options={['Technology', 'Fintech', 'Crypto / Web3', 'Healthcare', 'E-commerce', 'Media', 'Consulting', 'Financial Services', 'Real Estate', 'Government', 'Non-profit', 'Education', 'Retail', 'Energy', 'Travel']} />
             <Multi label="Target seniority level" values={d.seniority} onChange={s('seniority')} options={['Entry Level (0-2 yrs)', 'Mid Level (2-5 yrs)', 'Senior (5-8 yrs)', 'Staff / Lead', 'Manager', 'Director', 'VP', 'C-Suite']} />

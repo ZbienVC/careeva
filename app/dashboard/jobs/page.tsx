@@ -192,11 +192,11 @@ export default function JobsPage() {
     })();
   }, [router]);
 
-  const triggerSearch = async () => {
+  const triggerSearch = async (clearFirst = false) => {
     setSearching(true);
     try {
-      const res = await fetch('/api/jobs/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources: ['remotive', 'themuse', 'weworkremotely', 'greenhouse'] }) });
-      const data = await res.json();
+      if (clearFirst) { await fetch('/api/jobs', { method: 'DELETE', credentials: 'include' }).catch(() => {}); }
+      const res = await fetch('/api/jobs/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ sources: ['remotive', 'themuse', 'weworkremotely', 'greenhouse'] }) });
       setSearchResult({ total: data.total || 0, new: data.new || 0 });
       // Reload jobs
       const result = await jobsAPI.list({ page: 1, pageSize: 50 });

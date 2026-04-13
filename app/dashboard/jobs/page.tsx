@@ -104,7 +104,7 @@ function JobCard({ job, onApply, onScore }: {
 
       {/* Application packet preview */}
       {previewMode && packet && (
-          {/* Quality + archetype header */}
+        <div className="bg-slate-50 rounded-xl p-3.5 space-y-2 text-xs border border-slate-200">
           <div className="flex items-center gap-2 flex-wrap mb-2">
             {(packet as any).archetype && (
               <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px]">{(packet as any).archetype}</span>
@@ -115,7 +115,7 @@ function JobCard({ job, onApply, onScore }: {
               </span>
             )}
             <span className={`ml-auto px-2 py-0.5 rounded-full font-bold text-[10px] ${packet.canAutoApply ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-              {packet.canAutoApply ? "✓ Ready to submit" : "Review needed"}
+              {packet.canAutoApply ? "Ready to submit" : "Review needed"}
             </span>
           </div>
           {(packet as any).keywords?.length > 0 && (
@@ -126,9 +126,9 @@ function JobCard({ job, onApply, onScore }: {
             </div>
           )}
           {packet.missingFields?.length > 0 && (
-            <p className="text-amber-600 font-semibold text-[11px] mb-2">⚠ Missing: {packet.missingFields.join(", ")}</p>
+            <p className="text-amber-600 font-semibold text-[11px] mb-2">Missing: {packet.missingFields.join(", ")}</p>
           )}
-          <p className="text-slate-500 line-clamp-3 text-[11px] leading-relaxed">{packet.coverLetter?.slice(0, 260)}…</p>
+          <p className="text-slate-500 line-clamp-3 text-[11px] leading-relaxed">{packet.coverLetter?.slice(0, 260)}</p>
           <div className="flex gap-2 pt-2 mt-2 border-t border-slate-200">
             <button onClick={() => setPreviewMode(false)} className="text-xs text-slate-400 hover:text-slate-600">Hide</button>
             {packet.canAutoApply && (
@@ -140,7 +140,7 @@ function JobCard({ job, onApply, onScore }: {
                 className="ml-auto text-xs font-bold text-white px-3 py-1.5 rounded-lg"
                 style={{ background: "linear-gradient(135deg,#10b981,#059669)" }}
               >
-                Submit now →
+                Submit now
               </button>
             )}
           </div>

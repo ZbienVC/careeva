@@ -50,7 +50,7 @@ export async function generateLinkedInOutreach(
   ]);
 
   const profileSummary = [
-    profile?.headline,
+    profile?.jobTitle ? `My role: ${profile.jobTitle}` : null,
     workHistory[0] ? `Currently/Recently: ${workHistory[0].title} at ${workHistory[0].company}` : null,
     skills.length > 0 ? `Key skills: ${skills.map((s: any) => s.name).slice(0, 5).join(', ')}` : null,
   ].filter(Boolean).join('\n');

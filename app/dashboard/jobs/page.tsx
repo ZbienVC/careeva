@@ -192,6 +192,19 @@ export default function JobsPage() {
     })();
   }, [router]);
 
+  const triggerSync = async () => {
+    setSearching(true);
+    try {
+      const res = await fetch('/api/jobs/sync', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
+      const data = await res.json();
+      const newJobs = (data.boardSync?.newFromBoards || 0) + (data.generalSearch?.newFromSearch || 0);
+      setSearchResult({ total: data.totalActiveJobs || 0, new: newJobs });
+      const result = await jobsAPI.list({ page: 1, pageSize: 50 });
+      if (result.success) setJobs(result.data?.jobs || []);
+    } catch { /* handle */ }
+    setSearching(false);
+  };
+
   const triggerSearch = async (clearFirst = false) => {
     setSearching(true);
     try {

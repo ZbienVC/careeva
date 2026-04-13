@@ -52,6 +52,8 @@ model User {
   // Generation
   generationRuns GenerationRun[]
 
+  jobEvaluations JobEvaluation[]
+  starStories    StarStory[]
   @@map("users")
 }
 
@@ -796,4 +798,48 @@ model GenerationRun {
   createdAt  DateTime @default(now())
 
   @@map("generation_runs")
+}
+
+// ═══ JOB EVALUATION (career-ops port) ═══════════════════════════════════════
+
+model JobEvaluation {
+  id        String   @id @default(cuid())
+  jobId     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  blockA    Json     // role summary: archetype, domain, seniority, remote, TL;DR
+  blockB    Json     // CV match: requirements mapped to profile, gaps, mitigation
+  blockC    Json     // level strategy: sell senior, downlevel plan
+  blockD    Json     // comp research: structured data/questions
+  blockE    Json     // personalization: top 5 CV changes, top 5 LinkedIn changes
+  blockF    Json     // interview prep: STAR+R stories, red-flag Q&As
+  blockG    Json     // posting legitimacy: ghost job signals, tier assessment
+
+  archetype String
+  score     Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("job_evaluations")
+}
+
+model StarStory {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId       String?
+
+  requirement String   // the JD requirement this story maps to
+  situation   String   @db.Text
+  task        String   @db.Text
+  action      String   @db.Text
+  result      String   @db.Text
+  reflection  String   @db.Text  // the +R: what was learned
+  tags        String[]
+
+  createdAt   DateTime @default(now())
+
+  @@map("star_stories")
 }

@@ -73,3 +73,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to create job' }, { status: 500 });
   }
 }
+
+// DELETE /api/jobs - clear all scraped jobs (not manually added ones) to allow fresh search
+export async function DELETE(request: NextRequest) {
+  const user = await getCurrentUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    const { prisma } = await import('@/lib/prisma');
+    // Only delete scraped jobs, not manually added ones, and not jobs with applications
+    const result = await prisma.job.deleteMany({
+      where: {
+        userId: user.id,
+        source: { not: 'manual' },
+        applications: { none: {} },
+      },
+    });
+    return NextResponse.json({ deleted: result.count });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed' }, { status: 500 });
+  }
+}

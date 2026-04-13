@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 // ─── Step config ──────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ function TA({ label, value, onChange, placeholder = '', rows = 4, req = false, h
 
 // Tag input - type and press comma/Enter to add, × to remove
 function TagInput({ label, value, onChange, placeholder = '', req = false, hint = '' }: any) {
-  const [inputVal, setInputVal] = React.useState('');
+  const [inputVal, setInputVal] = useState('');
   const tags: string[] = value ? value.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
 
   const addTag = (raw: string) => {

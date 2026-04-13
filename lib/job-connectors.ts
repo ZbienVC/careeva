@@ -1,49 +1,110 @@
 /**
- * Greenhouse Job Connector
- * Fetches public job postings from Greenhouse's job board API.
- * No authentication required for public boards.
+ * lib/job-connectors.ts (v2)
  *
- * API: https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true
+ * Direct ATS connectors: Greenhouse, Lever, Ashby
+ * - Parallel fetching for speed
+ * - Proper company name lookup (not slug inference)
+ * - Stale job cleanup
+ * - Error isolation per board
  */
 
 import { prisma } from '@/lib/db';
 import crypto from 'crypto';
 
-interface GreenhouseJob {
-  id: number;
-  title: string;
-  updated_at: string;
-  location: { name: string };
-  content: string;  // HTML job description
-  absolute_url: string;
-  departments: Array<{ name: string }>;
-  offices: Array<{ name: string }>;
-  metadata?: Array<{ id: number; name: string; value: string | null }>;
+// ─── Company name lookup ──────────────────────────────────────────────────────
+// Maps ATS slug → proper display name
+
+const COMPANY_NAMES: Record<string, string> = {
+  // Greenhouse
+  'anthropic': 'Anthropic', 'openai': 'OpenAI', 'stripe': 'Stripe',
+  'notion': 'Notion', 'figma': 'Figma', 'linear': 'Linear',
+  'vercel': 'Vercel', 'supabase': 'Supabase', 'retool': 'Retool',
+  'plaid': 'Plaid', 'brex': 'Brex', 'chime': 'Chime',
+  'robinhood': 'Robinhood', 'coinbase': 'Coinbase', 'affirm': 'Affirm',
+  'airbnb': 'Airbnb', 'lyft': 'Lyft', 'doordash': 'DoorDash',
+  'reddit': 'Reddit', 'scale': 'Scale AI', 'cohere': 'Cohere',
+  'huggingface': 'Hugging Face', 'runway': 'Runway', 'mistral': 'Mistral AI',
+  'perplexity': 'Perplexity AI', 'dbt-labs': 'dbt Labs',
+  'databricks': 'Databricks', 'snowflake': 'Snowflake',
+  'amplitude': 'Amplitude', 'mixpanel': 'Mixpanel', 'segment': 'Segment',
+  'intercom': 'Intercom', 'hubspot': 'HubSpot', 'zendesk': 'Zendesk',
+  'monday': 'Monday.com', 'asana': 'Asana', 'loom': 'Loom',
+  'coda': 'Coda', 'cursor': 'Cursor', 'elevenlabs': 'ElevenLabs',
+  'chainalysis': 'Chainalysis', 'alchemy': 'Alchemy', 'dydx': 'dYdX',
+  'ripple': 'Ripple', 'kraken': 'Kraken', 'marqeta': 'Marqeta',
+  'instacart': 'Instacart',
+  // Lever
+  'rippling': 'Rippling', 'lattice': 'Lattice', 'canva': 'Canva',
+  'airtable': 'Airtable', 'miro': 'Miro', 'pitch': 'Pitch',
+  'superhuman': 'Superhuman', 'mercury': 'Mercury', 'netflix': 'Netflix',
+  'slack': 'Slack', 'dropbox': 'Dropbox', 'square': 'Square',
+  'klarna': 'Klarna', 'nubank': 'Nubank', 'wise': 'Wise',
+  'gitlab': 'GitLab', 'hashicorp': 'HashiCorp', 'datadog': 'Datadog',
+  'atlassian': 'Atlassian', 'pagerduty': 'PagerDuty', 'shopify': 'Shopify',
+  'flexport': 'Flexport',
+  // Ashby
+  'elevenlabs': 'ElevenLabs', 'luma': 'Luma AI', 'vapi': 'Vapi',
+  'cursor': 'Cursor', 'windsurf': 'Windsurf', 'glean': 'Glean',
+  'arizeai': 'Arize AI', 'langchain': 'LangChain', 'llamaindex': 'LlamaIndex',
+  'modal': 'Modal', 'replicate': 'Replicate', 'together': 'Together AI',
+  'fireworks': 'Fireworks AI', 'groq': 'Groq', 'cerebras': 'Cerebras',
+  'mistral': 'Mistral AI', 'cohere': 'Cohere', 'adept': 'Adept',
+  'inflection': 'Inflection AI', 'characterai': 'Character.AI',
+  'harvey': 'Harvey', 'sierra': 'Sierra', 'imbue': 'Imbue',
+  'poolside': 'Poolside', 'cognition': 'Cognition', 'factory': 'Factory',
+  'devin': 'Cognition', 'codegen': 'Codegen', 'tabnine': 'Tabnine',
+};
+
+function getCompanyName(slug: string): string {
+  return COMPANY_NAMES[slug.toLowerCase()] ??
+    slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-interface GreenhouseResponse {
-  jobs: GreenhouseJob[];
-  meta: { total: number };
-}
+// ─── Top company boards hardcoded for Zach (SWE/AI/startup focus) ─────────────
+
+export const TOP_GREENHOUSE_BOARDS = [
+  'anthropic', 'openai', 'cohere', 'scale', 'huggingface', 'runway',
+  'mistral', 'perplexity', 'elevenlabs',
+  'stripe', 'plaid', 'brex', 'marqeta', 'affirm', 'robinhood', 'coinbase',
+  'notion', 'figma', 'linear', 'vercel', 'supabase', 'retool', 'loom', 'coda',
+  'airbnb', 'reddit', 'lyft', 'doordash', 'instacart',
+  'databricks', 'snowflake', 'amplitude', 'mixpanel', 'segment', 'dbt-labs',
+  'intercom', 'hubspot', 'monday', 'asana', 'chainalysis', 'alchemy',
+];
+
+export const TOP_LEVER_BOARDS = [
+  'rippling', 'lattice', 'canva', 'airtable', 'miro',
+  'mercury', 'klarna', 'nubank', 'wise',
+  'gitlab', 'datadog', 'atlassian', 'hashicorp',
+  'square', 'shopify', 'flexport',
+  'pitch', 'superhuman',
+];
+
+export const TOP_ASHBY_BOARDS = [
+  'elevenlabs', 'luma', 'vapi', 'cursor', 'glean',
+  'modal', 'replicate', 'together', 'fireworks', 'groq', 'cerebras',
+  'harvey', 'sierra', 'cognition', 'factory',
+  'langchain', 'llamaindex',
+];
+
+// ─── Shared utilities ─────────────────────────────────────────────────────────
 
 function stripHtml(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
+    .replace(/<li>/gi, '• ')
     .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function detectRemote(text: string, location: string): { isRemote: boolean; isHybrid: boolean } {
   const combined = `${text} ${location}`.toLowerCase();
-  const isRemote = /\bremote\b/.test(combined) && !/\bon.?site\b/.test(combined);
-  const isHybrid = /\bhybrid\b/.test(combined) || (/\bremote\b/.test(combined) && /\bon.?site\b/.test(combined));
-  return { isRemote: isRemote && !isHybrid, isHybrid };
+  const isHybrid = /\bhybrid\b/.test(combined);
+  const isRemote = !isHybrid && /\bremote\b/.test(combined);
+  return { isRemote, isHybrid };
 }
 
 function makeDedupeKey(company: string, title: string, location: string): string {
@@ -54,249 +115,267 @@ function makeDedupeKey(company: string, title: string, location: string): string
 function detectRoleFamilies(title: string, description: string): string[] {
   const text = `${title} ${description}`.toLowerCase();
   const families: string[] = [];
-
-  if (/analyst|analytics|data|bi |business intelligence|reporting|sql|tableau|looker/.test(text)) families.push('analytics');
-  if (/operations|ops |process|workflow|efficiency|coordination/.test(text)) families.push('ops');
-  if (/customer success|customer experience|cx |client|account manager|support/.test(text)) families.push('cx');
-  if (/implementation|onboarding|deployment|integration|technical.*account/.test(text)) families.push('implementation');
-  if (/fintech|financial|payments|banking|lending|wealth/.test(text)) families.push('fintech');
-  if (/crypto|blockchain|web3|defi|solana|ethereum|token/.test(text)) families.push('crypto');
-  if (/product|roadmap|stakeholder.*product|product.*manager/.test(text)) families.push('product_adjacent');
-  if (/machine learning|ml |ai |artificial intelligence|nlp|llm/.test(text)) families.push('ai_ml');
-  if (/automation|automat|rpa|workflow.*auto|zapier|make\.com/.test(text)) families.push('automation');
-  if (/growth|revenue|strategy|go.to.market|gtm|business development/.test(text)) families.push('growth');
-  if (/it |systems|infrastructure|network|sysadmin/.test(text)) families.push('it');
-  if (/startup|early.stage|seed|series [abc]/.test(text)) families.push('startup');
-
+  if (/analyst|analytics|data|bi |business intelligence|sql|tableau|looker/.test(text)) families.push('analytics');
+  if (/operations|ops |process|workflow/.test(text)) families.push('ops');
+  if (/customer success|cx |client|account manager/.test(text)) families.push('cx');
+  if (/fintech|financial|payments|banking/.test(text)) families.push('fintech');
+  if (/crypto|blockchain|web3|defi|solana|ethereum/.test(text)) families.push('crypto');
+  if (/machine learning|ml |ai |llm|nlp|artificial intelligence/.test(text)) families.push('ai_ml');
+  if (/automation|automat|workflow.*auto/.test(text)) families.push('automation');
+  if (/growth|revenue|strategy|go.to.market|gtm/.test(text)) families.push('growth');
+  if (/software engineer|full.?stack|backend|frontend|mobile|platform|infrastructure/.test(text)) families.push('engineering');
+  if (/product manager|product owner|roadmap|discovery/.test(text)) families.push('product');
   return [...new Set(families)];
 }
 
+async function upsertJob(userId: string, scrapeRunId: string, jobData: {
+  title: string; company: string; description: string; requirements: string;
+  location: string; isRemote: boolean; isHybrid: boolean;
+  url: string; applyUrl: string; source: string; atsType: string;
+  externalId?: string; salary?: string; salaryMin?: number; salaryMax?: number;
+  postedAt?: Date;
+}): Promise<'new' | 'duped'> {
+  const { isRemote, isHybrid, title, company, location } = jobData;
+  const dedupeKey = makeDedupeKey(company, title, location);
+  const roleFamilies = detectRoleFamilies(title, jobData.description);
+
+  const existing = await prisma.job.findFirst({ where: { userId, dedupeKey }, select: { id: true } });
+
+  if (existing) {
+    await prisma.job.update({
+      where: { id: existing.id },
+      data: { lastScrapedAt: new Date(), isActive: true },
+    });
+    return 'duped';
+  }
+
+  await prisma.job.create({
+    data: {
+      userId, scrapeRunId,
+      title, company,
+      description: jobData.description.slice(0, 5000),
+      requirements: jobData.requirements.slice(0, 3000),
+      location, isRemote, isHybrid,
+      jobType: isRemote ? 'remote' : isHybrid ? 'hybrid' : 'onsite',
+      url: jobData.url, applyUrl: jobData.applyUrl,
+      source: jobData.source, atsType: jobData.atsType,
+      externalId: jobData.externalId,
+      dedupeKey, roleFamilies,
+      salary: jobData.salary,
+      salaryMin: jobData.salaryMin,
+      salaryMax: jobData.salaryMax,
+      postedAt: jobData.postedAt,
+      isActive: true, lastScrapedAt: new Date(),
+    },
+  });
+  return 'new';
+}
+
+// ─── Greenhouse connector ─────────────────────────────────────────────────────
+
 export async function syncGreenhouseBoard(
-  userId: string,
-  boardToken: string,
-  scrapeRunId: string
+  userId: string, boardToken: string, scrapeRunId: string
 ): Promise<{ jobsFound: number; jobsNew: number; jobsDuped: number }> {
   const url = `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`;
-
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'Careeva/1.0 (job-aggregator)' },
+    headers: { 'User-Agent': 'Careeva/1.0 job-aggregator' },
+    signal: AbortSignal.timeout(8000),
   });
+  if (!res.ok) throw new Error(`Greenhouse ${boardToken}: HTTP ${res.status}`);
 
-  if (!res.ok) {
-    throw new Error(`Greenhouse API error: ${res.status} for board ${boardToken}`);
-  }
-
-  const data: GreenhouseResponse = await res.json();
+  const data = await res.json();
   const jobs = data.jobs || [];
+  const company = getCompanyName(boardToken);
 
-  let jobsNew = 0;
-  let jobsDuped = 0;
-
-  // Extract company name from board token (best-effort)
-  const company = boardToken.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-  for (const ghJob of jobs) {
-    const location = ghJob.location?.name || '';
-    const description = stripHtml(ghJob.content || '');
+  let jobsNew = 0, jobsDuped = 0;
+  for (const job of jobs) {
+    const location = job.location?.name || 'Remote';
+    const description = stripHtml(job.content || '');
     const { isRemote, isHybrid } = detectRemote(description, location);
-    const roleFamilies = detectRoleFamilies(ghJob.title, description);
-    const dedupeKey = makeDedupeKey(company, ghJob.title, location);
-
-    // Check for duplicate
-    const existing = await prisma.job.findFirst({
-      where: { userId, dedupeKey },
-      select: { id: true },
+    const result = await upsertJob(userId, scrapeRunId, {
+      title: job.title, company, description, requirements: '',
+      location, isRemote, isHybrid,
+      url: job.absolute_url, applyUrl: job.absolute_url,
+      source: 'greenhouse', atsType: 'greenhouse',
+      externalId: String(job.id),
+      postedAt: job.updated_at ? new Date(job.updated_at) : undefined,
     });
-
-    if (existing) {
-      // Update freshness
-      await prisma.job.update({
-        where: { id: existing.id },
-        data: { lastScrapedAt: new Date(), isActive: true },
-      });
-      jobsDuped++;
-      continue;
-    }
-
-    // Create new job
-    await prisma.job.create({
-      data: {
-        userId,
-        title: ghJob.title,
-        company,
-        description,
-        requirements: '',  // Greenhouse embeds requirements in description
-        location,
-        isRemote,
-        isHybrid,
-        jobType: isRemote ? 'remote' : isHybrid ? 'hybrid' : 'onsite',
-        url: ghJob.absolute_url,
-        applyUrl: ghJob.absolute_url,
-        source: 'greenhouse',
-        atsType: 'greenhouse',
-        externalId: String(ghJob.id),
-        dedupeKey,
-        roleFamilies,
-        postedAt: ghJob.updated_at ? new Date(ghJob.updated_at) : undefined,
-        isActive: true,
-        lastScrapedAt: new Date(),
-        scrapeRunId,
-      },
-    });
-
-    jobsNew++;
+    if (result === 'new') jobsNew++; else jobsDuped++;
   }
-
   return { jobsFound: jobs.length, jobsNew, jobsDuped };
 }
 
-/**
- * Lever Connector
- * Uses Lever's public posting API.
- * https://api.lever.co/v0/postings/{company}?mode=json
- */
-
-interface LeverPosting {
-  id: string;
-  text: string;              // job title
-  hostedUrl: string;
-  applyUrl: string;
-  createdAt: number;
-  categories: {
-    commitment?: string;
-    department?: string;
-    location?: string;
-    team?: string;
-  };
-  description: string;       // HTML
-  descriptionPlain: string;
-  lists: Array<{ text: string; content: string }>;
-  additional: string;
-  additionalPlain: string;
-}
+// ─── Lever connector ──────────────────────────────────────────────────────────
 
 export async function syncLeverBoard(
-  userId: string,
-  companySlug: string,
-  scrapeRunId: string
+  userId: string, companySlug: string, scrapeRunId: string
 ): Promise<{ jobsFound: number; jobsNew: number; jobsDuped: number }> {
   const url = `https://api.lever.co/v0/postings/${companySlug}?mode=json`;
-
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'Careeva/1.0 (job-aggregator)' },
+    headers: { 'User-Agent': 'Careeva/1.0 job-aggregator' },
+    signal: AbortSignal.timeout(8000),
   });
+  if (!res.ok) throw new Error(`Lever ${companySlug}: HTTP ${res.status}`);
 
-  if (!res.ok) {
-    throw new Error(`Lever API error: ${res.status} for company ${companySlug}`);
-  }
+  const postings = await res.json();
+  if (!Array.isArray(postings)) return { jobsFound: 0, jobsNew: 0, jobsDuped: 0 };
 
-  const postings: LeverPosting[] = await res.json();
-
-  let jobsNew = 0;
-  let jobsDuped = 0;
-
-  const company = companySlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const company = getCompanyName(companySlug);
+  let jobsNew = 0, jobsDuped = 0;
 
   for (const posting of postings) {
-    const location = posting.categories?.location || '';
+    const location = posting.categories?.location || 'Remote';
     const description = posting.descriptionPlain || stripHtml(posting.description || '');
-    const requirementsList = (posting.lists || [])
-      .map(l => `${l.text}:\n${stripHtml(l.content)}`)
-      .join('\n\n');
-
+    const requirements = (posting.lists || []).map((l: any) => `${l.text}:\n${stripHtml(l.content)}`).join('\n\n');
     const { isRemote, isHybrid } = detectRemote(description, location);
-    const roleFamilies = detectRoleFamilies(posting.text, description);
-    const dedupeKey = makeDedupeKey(company, posting.text, location);
 
-    const existing = await prisma.job.findFirst({
-      where: { userId, dedupeKey },
-      select: { id: true },
+    const result = await upsertJob(userId, scrapeRunId, {
+      title: posting.text, company, description, requirements,
+      location, isRemote, isHybrid,
+      url: posting.hostedUrl, applyUrl: posting.applyUrl,
+      source: 'lever', atsType: 'lever',
+      externalId: posting.id,
+      postedAt: posting.createdAt ? new Date(posting.createdAt) : undefined,
     });
-
-    if (existing) {
-      await prisma.job.update({
-        where: { id: existing.id },
-        data: { lastScrapedAt: new Date(), isActive: true },
-      });
-      jobsDuped++;
-      continue;
-    }
-
-    await prisma.job.create({
-      data: {
-        userId,
-        title: posting.text,
-        company,
-        description,
-        requirements: requirementsList,
-        location,
-        isRemote,
-        isHybrid,
-        jobType: isRemote ? 'remote' : isHybrid ? 'hybrid' : 'onsite',
-        url: posting.hostedUrl,
-        applyUrl: posting.applyUrl,
-        source: 'lever',
-        atsType: 'lever',
-        externalId: posting.id,
-        dedupeKey,
-        roleFamilies,
-        postedAt: posting.createdAt ? new Date(posting.createdAt) : undefined,
-        isActive: true,
-        lastScrapedAt: new Date(),
-        scrapeRunId,
-      },
-    });
-
-    jobsNew++;
+    if (result === 'new') jobsNew++; else jobsDuped++;
   }
-
   return { jobsFound: postings.length, jobsNew, jobsDuped };
 }
 
-/**
- * Multi-source job sync runner
- * Creates a scrape run, syncs all configured sources, updates run record.
- */
+// ─── Ashby connector (NEW) ────────────────────────────────────────────────────
+
+interface AshbyPosting {
+  id: string;
+  title: string;
+  locationName: string;
+  employmentType: string;
+  compensationTierSummary?: string;
+  isRemote?: boolean;
+  publishedDate?: string;
+}
+
+export async function syncAshbyBoard(
+  userId: string, orgSlug: string, scrapeRunId: string
+): Promise<{ jobsFound: number; jobsNew: number; jobsDuped: number }> {
+  const url = `https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams`;
+  const body = JSON.stringify({
+    operationName: 'ApiJobBoardWithTeams',
+    variables: { organizationHostedJobsPageName: orgSlug },
+    query: `query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) {
+      jobBoard: jobBoardWithTeams(organizationHostedJobsPageName: $organizationHostedJobsPageName) {
+        jobPostings {
+          id title locationName employmentType compensationTierSummary isRemote publishedDate
+          descriptionSafe
+          jobPostingLocations { location { name } }
+        }
+      }
+    }`,
+  });
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Careeva/1.0 job-aggregator' },
+    body,
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Ashby ${orgSlug}: HTTP ${res.status}`);
+
+  const data = await res.json();
+  const postings: AshbyPosting[] = data?.data?.jobBoard?.jobPostings || [];
+  const company = getCompanyName(orgSlug);
+
+  let jobsNew = 0, jobsDuped = 0;
+
+  for (const posting of postings) {
+    const location = posting.locationName || (posting.isRemote ? 'Remote' : 'Unknown');
+    const description = stripHtml((posting as any).descriptionSafe || '');
+    const salary = posting.compensationTierSummary || undefined;
+    const { isRemote, isHybrid } = detectRemote(description, location);
+    const jobUrl = `https://jobs.ashbyhq.com/${orgSlug}/${posting.id}`;
+
+    const result = await upsertJob(userId, scrapeRunId, {
+      title: posting.title, company, description, requirements: '',
+      location, isRemote: isRemote || !!posting.isRemote, isHybrid,
+      url: jobUrl, applyUrl: jobUrl,
+      source: 'ashby', atsType: 'ashby',
+      externalId: posting.id, salary,
+      postedAt: posting.publishedDate ? new Date(posting.publishedDate) : undefined,
+    });
+    if (result === 'new') jobsNew++; else jobsDuped++;
+  }
+  return { jobsFound: postings.length, jobsNew, jobsDuped };
+}
+
+// ─── Parallel multi-board sync ────────────────────────────────────────────────
+
 export async function runJobSync(
   userId: string,
-  sources: Array<{ type: 'greenhouse' | 'lever'; slug: string }>
-): Promise<{ scrapeRunId: string; results: Record<string, unknown> }> {
+  sources: Array<{ type: 'greenhouse' | 'lever' | 'ashby'; slug: string }>
+): Promise<{ scrapeRunId: string; results: Record<string, unknown>; totalNew: number }> {
   const scrapeRun = await prisma.scrapeRun.create({
     data: { userId, source: 'multi', status: 'running', startedAt: new Date() },
   });
 
+  // Run all boards in parallel (batched to avoid overwhelming connections)
+  const BATCH_SIZE = 5;
   const results: Record<string, { jobsFound: number; jobsNew: number; jobsDuped: number } | { error: string }> = {};
-  let totalFound = 0;
-  let totalNew = 0;
-  let totalDuped = 0;
+  let totalFound = 0, totalNew = 0, totalDuped = 0;
 
-  for (const source of sources) {
-    try {
-      let result: { jobsFound: number; jobsNew: number; jobsDuped: number };
-      if (source.type === 'greenhouse') {
-        result = await syncGreenhouseBoard(userId, source.slug, scrapeRun.id);
-      } else {
-        result = await syncLeverBoard(userId, source.slug, scrapeRun.id);
+  for (let i = 0; i < sources.length; i += BATCH_SIZE) {
+    const batch = sources.slice(i, i + BATCH_SIZE);
+    const settled = await Promise.allSettled(
+      batch.map(async (source) => {
+        const key = `${source.type}:${source.slug}`;
+        try {
+          let result: { jobsFound: number; jobsNew: number; jobsDuped: number };
+          if (source.type === 'greenhouse') result = await syncGreenhouseBoard(userId, source.slug, scrapeRun.id);
+          else if (source.type === 'lever') result = await syncLeverBoard(userId, source.slug, scrapeRun.id);
+          else result = await syncAshbyBoard(userId, source.slug, scrapeRun.id);
+          return { key, result };
+        } catch (err) {
+          return { key, error: err instanceof Error ? err.message : String(err) };
+        }
+      })
+    );
+
+    for (const s of settled) {
+      if (s.status === 'fulfilled') {
+        const { key, result, error } = s.value as any;
+        if (error) { results[key] = { error }; }
+        else {
+          results[key] = result;
+          totalFound += result.jobsFound;
+          totalNew += result.jobsNew;
+          totalDuped += result.jobsDuped;
+        }
       }
-      results[`${source.type}:${source.slug}`] = result;
-      totalFound += result.jobsFound;
-      totalNew += result.jobsNew;
-      totalDuped += result.jobsDuped;
-    } catch (err) {
-      results[`${source.type}:${source.slug}`] = { error: err instanceof Error ? err.message : String(err) };
     }
   }
 
   await prisma.scrapeRun.update({
     where: { id: scrapeRun.id },
-    data: {
-      status: 'complete',
-      completedAt: new Date(),
-      jobsFound: totalFound,
-      jobsNew: totalNew,
-      jobsDuped: totalDuped,
-    },
+    data: { status: 'complete', completedAt: new Date(), jobsFound: totalFound, jobsNew: totalNew, jobsDuped: totalDuped },
   });
 
-  return { scrapeRunId: scrapeRun.id, results };
+  return { scrapeRunId: scrapeRun.id, results, totalNew };
+}
+
+// ─── Stale job cleanup ────────────────────────────────────────────────────────
+
+export async function cleanupStaleJobs(userId: string): Promise<number> {
+  const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000); // 45 days
+  const result = await prisma.job.updateMany({
+    where: {
+      userId,
+      isActive: true,
+      source: { not: 'manual' },
+      applications: { none: {} },
+      OR: [
+        { lastScrapedAt: { lt: cutoff } },
+        { postedAt: { lt: cutoff } },
+      ],
+    },
+    data: { isActive: false },
+  });
+  return result.count;
 }

@@ -30,8 +30,8 @@ export async function POST(request: NextRequest) {
       if (queries.length === 0) return NextResponse.json({ error: 'Add target job titles in your profile to enable job search' }, { status: 400 });
     }
 
-    const sources = body.sources || ['google', 'remotive', 'adzuna', 'themuse'];
-    const locations = body.locations || ['United States', 'Remote'];
+    const sources = body.sources || ['remotive', 'themuse', 'weworkremotely', 'greenhouse'];
+    const locations = body.locations || ['United States'];
     const greenhouseBoards = body.greenhouseBoards || [];
     const leverBoards = body.leverBoards || [];
 

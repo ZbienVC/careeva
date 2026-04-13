@@ -30,20 +30,6 @@ export async function POST(request: NextRequest) {
       ...TOP_ASHBY_BOARDS.map(s => ({ type: 'ashby' as const, slug: s })),
     ];
 
-    // Add any user-specified company targets
-    const companyTargets = await prisma.companyTarget.findMany({
-      where: { userId: user.id },
-      select: { name: true, atsType: true, atsSlug: true },
-    }).catch(() => []);
-
-    for (const target of companyTargets) {
-      if (target.atsSlug && target.atsType) {
-        const type = target.atsType as 'greenhouse' | 'lever' | 'ashby';
-        if (!sources.find(s => s.slug === target.atsSlug)) {
-          sources.push({ type, slug: target.atsSlug });
-        }
-      }
-    }
 
     // ── Step 3: Run board sync (parallel, batched) ────────────────────────────
     const syncResult = await runJobSync(user.id, sources);

@@ -290,14 +290,15 @@ async function searchUSAJobs(query: string): Promise<SearchJob[]> {
 
 async function searchArbeitnow(query: string): Promise<SearchJob[]> {
   try {
-    const url = `https://www.arbeitnow.com/api/job-board-api?search=${encodeURIComponent(query)}`;
+    const url = `https://www.arbeitnow.com/api/job-board-api?search=${encodeURIComponent(query)}&remote=true`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Careeva/1.0 job-aggregator', 'Accept': 'application/json' },
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.data || []).slice(0, 20).map((job: any): SearchJob => ({
+    const isEnglish = (text: string) => !/[^\x00-\x7F\u00C0-\u00FF]/.test(text.slice(0, 50)) || /\b(the|and|for|with|you|our|we|this|that|are|will|your|have|remote|hybrid|full.time)\b/i.test(text);
+    return (data.data || []).filter((job: any) => isEnglish(job.title || '')).slice(0, 20).map((job: any): SearchJob => ({
       title: job.title || '',
       company: job.company_name || '',
       location: job.location || 'Remote',
@@ -694,7 +695,7 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
         userId,
         title: job.title,
         company: job.company,
-        description: job.description.slice(0, 5000),
+        description: job.description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 5000),
         requirements: '',
         location: job.location,
         isRemote: job.isRemote,

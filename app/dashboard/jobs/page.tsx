@@ -99,7 +99,7 @@ function JobCard({ job, onApply, onScore }: {
 
       {/* Description preview */}
       {job.description && (
-        <p className="text-slate-400 text-xs leading-relaxed line-clamp-2">{job.description.slice(0, 180)}...</p>
+        <p className="text-slate-400 text-xs leading-relaxed line-clamp-2">{(job.description || '').replace(/<[^>]+>/g, ' ').slice(0, 180)}</p>
       )}
 
       {/* Application packet preview */}
@@ -195,7 +195,7 @@ export default function JobsPage() {
   const triggerSearch = async () => {
     setSearching(true);
     try {
-      const res = await fetch('/api/jobs/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources: ['remotive', 'themuse', 'adzuna', 'arbeitnow', 'weworkremotely', 'authenticjobs', 'indeed', 'dice'] }) });
+      const res = await fetch('/api/jobs/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sources: ['remotive', 'themuse', 'weworkremotely', 'greenhouse'] }) });
       const data = await res.json();
       setSearchResult({ total: data.total || 0, new: data.new || 0 });
       // Reload jobs
@@ -231,7 +231,11 @@ export default function JobsPage() {
           <p className="text-slate-400 text-sm mt-0.5">{jobs.length} opportunities · click Quick Apply to generate your packet</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={triggerSearch} disabled={searching}
+          <button onClick={() => triggerSearch(true)} disabled={searching} title="Clear old jobs and search fresh"
+            className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 text-slate-500 hover:bg-slate-50 transition-all mr-2 disabled:opacity-60">
+            {searching ? '..' : '↺ Refresh'}
+          </button>
+          <button onClick={() => triggerSearch(false)} disabled={searching}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60 transition-all"
             style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
             {searching ? (

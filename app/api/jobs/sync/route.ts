@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/session';
+import { runJobSync, cleanupStaleJobs, TOP_GREENHOUSE_BOARDS, TOP_LEVER_BOARDS, TOP_ASHBY_BOARDS } from '@/lib/job-connectors';
 import { aggregateJobSearch } from '@/lib/job-search';
-import { runJobSync } from '@/lib/job-connectors';
 import { prisma } from '@/lib/db';
 
-// POST /api/jobs/sync — trigger a full job sync from user's JobPreferences
+// POST /api/jobs/sync - full ATS board sync + general search
 export async function POST(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -12,96 +12,78 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    // Load user's job preferences + skills to build intelligent search queries
+    // Load user preferences
     const [prefs, skills, workHistory] = await Promise.all([
       prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
       prisma.skill.findMany({ where: { userId: user.id }, take: 20 }),
       prisma.workHistory.findMany({ where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 3 }),
     ]);
 
-    // Build search queries from profile data
-    const queries: string[] = [];
+    // ── Step 1: Cleanup stale jobs ────────────────────────────────────────────
+    const staleDeactivated = await cleanupStaleJobs(user.id);
 
-    // Primary: target titles from job preferences
-    if (prefs?.targetTitles?.length) {
-      queries.push(...prefs.targetTitles.slice(0, 3));
+    // ── Step 2: Build board list ──────────────────────────────────────────────
+    // Start with top curated boards (50+ companies), always included
+    const sources: Array<{ type: 'greenhouse' | 'lever' | 'ashby'; slug: string }> = [
+      ...TOP_GREENHOUSE_BOARDS.map(s => ({ type: 'greenhouse' as const, slug: s })),
+      ...TOP_LEVER_BOARDS.map(s => ({ type: 'lever' as const, slug: s })),
+      ...TOP_ASHBY_BOARDS.map(s => ({ type: 'ashby' as const, slug: s })),
+    ];
+
+    // Add any user-specified company targets
+    const companyTargets = await prisma.companyTarget.findMany({
+      where: { userId: user.id },
+      select: { name: true, atsType: true, atsSlug: true },
+    }).catch(() => []);
+
+    for (const target of companyTargets) {
+      if (target.atsSlug && target.atsType) {
+        const type = target.atsType as 'greenhouse' | 'lever' | 'ashby';
+        if (!sources.find(s => s.slug === target.atsSlug)) {
+          sources.push({ type, slug: target.atsSlug });
+        }
+      }
     }
 
-    // Fallback: infer from work history titles
-    if (queries.length === 0 && workHistory.length > 0) {
-      queries.push(workHistory[0].title);
-      if (workHistory[1]) queries.push(workHistory[1].title);
-    }
+    // ── Step 3: Run board sync (parallel, batched) ────────────────────────────
+    const syncResult = await runJobSync(user.id, sources);
 
-    // Skill-based queries for hard-to-title roles
-    if (queries.length < 3 && skills.length > 0) {
-      const topSkills = skills.slice(0, 3).map(s => s.name).join(' ');
-      queries.push(`${topSkills} developer`);
-    }
+    // ── Step 4: General search for discovery of NEW companies ─────────────────
+    // Build queries from profile
+    const profileTitles = Array.isArray(prefs?.targetTitles)
+      ? prefs.targetTitles
+      : String(prefs?.targetTitles || '').split(',').map((s: string) => s.trim()).filter(Boolean);
 
-    // Deduplicate and limit
-    const uniqueQueries = [...new Set(queries)].slice(0, 5);
+    const queries = profileTitles.length > 0
+      ? profileTitles.slice(0, 3)
+      : workHistory.length > 0
+        ? workHistory.slice(0, 2).map(w => w.title).filter(Boolean)
+        : ['Software Engineer', 'AI Engineer', 'Full Stack Engineer'];
 
-    if (uniqueQueries.length === 0) {
-      return NextResponse.json(
-        { error: 'No search queries could be built. Complete your profile (job preferences or work history) first.' },
-        { status: 400 }
-      );
-    }
-
-    // Build locations from preferences
-    const locations: string[] = prefs?.preferredLocations?.length
-      ? prefs.preferredLocations.slice(0, 3)
-      : ['United States'];
-
-    // Add remote if preferred
-    if (prefs?.remotePreference === 'remote_only' || prefs?.remotePreference === 'any') {
-      if (!locations.includes('remote')) locations.unshift('remote');
-    }
-
-    // Choose sources (can be overridden in body)
-    type JobSource = 'google'|'remotive'|'adzuna'|'themuse'|'greenhouse'|'lever'|'indeed'|'weworkremotely'|'monster'|'remoteco'|'usajobs'|'arbeitnow'|'authenticjobs'|'jsearch'|'dice';
-    const sources: JobSource[] = (body.sources || [
-      'google', 'remotive', 'adzuna', 'themuse', 'arbeitnow',
-      'weworkremotely', 'authenticjobs', 'indeed', 'dice',
-    ]) as JobSource[];
-
-    // Build Greenhouse/Lever boards from well-known industry targets
-    const greenhouseBoards: string[] = [];
-    const leverBoards: string[] = [];
-
-    // Add well-known boards for target industries
-    if (prefs?.targetIndustries?.some(i => /crypto|web3|blockchain/i.test(i))) {
-      greenhouseBoards.push('coinbase', 'consensys', 'chainalysis', 'anchorage');
-      leverBoards.push('paradigm', 'a16zcrypto');
-    }
-    if (prefs?.targetIndustries?.some(i => /fintech|finance/i.test(i))) {
-      greenhouseBoards.push('stripe', 'brex', 'plaid', 'robinhood');
-      leverBoards.push('chime', 'mercury');
-    }
-    if (prefs?.targetFunctions?.some(f => /data|analytics|ml|ai/i.test(f))) {
-      greenhouseBoards.push('databricks', 'snowflake', 'dbt-labs');
-      leverBoards.push('amplitude', 'mixpanel', 'fivetran');
-    }
-
-    // Run the search
-    const result = await aggregateJobSearch({
+    const searchResult = await aggregateJobSearch({
       userId: user.id,
-      queries: uniqueQueries,
-      locations,
-      sources,
-      greenhouseBoards: [...new Set(greenhouseBoards)],
-      leverBoards: [...new Set(leverBoards)],
+      queries: [...new Set(queries)],
+      locations: ['United States'],
+      sources: ['remotive', 'themuse'],
+      greenhouseBoards: [],
+      leverBoards: [],
     });
+
+    // ── Count active jobs ─────────────────────────────────────────────────────
+    const totalActive = await prisma.job.count({ where: { userId: user.id, isActive: true } });
 
     return NextResponse.json({
       success: true,
-      queriesUsed: uniqueQueries,
-      locationsUsed: locations,
-      sourcesUsed: sources,
-      greenhouseBoards: [...new Set(greenhouseBoards)],
-      leverBoards: [...new Set(leverBoards)],
-      ...result,
+      staleDeactivated,
+      boardSync: {
+        boardsScanned: sources.length,
+        newFromBoards: syncResult.totalNew,
+      },
+      generalSearch: {
+        queriesUsed: queries,
+        newFromSearch: searchResult.new,
+      },
+      totalActiveJobs: totalActive,
     });
 
   } catch (err) {
@@ -113,22 +95,31 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/jobs/sync — list recent scrape runs + last sync summary
+// GET /api/jobs/sync - last sync summary
 export async function GET(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const [runs, prefs] = await Promise.all([
+  const [runs, activeCount, recentJobs] = await Promise.all([
     prisma.scrapeRun.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
-      take: 20,
+      take: 5,
+      select: { id: true, status: true, jobsFound: true, jobsNew: true, completedAt: true, source: true },
     }),
-    prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
+    prisma.job.count({ where: { userId: user.id, isActive: true } }),
+    prisma.job.findMany({
+      where: { userId: user.id, isActive: true },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { title: true, company: true, source: true, createdAt: true },
+    }),
   ]);
 
-  const lastSync = runs[0] ?? null;
-  const queriesPreview = prefs?.targetTitles?.slice(0, 3) ?? [];
-
-  return NextResponse.json({ runs, lastSync, queriesPreview });
+  return NextResponse.json({
+    lastRun: runs[0] ?? null,
+    totalActiveJobs: activeCount,
+    recentJobs,
+    boardsAvailable: TOP_GREENHOUSE_BOARDS.length + TOP_LEVER_BOARDS.length + TOP_ASHBY_BOARDS.length,
+  });
 }

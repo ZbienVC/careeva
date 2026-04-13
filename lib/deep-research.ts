@@ -18,7 +18,7 @@ export async function generateDeepResearch(jobId: string, userId: string): Promi
   ]);
 
   const candidateAngle = [
-    profile?.jobTitle ? "My background: ${profile.jobTitle}" : null,
+    profile?.jobTitle ? `My background: ${profile.jobTitle}` : null,
     workHistory[0] ? `Most recent role: ${workHistory[0].title} at ${workHistory[0].company}` : null,
     skills.length > 0 ? `Core skills: ${skills.map((s: any) => s.name).join(', ')}` : null,
     profile?.careerGoals ? "Goals: ${(profile.careerGoals ?? '').slice(0, 200)}" : null,

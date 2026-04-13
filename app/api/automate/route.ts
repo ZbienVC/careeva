@@ -25,7 +25,7 @@ import { aggregateJobSearch, CURATED_GREENHOUSE_BOARDS, CURATED_LEVER_BOARDS } f
 import { autoApplyToJob } from '@/lib/auto-apply';
 import { scoreJob } from '@/lib/job-scorer';
 
-const DEFAULT_APPLY_THRESHOLD = 70; // score >= 70 to attempt apply
+const DEFAULT_APPLY_THRESHOLD = 50; // score >= 70 to attempt apply
 const MAX_APPLIES_PER_RUN = 10;     // safety limit
 
 type AutomateMode = 'score_only' | 'prep_all' | 'auto_safe' | 'full_auto';
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
         const searchResult = await aggregateJobSearch({
           userId: user.id,
           queries,
-          sources: ['remotive', 'themuse', 'adzuna', 'arbeitnow', 'weworkremotely', 'authenticjobs', 'indeed', 'dice', 'jsearch'],
+          sources: ['remotive', 'themuse', 'weworkremotely', 'greenhouse'],
         });
         stats.searched = searchResult.new;
         runLog.push(`✓ Found ${searchResult.total} jobs, ${searchResult.new} new added`);

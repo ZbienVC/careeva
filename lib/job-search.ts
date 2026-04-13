@@ -180,7 +180,7 @@ async function searchTheMuse(query: string): Promise<SearchJob[]> {
       title: job.name || '',
       company: job.company?.name || '',
       location: job.locations?.map((l: any) => l.name).join(', ') || 'Various',
-      description: job.contents || '',
+      description: (job.contents || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000),
       url: job.refs?.landing_page || '',
       applyUrl: job.refs?.landing_page || '',
       isRemote: (job.locations || []).some((l: any) => /remote/i.test(l.name)),
@@ -328,6 +328,12 @@ async function searchWeWorkRemotely(query: string): Promise<SearchJob[]> {
     const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
     const qLow = query.toLowerCase();
     return items
+      .filter(item => {
+        // Only keep items where the query keywords appear in the title/content
+        const lc = item.toLowerCase();
+        const words = qLow.split(/\s+/).filter(w => w.length > 3);
+        return words.some(w => lc.includes(w));
+      })
       .map(item => {
         const get = (tag: string) => item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`))?.[1]?.replace(/<!\[CDATA\[|\]\]>/g, '').trim() || '';
         const title = get('title');

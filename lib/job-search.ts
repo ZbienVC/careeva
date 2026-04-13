@@ -202,16 +202,19 @@ export const CURATED_GREENHOUSE_BOARDS: Record<string, string[]> = {
   fintech: ['stripe', 'plaid', 'brex', 'chime', 'robinhood', 'coinbase', 'affirm', 'marqeta', 'ripple'],
   crypto: ['coinbase', 'ripple', 'kraken', 'blockchain', 'alchemy', 'chainalysis', 'dydx'],
   ops: ['airbnb', 'lyft', 'doordash', 'instacart', 'notion', 'asana', 'monday'],
-  ai_ml: ['anthropic', 'openai', 'cohere', 'huggingface', 'runway', 'scale'],
+  ai_ml: ['anthropic', 'openai', 'cohere', 'huggingface', 'runway', 'scale', 'elevenlabs', 'mistral', 'perplexity'],
   saas: ['salesforce', 'hubspot', 'zendesk', 'intercom', 'segment', 'amplitude', 'mixpanel'],
-  startup: ['notion', 'figma', 'linear', 'vercel', 'supabase', 'railway', 'retool'],
+  startup: ['notion', 'figma', 'linear', 'vercel', 'supabase', 'railway', 'retool', 'cursor', 'loom', 'coda'],
+  engineering: ['stripe', 'plaid', 'vercel', 'supabase', 'linear', 'notion', 'figma', 'retool', 'anthropic', 'openai'],
 };
 
 export const CURATED_LEVER_BOARDS: Record<string, string[]> = {
-  analytics: ['netflix', 'twitter', 'slack', 'dropbox', 'square'],
-  fintech: ['square', 'klarna', 'nubank', 'wise', 'monzo'],
-  ops: ['square', 'shopify', 'shopify', 'flexport'],
-  saas: ['atlassian', 'datadog', 'pagerduty', 'hashicorp'],
+  analytics: ['netflix', 'slack', 'dropbox', 'square', 'canva', 'airtable'],
+  fintech: ['square', 'klarna', 'nubank', 'wise', 'brex', 'mercury'],
+  ops: ['square', 'shopify', 'flexport', 'rippling'],
+  saas: ['atlassian', 'datadog', 'pagerduty', 'hashicorp', 'gitlab'],
+  startup: ['rippling', 'lattice', 'loom', 'figma', 'pitch', 'superhuman'],
+  engineering: ['rippling', 'lattice', 'canva', 'airtable', 'miro', 'alchemy', 'dbt-labs'],
 };
 
 // ─── Source 5: Indeed RSS feed (free, no auth) ────────────────────────────────

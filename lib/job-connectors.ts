@@ -42,17 +42,15 @@ const COMPANY_NAMES: Record<string, string> = {
   'gitlab': 'GitLab', 'hashicorp': 'HashiCorp', 'datadog': 'Datadog',
   'atlassian': 'Atlassian', 'pagerduty': 'PagerDuty', 'shopify': 'Shopify',
   'flexport': 'Flexport',
-  // Ashby
-  'elevenlabs': 'ElevenLabs', 'luma': 'Luma AI', 'vapi': 'Vapi',
-  'cursor': 'Cursor', 'windsurf': 'Windsurf', 'glean': 'Glean',
+  // Ashby-only entries (elevenlabs/cursor/mistral/cohere already above)
+  'luma': 'Luma AI', 'vapi': 'Vapi', 'windsurf': 'Windsurf', 'glean': 'Glean',
   'arizeai': 'Arize AI', 'langchain': 'LangChain', 'llamaindex': 'LlamaIndex',
   'modal': 'Modal', 'replicate': 'Replicate', 'together': 'Together AI',
   'fireworks': 'Fireworks AI', 'groq': 'Groq', 'cerebras': 'Cerebras',
-  'mistral': 'Mistral AI', 'cohere': 'Cohere', 'adept': 'Adept',
-  'inflection': 'Inflection AI', 'characterai': 'Character.AI',
+  'adept': 'Adept', 'inflection': 'Inflection AI', 'characterai': 'Character.AI',
   'harvey': 'Harvey', 'sierra': 'Sierra', 'imbue': 'Imbue',
   'poolside': 'Poolside', 'cognition': 'Cognition', 'factory': 'Factory',
-  'devin': 'Cognition', 'codegen': 'Codegen', 'tabnine': 'Tabnine',
+  'devin': 'Cognition (Devin)', 'codegen': 'Codegen', 'tabnine': 'Tabnine',
 };
 
 function getCompanyName(slug: string): string {

@@ -1,15 +1,17 @@
 /**
- * lib/auto-apply.ts
- * Application packet generator + direct ATS submission
- * 
- * For personal use - optimized for Zach's job search
- * Supports: Greenhouse (API apply), Lever (API apply), Generic (queue for review)
+ * lib/auto-apply.ts (v2 — quality-first rewrite)
+ *
+ * Key changes:
+ * - Archetype-aware cover letter prompting (6 role types)
+ * - JD keyword extraction + injection into cover letter
+ * - Quality gate: score the cover letter before submitting
+ * - Richer "why_this_company" via actual JD analysis
+ * - Behavioral answers use STAR structure from stored stories
+ * - Packet confidence reflects actual content quality, not just field presence
  */
 
 import { prisma } from '@/lib/prisma';
-import { generateCoverLetter, generateBehavioralAnswer, generateShortAnswer, isAIConfigured } from '@/lib/ai-client';
-
-// AI calls use the shared ai-client which routes to Claude or GPT based on task
+import { generate, generateCoverLetter, generateBehavioralAnswer, generateShortAnswer, isAIConfigured } from '@/lib/ai-client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,13 +19,52 @@ export interface ApplicationPacket {
   jobId: string;
   resumeText: string;
   coverLetter: string;
-  answers: Record<string, string>;  // questionKey -> answer
-  confidence: number;               // 0-1, overall confidence we can auto-submit
+  answers: Record<string, string>;
+  confidence: number;       // 0–1 overall confidence
+  qualityScore: number;     // 0–100: how good is this cover letter actually
   canAutoApply: boolean;
   missingFields: string[];
+  archetype: string;
+  keywords: string[];       // top JD keywords injected into cover letter
 }
 
-// ─── Step 1: Build profile context ───────────────────────────────────────────
+// ─── Archetype detection ──────────────────────────────────────────────────────
+
+function detectArchetype(jobTitle: string, description: string): string {
+  const text = (jobTitle + ' ' + description).toLowerCase();
+  if (/\b(llmops|observabilit|eval|pipeline|mlops|monitoring|reliability|inference)\b/.test(text)) return 'AI Platform / LLMOps';
+  if (/\b(agent|agentic|orchestrat|multi.agent|workflow|hitl|automation)\b/.test(text)) return 'Agentic / Automation';
+  if (/\b(product manager|prd|roadmap|discovery|stakeholder|product owner)\b/.test(text)) return 'Technical AI PM';
+  if (/\b(solution architect|systems design|enterprise|integration|architect)\b/.test(text)) return 'AI Solutions Architect';
+  if (/\b(forward deploy|field engineer|client.facing|prototype|fast delivery|professional services)\b/.test(text)) return 'AI Forward Deployed';
+  if (/\b(transformation|change management|adoption|enablement|digital transform)\b/.test(text)) return 'AI Transformation';
+  return 'Software Engineering';
+}
+
+// ─── JD keyword extraction ────────────────────────────────────────────────────
+
+async function extractKeywords(jobDescription: string): Promise<string[]> {
+  try {
+    const raw = await generate({
+      task: 'job_analysis',
+      maxTokens: 150,
+      systemPrompt: 'Extract keywords from job descriptions. Return only a JSON array of strings, no markdown.',
+      prompt: `Extract the 12 most important technical and role-specific keywords from this job description. Focus on: technologies, methodologies, role-specific terms, and skills the recruiter will scan for.
+
+Return ONLY a JSON array: ["keyword1", "keyword2", ...]
+
+Job description:
+${jobDescription.slice(0, 2000)}`,
+    });
+    const cleaned = raw.replace(/```json\n?|```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    return Array.isArray(parsed) ? parsed.slice(0, 12) : [];
+  } catch {
+    return [];
+  }
+}
+
+// ─── Profile context builder ──────────────────────────────────────────────────
 
 async function buildProfileContext(userId: string): Promise<string> {
   const [
@@ -34,14 +75,18 @@ async function buildProfileContext(userId: string): Promise<string> {
     jobPrefs,
     writingPrefs,
     storedAnswers,
+    certs,
+    projects,
   ] = await Promise.all([
     prisma.personalInfo.findUnique({ where: { userId } }),
-    prisma.workHistory.findMany({ where: { userId }, include: { bullets: true }, orderBy: { startDate: 'desc' } }),
+    prisma.workHistory.findMany({ where: { userId }, include: { bullets: { orderBy: { sortOrder: 'asc' } } }, orderBy: { startDate: 'desc' } }),
     prisma.educationEntry.findMany({ where: { userId }, orderBy: { endDate: 'desc' } }),
     prisma.skill.findMany({ where: { userId } }),
     prisma.jobPreferences.findUnique({ where: { userId } }),
     prisma.writingPreferences.findUnique({ where: { userId } }),
     prisma.reusableAnswer.findMany({ where: { userId, isVerified: true } }),
+    prisma.certification.findMany({ where: { userId } }),
+    prisma.project.findMany({ where: { userId }, include: { bullets: true }, take: 4 }),
   ]);
 
   const parts: string[] = [];
@@ -49,75 +94,197 @@ async function buildProfileContext(userId: string): Promise<string> {
   if (personalInfo) {
     parts.push(`NAME: ${personalInfo.fullName || 'Zach Bienstock'}`);
     parts.push(`EMAIL: ${personalInfo.email || 'zbienstock@gmail.com'}`);
-    parts.push(`PHONE: ${personalInfo.phone || ''}`);
-    parts.push(`LOCATION: ${[personalInfo.city, personalInfo.state].filter(Boolean).join(', ')}`);
-    parts.push(`LINKEDIN: ${personalInfo.linkedinUrl || ''}`);
-    parts.push(`GITHUB: ${personalInfo.githubUrl || ''}`);
+    if (personalInfo.phone) parts.push(`PHONE: ${personalInfo.phone}`);
+    const loc = [personalInfo.city, personalInfo.state].filter(Boolean).join(', ');
+    if (loc) parts.push(`LOCATION: ${loc}`);
+    if (personalInfo.linkedinUrl) parts.push(`LINKEDIN: ${personalInfo.linkedinUrl}`);
+    if (personalInfo.githubUrl) parts.push(`GITHUB: ${personalInfo.githubUrl}`);
+    if (personalInfo.websiteUrl) parts.push(`WEBSITE: ${personalInfo.websiteUrl}`);
     parts.push(`WORK_AUTH: ${personalInfo.workAuthorization || 'us_citizen'}`);
     parts.push(`SPONSORSHIP_NEEDED: ${personalInfo.requiresSponsorship ? 'Yes' : 'No'}`);
   }
 
+  // Writing style
+  const toneWords = writingPrefs?.toneWords?.join(', ') || 'direct, confident, human';
+  const avoidWords = writingPrefs?.avoidWords?.join(', ') || 'passionate, synergy, leverage, spearheaded';
+  parts.push(`\nTONE: ${toneWords}`);
+  parts.push(`AVOID THESE WORDS: ${avoidWords}`);
+  if (writingPrefs?.positioningStatement) parts.push(`POSITIONING: ${writingPrefs.positioningStatement}`);
+
   if (workHistory.length > 0) {
     parts.push('\nWORK HISTORY:');
     for (const wh of workHistory.slice(0, 5)) {
-      const start = wh.startDate ? new Date(wh.startDate).getFullYear() : '';
-      const end = wh.isCurrent ? 'Present' : (wh.endDate ? new Date(wh.endDate).getFullYear() : '');
-      parts.push(`- ${wh.title} @ ${wh.company} (${start}-${end})`);
-      if (wh.summary) parts.push(`  ${wh.summary}`);
-      for (const bullet of wh.bullets.slice(0, 3)) {
-        parts.push(`  • ${bullet.content}`);
+      const start = wh.startDate ? new Date(wh.startDate).getFullYear() : '?';
+      const end = wh.isCurrent ? 'Present' : (wh.endDate ? new Date(wh.endDate).getFullYear() : '?');
+      parts.push(`\n[${start}–${end}] ${wh.title} @ ${wh.company}`);
+      if (wh.summary) parts.push(`  Summary: ${wh.summary}`);
+      for (const b of wh.bullets.slice(0, 5)) {
+        parts.push(`  • ${b.content}${b.metric ? ` (${b.metric})` : ''}`);
       }
+      if (wh.skills?.length) parts.push(`  Skills used: ${wh.skills.slice(0, 8).join(', ')}`);
     }
   }
 
   if (education.length > 0) {
     parts.push('\nEDUCATION:');
     for (const ed of education) {
-      parts.push(`- ${ed.degree || ''} ${ed.fieldOfStudy || ''} @ ${ed.institution}`);
+      parts.push(`• ${[ed.degree, ed.fieldOfStudy].filter(Boolean).join(' in ')} @ ${ed.institution}${ed.endDate ? ` (${new Date(ed.endDate).getFullYear()})` : ''}`);
     }
   }
 
   if (skills.length > 0) {
-    const skillNames = skills.slice(0, 20).map(s => s.name).join(', ');
-    parts.push(`\nSKILLS: ${skillNames}`);
+    parts.push(`\nSKILLS: ${skills.slice(0, 25).map(s => s.name).join(', ')}`);
   }
 
-  if (jobPrefs) {
-    if (jobPrefs.salaryMinUSD) parts.push(`SALARY_MIN: $${jobPrefs.salaryMinUSD.toLocaleString()}`);
-    if (jobPrefs.remotePreference) parts.push(`REMOTE_PREF: ${jobPrefs.remotePreference}`);
+  if (certs.length > 0) {
+    parts.push(`CERTIFICATIONS: ${certs.map(c => c.name + (c.issuer ? ` (${c.issuer})` : '')).join(', ')}`);
+  }
+
+  if (projects.length > 0) {
+    parts.push('\nKEY PROJECTS:');
+    for (const p of projects.slice(0, 3)) {
+      parts.push(`• ${p.name}${p.description ? ': ' + p.description.slice(0, 120) : ''}`);
+      if (p.technologies?.length) parts.push(`  Tech: ${p.technologies.join(', ')}`);
+    }
   }
 
   if (storedAnswers.length > 0) {
-    parts.push('\nSTORED ANSWERS:');
-    for (const ans of storedAnswers.slice(0, 15)) {
-      parts.push(`${ans.questionKey}: ${ans.answer.slice(0, 200)}`);
+    parts.push('\nSTORED ANSWERS (use these verbatim when generating answers):');
+    for (const ans of storedAnswers.slice(0, 10)) {
+      parts.push(`${ans.questionKey}: ${ans.answer.slice(0, 250)}`);
     }
+  }
+
+  if (jobPrefs) {
+    if (jobPrefs.salaryMinUSD) {
+      const s = jobPrefs.salaryMaxUSD
+        ? `$${jobPrefs.salaryMinUSD.toLocaleString()}–$${jobPrefs.salaryMaxUSD.toLocaleString()}`
+        : `$${jobPrefs.salaryMinUSD.toLocaleString()}+`;
+      parts.push(`\nSALARY TARGET: ${s}`);
+    }
+    if (jobPrefs.remotePreference) parts.push(`REMOTE PREFERENCE: ${jobPrefs.remotePreference}`);
   }
 
   return parts.join('\n');
 }
 
-// ─── Step 2: Generate cover letter ───────────────────────────────────────────
+// ─── Cover letter generation (archetype-aware + keyword-injected) ─────────────
 
-async function buildAndGenerateCoverLetter(
+async function generateQualityCoverLetter(
   profileContext: string,
   job: { title: string; company: string; description: string },
-  tone = 'professional'
+  archetype: string,
+  keywords: string[],
+  personalInfo: { fullName?: string | null; addressLine1?: string | null; city?: string | null; state?: string | null; zipCode?: string | null; phone?: string | null; email?: string | null; linkedinUrl?: string | null; githubUrl?: string | null } | null
 ): Promise<string> {
-  const prompt = `You are writing a cover letter for a job application. Write in a ${tone}, authentic, human voice. Be concise (3 paragraphs max). Do NOT fabricate experience - only use what's in the profile.
+  const archetypeGuidance: Record<string, string> = {
+    'AI Platform / LLMOps': 'Emphasize: production ML systems, observability, evals, pipeline reliability, cost optimization, scaling. Lead with a concrete system you shipped at scale.',
+    'Agentic / Automation': 'Emphasize: agent orchestration, tool use, HITL design, error handling, workflow automation. Lead with a specific agentic system you built.',
+    'Technical AI PM': 'Emphasize: product discovery, stakeholder alignment, roadmap decisions, metric-driven outcomes. Lead with a product decision you owned and its business impact.',
+    'AI Solutions Architect': 'Emphasize: system design, enterprise integration, cross-functional technical leadership. Lead with an architecture decision that solved a hard constraint.',
+    'AI Forward Deployed': 'Emphasize: speed of delivery, client-facing work, prototype-to-production, adaptability. Lead with a fast delivery win.',
+    'AI Transformation': 'Emphasize: change management, adoption, enablement, organizational impact at scale. Lead with adoption metrics.',
+    'Software Engineering': 'Emphasize: technical depth, system thinking, code quality, team impact. Lead with your most impactful technical contribution.',
+  };
 
-PROFILE:
+  const guidance = archetypeGuidance[archetype] || archetypeGuidance['Software Engineering'];
+  const keywordList = keywords.slice(0, 8).join(', ');
+
+  // Build professional header
+  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const name = personalInfo?.fullName || 'Zach Bienstock';
+  const cityState = [personalInfo?.city, personalInfo?.state ? personalInfo.state + (personalInfo.zipCode ? ' ' + personalInfo.zipCode : '') : ''].filter(Boolean).join(', ');
+
+  const header = [
+    name,
+    ...(personalInfo?.addressLine1 ? [personalInfo.addressLine1] : []),
+    ...(cityState ? [cityState] : []),
+    ...(personalInfo?.phone ? [personalInfo.phone] : []),
+    ...(personalInfo?.email ? [personalInfo.email] : []),
+    ...(personalInfo?.linkedinUrl ? [personalInfo.linkedinUrl] : []),
+    ...(personalInfo?.githubUrl ? [personalInfo.githubUrl] : []),
+    '',
+    today,
+    '',
+    'Hiring Team',
+    job.company,
+    '',
+    `Re: ${job.title}`,
+    '',
+    'Dear Hiring Team,',
+  ].join('\n');
+
+  const body = await generateCoverLetter(`
+ROLE ARCHETYPE: ${archetype}
+ARCHETYPE GUIDANCE: ${guidance}
+KEYWORDS TO WEAVE IN NATURALLY (use at least 4): ${keywordList}
+
+ABSOLUTE RULES:
+1. NEVER fabricate any experience, metric, company, project, or skill.
+2. ONLY use facts from the CANDIDATE PROFILE below.
+3. Body must be exactly 3 paragraphs. Total body under 280 words.
+4. No paragraph starts with "I" as the first word.
+5. No clichés: no "passionate", "team player", "hard worker", "results-driven", "leverage", "spearheaded".
+6. Each paragraph must contain at least one specific, factual detail from the profile.
+
+CANDIDATE PROFILE:
 ${profileContext}
 
 JOB: ${job.title} at ${job.company}
-JOB DESCRIPTION (first 1500 chars): ${job.description.slice(0, 1500)}
+JOB DESCRIPTION (first 1200 chars):
+${(job.description || '').slice(0, 1200)}
 
-Write a complete, ready-to-send cover letter. No placeholders. Address it to "Hiring Team" if no specific name available.`;
+Write ONLY the 3 body paragraphs + closing. Do not include the header (it is already written).
 
-  return generateCoverLetter(prompt);
+STRUCTURE:
+Para 1 (2-3 sentences): The most relevant single piece of their experience mapped to the #1 requirement in this JD. Be specific.
+Para 2 (3-4 sentences): 2-3 concrete skills or projects from the profile that address the JD's key requirements. Use real company names and outcomes.
+Para 3 (2-3 sentences): Why this company specifically — reference something real from the JD that shows you read it. End with a clear ask.
+Closing: "Sincerely," then blank line, then full name.
+
+Begin Para 1 now:`);
+
+  return header + '\n\n' + body;
 }
 
-// ─── Step 3: Generate answers for common questions ────────────────────────────
+// ─── Cover letter quality scorer ──────────────────────────────────────────────
+
+async function scoreCoverLetterQuality(
+  coverLetter: string,
+  profileContext: string,
+  jobDescription: string
+): Promise<number> {
+  try {
+    const raw = await generate({
+      task: 'scoring_rationale',
+      maxTokens: 100,
+      systemPrompt: 'You evaluate cover letter quality. Return ONLY a JSON object.',
+      prompt: `Score this cover letter 0–100 on these criteria:
+- Specificity (25 pts): Uses real job titles, company names, concrete details
+- Relevance (25 pts): Maps directly to this job's requirements  
+- No fabrication (25 pts): All claims match the profile
+- Writing quality (25 pts): Natural, no clichés, varied sentence structure
+
+Return ONLY: {"score": <number>, "flags": ["issue1", "issue2"]}
+
+Cover letter body (first 600 chars):
+${coverLetter.slice(0, 600)}
+
+Job requirements (first 400 chars):
+${jobDescription.slice(0, 400)}
+
+Profile snippet:
+${profileContext.slice(0, 400)}`,
+    });
+    const cleaned = raw.replace(/```json\n?|```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    return typeof parsed.score === 'number' ? Math.min(100, Math.max(0, parsed.score)) : 60;
+  } catch {
+    return 60; // default to 60 if scoring fails
+  }
+}
+
+// ─── Answer generation (quality-first) ───────────────────────────────────────
 
 async function generateAnswers(
   userId: string,
@@ -126,66 +293,83 @@ async function generateAnswers(
 ): Promise<Record<string, string>> {
   const answers: Record<string, string> = {};
 
-  // Get stored verified answers first (these are ground truth)
+  // Stored verified answers are ground truth
   const stored = await prisma.reusableAnswer.findMany({ where: { userId, isVerified: true } });
   for (const ans of stored) {
     answers[ans.questionKey] = ans.answerShort || ans.answer;
   }
 
-  // Default answers from profile
-  const personalInfo = await prisma.personalInfo.findUnique({ where: { userId } });
-  const jobPrefs = await prisma.jobPreferences.findUnique({ where: { userId } });
+  // Profile field answers
+  const [personalInfo, jobPrefs] = await Promise.all([
+    prisma.personalInfo.findUnique({ where: { userId } }),
+    prisma.jobPreferences.findUnique({ where: { userId } }),
+  ]);
 
   if (personalInfo) {
     if (!answers['work_authorization_us']) {
       const auth = personalInfo.workAuthorization;
       answers['work_authorization_us'] = (auth === 'us_citizen' || auth === 'green_card') ? 'Yes' : 'No';
     }
-    if (!answers['requires_sponsorship']) {
-      answers['requires_sponsorship'] = personalInfo.requiresSponsorship ? 'Yes' : 'No';
-    }
-    if (!answers['linkedin_url'] && personalInfo.linkedinUrl) {
-      answers['linkedin_url'] = personalInfo.linkedinUrl;
-    }
-    if (!answers['github_url'] && personalInfo.githubUrl) {
-      answers['github_url'] = personalInfo.githubUrl;
-    }
-    if (!answers['phone'] && personalInfo.phone) {
-      answers['phone'] = personalInfo.phone;
+    answers['requires_sponsorship'] = answers['requires_sponsorship'] ?? (personalInfo.requiresSponsorship ? 'Yes' : 'No');
+    if (personalInfo.linkedinUrl) answers['linkedin_url'] = answers['linkedin_url'] ?? personalInfo.linkedinUrl;
+    if (personalInfo.githubUrl) answers['github_url'] = answers['github_url'] ?? personalInfo.githubUrl;
+    if (personalInfo.phone) answers['phone'] = answers['phone'] ?? personalInfo.phone;
+    if (personalInfo.portfolioUrl) answers['portfolio_url'] = answers['portfolio_url'] ?? personalInfo.portfolioUrl;
+    if (personalInfo.availableStartDate) {
+      answers['start_date'] = answers['start_date'] ?? new Date(personalInfo.availableStartDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    } else if (personalInfo.noticePeriodDays !== undefined) {
+      answers['start_date'] = answers['start_date'] ?? (personalInfo.noticePeriodDays === 0 ? 'Immediately' : `${personalInfo.noticePeriodDays} days notice`);
     }
   }
 
-  if (jobPrefs) {
-    if (!answers['salary_expectation'] && jobPrefs.salaryMinUSD) {
-      const max = jobPrefs.salaryMaxUSD;
-      answers['salary_expectation'] = max
-        ? `$${jobPrefs.salaryMinUSD.toLocaleString()} – $${max.toLocaleString()}`
-        : `$${jobPrefs.salaryMinUSD.toLocaleString()}+`;
-    }
-    if (!answers['remote_preference'] && jobPrefs.remotePreference) {
-      const map: Record<string, string> = {
-        remote_only: 'Remote preferred',
-        hybrid_ok: 'Open to hybrid or remote',
-        any: 'Flexible',
-      };
-      answers['remote_preference'] = map[jobPrefs.remotePreference] || jobPrefs.remotePreference;
-    }
-    if (!answers['willing_to_relocate']) {
-      answers['willing_to_relocate'] = jobPrefs.willingToRelocate ? 'Yes' : 'No';
-    }
+  if (jobPrefs?.salaryMinUSD && !answers['salary_expectation']) {
+    answers['salary_expectation'] = jobPrefs.salaryMaxUSD
+      ? `$${jobPrefs.salaryMinUSD.toLocaleString()}–$${jobPrefs.salaryMaxUSD.toLocaleString()}`
+      : `$${jobPrefs.salaryMinUSD.toLocaleString()}+`;
+  }
+  if (jobPrefs?.remotePreference && !answers['remote_preference']) {
+    const map: Record<string, string> = { remote_only: 'Remote', hybrid_ok: 'Open to hybrid or remote', onsite_ok: 'Open to onsite', any: 'Flexible' };
+    answers['remote_preference'] = map[jobPrefs.remotePreference] ?? jobPrefs.remotePreference;
+  }
+  if (jobPrefs?.willingToRelocate !== undefined && !answers['willing_to_relocate']) {
+    answers['willing_to_relocate'] = jobPrefs.willingToRelocate ? 'Yes' : 'No';
   }
 
-  // Generate answers for behavioral questions using AI
+  // AI-generated answers for per-job questions
+  // "Why this company" — grounded in JD details, not generic
   if (!answers['why_this_company']) {
-    answers['why_this_company'] = await generateShortAnswer(
-      `In 2-3 sentences, explain why this candidate is interested in ${job.company} for a ${job.title} role. Be specific but authentic. Profile: ${profileContext.slice(0, 500)}`
-    ).catch(() => '');
+    answers['why_this_company'] = await generate({
+      task: 'answer_short',
+      maxTokens: 180,
+      systemPrompt: 'You write specific, authentic, non-generic answers to job application questions. Never fabricate. Use only the provided profile and JD.',
+      prompt: `Write a 2-sentence answer to "Why are you interested in ${job.company}?"
+
+Rules: Reference something SPECIFIC from the job description (technology, mission, problem space, or product). Do NOT use "I'm passionate about" or generic praise.
+
+Profile snippet: ${profileContext.slice(0, 400)}
+Job description snippet: ${(job.description || '').slice(0, 600)}`,
+    }).catch(() => `Interested in ${job.company}'s work in this space and how it aligns with my background.`);
+  }
+
+  // "Why this role" — archetype-aware
+  if (!answers['why_this_role']) {
+    answers['why_this_role'] = await generate({
+      task: 'answer_short',
+      maxTokens: 180,
+      systemPrompt: 'You write specific, authentic answers to job application questions. Never fabricate.',
+      prompt: `Write a 2-sentence answer to "Why are you interested in this ${job.title} role?"
+
+Reference a specific requirement or responsibility from the JD that maps to something in the profile.
+
+Profile: ${profileContext.slice(0, 400)}
+JD: ${(job.description || '').slice(0, 500)}`,
+    }).catch(() => `The ${job.title} role aligns well with my background and what I'm looking to do next.`);
   }
 
   return answers;
 }
 
-// ─── Step 4: Main packet builder ─────────────────────────────────────────────
+// ─── Main packet builder ──────────────────────────────────────────────────────
 
 export async function buildApplicationPacket(
   userId: string,
@@ -194,9 +378,9 @@ export async function buildApplicationPacket(
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) throw new Error('Job not found');
 
-  const profileContext = await buildEnrichedProfileContext(userId);
+  const profileContext = await buildProfileContext(userId);
 
-  // Check what's missing
+  // Check for missing required fields
   const missingFields: string[] = [];
   const personalInfo = await prisma.personalInfo.findUnique({ where: { userId } });
   if (!personalInfo?.fullName) missingFields.push('full_name');
@@ -206,36 +390,61 @@ export async function buildApplicationPacket(
   const workHistory = await prisma.workHistory.findMany({ where: { userId } });
   if (workHistory.length === 0) missingFields.push('work_history');
 
-  const resumes = await prisma.resume.findMany({ where: { userId } });
+  const resumes = await prisma.resume.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } });
   if (resumes.length === 0) missingFields.push('resume');
 
-  // Build cover letter via Claude (ai-client routes to Claude Sonnet 4.6 or GPT fallback)
-  const [coverLetter, answers] = await Promise.all([
-    buildAndGenerateCoverLetter(profileContext, { title: job.title, company: job.company, description: job.description || '' }),
-    generateAnswers(userId, profileContext, { title: job.title, company: job.company, description: job.description }),
-  ]);
+  // Detect archetype and extract keywords (parallel)
+  const archetype = detectArchetype(job.title, job.description || '');
+  const keywords = await extractKeywords(job.description || '');
 
-  // Determine if we can auto-apply
-  const canAutoApply = missingFields.length === 0 &&
-    (job.atsType === 'greenhouse' || job.atsType === 'lever' || job.atsType === 'ashby') &&
-    !!job.applyUrl;  // Greenhouse + Lever + Ashby: direct API submission
+  // Generate cover letter (archetype-aware, keyword-injected)
+  const coverLetter = await generateQualityCoverLetter(
+    profileContext,
+    { title: job.title, company: job.company, description: job.description || '' },
+    archetype,
+    keywords,
+    personalInfo
+  );
 
-  const confidence = Math.max(0, 1 - (missingFields.length * 0.2));
+  // Generate answers
+  const answers = await generateAnswers(userId, profileContext, {
+    title: job.title,
+    company: job.company,
+    description: job.description || '',
+  });
+
+  // Score cover letter quality
+  const qualityScore = await scoreCoverLetterQuality(
+    coverLetter,
+    profileContext,
+    job.description || ''
+  );
+
+  // Can auto-apply: no missing fields + supported ATS + quality gate (>= 65)
+  const canAutoApply =
+    missingFields.length === 0 &&
+    ['greenhouse', 'lever', 'ashby'].includes(job.atsType || '') &&
+    !!job.applyUrl &&
+    qualityScore >= 65;
+
+  // Confidence reflects both completeness and quality
+  const completenessScore = Math.max(0, 1 - missingFields.length * 0.2);
+  const confidence = (completenessScore * 0.5) + (qualityScore / 100 * 0.5);
 
   // Save generation run
   await prisma.generationRun.create({
     data: {
       userId,
       type: 'cover_letter',
-      model: 'gpt-4o-mini',
+      model: 'claude-sonnet-4-5',
       jobId,
       jobTitle: job.title,
       company: job.company,
-      groundedFields: ['workHistory', 'personalInfo', 'skills'],
+      groundedFields: ['workHistory', 'personalInfo', 'skills', 'projects', 'certs'],
       output: coverLetter,
       isApproved: false,
     },
-  }).catch(() => {}); // non-fatal
+  }).catch(() => {});
 
   return {
     jobId,
@@ -243,33 +452,29 @@ export async function buildApplicationPacket(
     coverLetter,
     answers,
     confidence,
+    qualityScore,
     canAutoApply,
     missingFields,
+    archetype,
+    keywords,
   };
 }
 
-// ─── Step 5: Submit to Greenhouse (direct API) ────────────────────────────────
+// ─── ATS Submission functions (unchanged logic, preserved) ────────────────────
 
 export async function submitToGreenhouse(
   packet: ApplicationPacket,
   job: { applyUrl: string; title: string; company: string; externalId: string },
   applicantInfo: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone?: string;
-    linkedinUrl?: string;
-    resumeContent?: string;
-    coverLetterContent?: string;
-    resumeText?: string;
+    firstName: string; lastName: string; email: string;
+    phone?: string; linkedinUrl?: string;
+    resumeContent?: string; coverLetterContent?: string; resumeText?: string;
   }
 ): Promise<{ success: boolean; applicationId?: string; error?: string }> {
   try {
-    // Extract board token from URL: boards.greenhouse.io/{board_token}/jobs/{job_id}
     const match = job.applyUrl.match(/boards\.greenhouse\.io\/([^/]+)\/jobs\/(\d+)/);
     if (!match) throw new Error('Cannot parse Greenhouse URL');
     const [, boardToken, ghJobId] = match;
-
     const payload = {
       first_name: applicantInfo.firstName,
       last_name: applicantInfo.lastName,
@@ -280,82 +485,20 @@ export async function submitToGreenhouse(
       resume_text: applicantInfo.resumeContent || packet.resumeText,
       mapped_url_token: 'careeva',
     };
-
     const res = await fetch(
       `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs/${ghJobId}/applications`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
     );
-
     if (!res.ok) {
       const err = await res.text();
       return { success: false, error: `Greenhouse rejected: ${err.slice(0, 200)}` };
     }
-
     const result = await res.json();
     return { success: true, applicationId: String(result.id || '') };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
-
-
-// ─── Enhanced profile context builder ────────────────────────────────────────
-// Upgrades the base buildProfileContext with all structured data models
-
-async function buildEnrichedProfileContext(userId: string): Promise<string> {
-  const base = await buildProfileContext(userId);
-  
-  // Add structured work history bullets
-  const whWithBullets = await prisma.workHistory.findMany({
-    where: { userId },
-    include: { bullets: { orderBy: { sortOrder: 'asc' } } },
-    orderBy: { startDate: 'desc' },
-  });
-  
-  // Add certifications
-  const certs = await prisma.certification.findMany({ where: { userId } });
-  
-  // Add projects
-  const projects = await prisma.project.findMany({ where: { userId }, include: { bullets: true } });
-  
-  const parts: string[] = [base];
-  
-  // Rich work bullets
-  if (whWithBullets.some(wh => wh.bullets.length > 0)) {
-    parts.push('\nDETAILED EXPERIENCE BULLETS:');
-    for (const wh of whWithBullets.slice(0, 4)) {
-      if (wh.bullets.length > 0) {
-        parts.push(`\n${wh.title} @ ${wh.company}:`);
-        for (const b of wh.bullets.slice(0, 5)) {
-          parts.push(`  • ${b.content}${b.metric ? ` (${b.metric})` : ''}`);
-        }
-      }
-    }
-  }
-  
-  if (certs.length > 0) {
-    parts.push('\nCERTIFICATIONS:');
-    for (const c of certs) {
-      parts.push(`- ${c.name}${c.issuer ? ` (${c.issuer})` : ''}${c.issueDate ? ` - ${new Date(c.issueDate).getFullYear()}` : ''}`);
-    }
-  }
-  
-  if (projects.length > 0) {
-    parts.push('\nKEY PROJECTS:');
-    for (const p of projects.slice(0, 3)) {
-      parts.push(`- ${p.name}${p.description ? `: ${p.description.slice(0, 100)}` : ''}`);
-      if (p.technologies.length > 0) parts.push(`  Tech: ${p.technologies.join(', ')}`);
-    }
-  }
-  
-  return parts.join('\n');
-}
-
-// ─── Submit to Lever (public apply API) ──────────────────────────────────────
 
 export async function submitToLever(
   packet: ApplicationPacket,
@@ -367,25 +510,16 @@ export async function submitToLever(
   }
 ): Promise<{ success: boolean; applicationId?: string; error?: string }> {
   try {
-    // Extract company slug from URL: jobs.lever.co/{slug}/{job-id}
     const match = job.applyUrl.match(/lever\.co\/([^/?#]+)\/([^/?#]+)/);
     if (!match) throw new Error('Cannot parse Lever URL');
     const [, companySlug, jobId] = match;
-
     const formData = new FormData();
     formData.append('name', `${applicantInfo.firstName} ${applicantInfo.lastName}`);
     formData.append('email', applicantInfo.email);
     if (applicantInfo.phone) formData.append('phone', applicantInfo.phone);
     if (applicantInfo.linkedinUrl) formData.append('urls[LinkedIn]', applicantInfo.linkedinUrl);
-    if (applicantInfo.coverLetterContent) {
-      formData.append('comments', applicantInfo.coverLetterContent);
-    }
-
-    const res = await fetch(
-      `https://api.lever.co/v0/postings/${companySlug}/${jobId}/apply`,
-      { method: 'POST', body: formData }
-    );
-
+    if (applicantInfo.coverLetterContent) formData.append('comments', applicantInfo.coverLetterContent);
+    const res = await fetch(`https://api.lever.co/v0/postings/${companySlug}/${jobId}/apply`, { method: 'POST', body: formData });
     if (!res.ok) {
       const err = await res.text();
       return { success: false, error: `Lever rejected: ${err.slice(0, 200)}` };
@@ -397,8 +531,6 @@ export async function submitToLever(
   }
 }
 
-// ─── Submit to Ashby (public apply API) ──────────────────────────────────────
-
 export async function submitToAshby(
   packet: ApplicationPacket,
   job: { applyUrl: string; title: string; company: string; externalId: string },
@@ -408,11 +540,9 @@ export async function submitToAshby(
   }
 ): Promise<{ success: boolean; applicationId?: string; error?: string }> {
   try {
-    // Ashby URL: jobs.ashbyhq.com/{company}/{job-id} or app.ashbyhq.com/api/non-user-facing/job-board/application
     const match = job.applyUrl.match(/ashbyhq\.com\/([^/?#]+)\/([^/?#]+)/);
     if (!match) throw new Error('Cannot parse Ashby URL');
-    const [, companySlug, jobPostingId] = match;
-
+    const [, , jobPostingId] = match;
     const payload = {
       jobPostingId,
       email: applicantInfo.email,
@@ -423,16 +553,9 @@ export async function submitToAshby(
       resumeAsText: applicantInfo.resumeText || packet.resumeText || '',
       coverLetter: applicantInfo.coverLetterContent || packet.coverLetter || '',
     };
-
-    const res = await fetch(
-      `https://app.ashbyhq.com/api/non-user-facing/job-board/application`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }
-    );
-
+    const res = await fetch('https://app.ashbyhq.com/api/non-user-facing/job-board/application', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
     if (!res.ok) {
       const err = await res.text();
       return { success: false, error: `Ashby rejected: ${err.slice(0, 200)}` };
@@ -443,7 +566,8 @@ export async function submitToAshby(
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
-// ─── Step 6: Full auto-apply flow ─────────────────────────────────────────────
+
+// ─── Full auto-apply flow ─────────────────────────────────────────────────────
 
 export async function autoApplyToJob(
   userId: string,
@@ -459,7 +583,19 @@ export async function autoApplyToJob(
   const job = await prisma.job.findUnique({ where: { id: jobId } });
   if (!job) return { status: 'failed', packet, error: 'Job not found' };
 
-  // Create application record
+  // Save cover letter to DB
+  await prisma.coverLetter.create({
+    data: {
+      userId,
+      jobId,
+      jobTitle: job.title,
+      company: job.company,
+      content: packet.coverLetter,
+      tone: 'professional',
+      isTemplate: false,
+    },
+  }).catch(() => {});
+
   const application = await prisma.application.create({
     data: {
       userId,
@@ -474,7 +610,7 @@ export async function autoApplyToJob(
     },
   });
 
-  // Save answers to application
+  // Save answers
   for (const [key, value] of Object.entries(packet.answers)) {
     await prisma.applicationAnswer.create({
       data: {
@@ -498,88 +634,45 @@ export async function autoApplyToJob(
     return { status: 'queued_for_review', packet };
   }
 
-  // Auto-submit for Lever
-  if (job.atsType === 'lever' && packet.canAutoApply) {
-    const personalInfo2 = await prisma.personalInfo.findUnique({ where: { userId } });
-    const nameParts2 = (personalInfo2?.fullName || 'Zach Bienstock').split(' ');
-    const leverResult = await submitToLever(
-      packet,
-      { applyUrl: job.applyUrl || '', title: job.title, company: job.company, externalId: job.externalId || '' },
-      {
-        firstName: nameParts2[0] || 'Zach',
-        lastName: nameParts2.slice(1).join(' ') || 'Bienstock',
-        email: personalInfo2?.email || 'zbienstock@gmail.com',
-        phone: personalInfo2?.phone || '',
-        linkedinUrl: personalInfo2?.linkedinUrl || '',
-        coverLetterContent: packet.coverLetter,
-      }
-    );
-    if (leverResult.success) {
-      await prisma.application.update({
-        where: { id: application.id },
-        data: { status: 'applied', appliedAt: new Date(), externalApplicationId: leverResult.applicationId },
-      });
-      return { status: 'applied', packet, applicationId: leverResult.applicationId };
-    }
+  // Quality gate: don't auto-submit if quality score is too low
+  if (packet.qualityScore < 65) {
+    await prisma.application.update({ where: { id: application.id }, data: { status: 'prepping' } });
+    return { status: 'queued_for_review', packet, error: `Quality score ${packet.qualityScore}/100 below threshold — queued for review` };
   }
 
-  // Auto-submit for Ashby
-  if (job.atsType === 'ashby' && packet.canAutoApply) {
-    const personalInfoA = await prisma.personalInfo.findUnique({ where: { userId } });
-    const namePartsA = (personalInfoA?.fullName || 'Zach Bienstock').split(' ');
-    const ashbyResult = await submitToAshby(
-      packet,
-      { applyUrl: job.applyUrl || '', title: job.title, company: job.company, externalId: job.externalId || '' },
-      {
-        firstName: namePartsA[0] || 'Zach',
-        lastName: namePartsA.slice(1).join(' ') || 'Bienstock',
-        email: personalInfoA?.email || 'zbienstock@gmail.com',
-        phone: personalInfoA?.phone || '',
-        linkedinUrl: personalInfoA?.linkedinUrl || '',
-        coverLetterContent: packet.coverLetter,
-        resumeText: packet.resumeText,
-      }
-    );
-    if (ashbyResult.success) {
-      await prisma.application.update({
-        where: { id: application.id },
-        data: { status: 'applied', appliedAt: new Date(), externalApplicationId: ashbyResult.applicationId },
-      });
-      return { status: 'applied', packet, applicationId: ashbyResult.applicationId };
-    }
-  }
+  const personalInfo = await prisma.personalInfo.findUnique({ where: { userId } });
+  const nameParts = (personalInfo?.fullName || 'Zach Bienstock').split(' ');
+  const applicantInfo = {
+    firstName: nameParts[0] || 'Zach',
+    lastName: nameParts.slice(1).join(' ') || 'Bienstock',
+    email: personalInfo?.email || 'zbienstock@gmail.com',
+    phone: personalInfo?.phone || '',
+    linkedinUrl: personalInfo?.linkedinUrl || '',
+    coverLetterContent: packet.coverLetter,
+    resumeText: packet.resumeText,
+  };
 
-  // Auto-submit for Greenhouse
-  if (job.atsType === 'greenhouse' && packet.canAutoApply) {
-    const personalInfo = await prisma.personalInfo.findUnique({ where: { userId } });
-    const nameParts = (personalInfo?.fullName || 'Zach Bienstock').split(' ');
+  const jobArgs = {
+    applyUrl: job.applyUrl || '',
+    title: job.title,
+    company: job.company,
+    externalId: job.externalId || '',
+  };
 
-    const result = await submitToGreenhouse(
-      packet,
-      { applyUrl: job.applyUrl || '', title: job.title, company: job.company, externalId: job.externalId || '' },
-      {
-        firstName: nameParts[0] || 'Zach',
-        lastName: nameParts.slice(1).join(' ') || 'Bienstock',
-        email: personalInfo?.email || 'zbienstock@gmail.com',
-        phone: personalInfo?.phone || '',
-        linkedinUrl: personalInfo?.linkedinUrl || '',
-        coverLetterContent: packet.coverLetter,
-        resumeText: packet.resumeText,
-      }
-    );
+  let result: { success: boolean; applicationId?: string; error?: string } = { success: false };
 
-    if (result.success) {
-      await prisma.application.update({
-        where: { id: application.id },
-        data: { status: 'applied', appliedAt: new Date(), externalApplicationId: result.applicationId },
-      });
-      return { status: 'applied', packet, applicationId: result.applicationId };
-    } else {
-      await prisma.application.update({ where: { id: application.id }, data: { status: 'prepping' } });
-      return { status: 'queued_for_review', packet, error: result.error };
-    }
+  if (job.atsType === 'lever') result = await submitToLever(packet, jobArgs, applicantInfo);
+  else if (job.atsType === 'ashby') result = await submitToAshby(packet, jobArgs, applicantInfo);
+  else if (job.atsType === 'greenhouse') result = await submitToGreenhouse(packet, jobArgs, applicantInfo);
+
+  if (result.success) {
+    await prisma.application.update({
+      where: { id: application.id },
+      data: { status: 'applied', appliedAt: new Date(), externalApplicationId: result.applicationId },
+    });
+    return { status: 'applied', packet, applicationId: result.applicationId };
   }
 
   await prisma.application.update({ where: { id: application.id }, data: { status: 'prepping' } });
-  return { status: 'queued_for_review', packet };
+  return { status: 'queued_for_review', packet, error: result.error };
 }

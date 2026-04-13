@@ -7,6 +7,7 @@
 
 import { prisma } from '@/lib/db';
 import { generate } from '@/lib/ai-client';
+import { addStories } from '@/lib/star-bank';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -192,7 +193,6 @@ ${job.description || 'No description available'}
 
   // Save STAR stories to story bank
   if (blockF.stories.length > 0) {
-    const { addStories } = await import('@/lib/star-bank');
     await addStories(userId, blockF.stories, jobId);
   }
 

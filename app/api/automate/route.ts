@@ -224,7 +224,7 @@ export async function GET(request: NextRequest) {
   const [totalJobs, scoredJobs, highMatchJobs, applications, recentApps] = await Promise.all([
     prisma.job.count({ where: { userId: user.id, isActive: true } }),
     prisma.jobScore.count({ where: { userId: user.id } }),
-    prisma.jobScore.count({ where: { userId: user.id, overallScore: { gte: 70 } } }),
+    prisma.jobScore.count({ where: { userId: user.id, overallScore: { gte: DEFAULT_APPLY_THRESHOLD } } }),
     prisma.application.count({ where: { userId: user.id } }),
     prisma.application.findMany({
       where: { userId: user.id },

@@ -77,19 +77,21 @@ export async function POST(request: NextRequest) {
   try {
     // ── Step 1: Search for new jobs (if requested) ──────────────────────────
     if (body.search !== false) {
-      const jobPrefs = await prisma.jobPreferences.findUnique({ where: { userId: user.id } });
-      const queries = (jobPrefs?.targetTitles || []).slice(0, 4);
-      if (queries.length === 0) {
-        runLog.push('⚠️ No target titles set - add them in Profile to improve job discovery');
-      } else {
-        runLog.push(`🔍 Searching for: ${queries.join(', ')}`);
-        const searchResult = await aggregateJobSearch({
-          userId: user.id,
-          queries,
-          sources: ['remotive', 'themuse', 'weworkremotely', 'greenhouse'],
-        });
-        stats.searched = searchResult.new;
-        runLog.push(`✓ Found ${searchResult.total} jobs, ${searchResult.new} new added`);
+      // Clean stale jobs first
+      const stale = await cleanupStaleJobs(user.id);
+      if (stale > 0) runLog.push(\uD83E\uDDF9 Deactivated \ stale jobs (>45 days old));
+      runLog.push(\uD83D\uDD0D Syncing \ company boards...);
+      const boardSources = [
+        ...TOP_GREENHOUSE_BOARDS.map(s => ({ type: 'greenhouse' as const, slug: s })),
+        ...TOP_LEVER_BOARDS.map(s => ({ type: 'lever' as const, slug: s })),
+        ...TOP_ASHBY_BOARDS.map(s => ({ type: 'ashby' as const, slug: s })),
+      ];
+      try {
+        const syncResult = await runJobSync(user.id, boardSources);
+        stats.searched = syncResult.totalNew;
+        runLog.push(\u2705 Board sync: \ new jobs from \ companies);
+      } catch (syncErr) {
+        runLog.push(\u26A0\uFE0F Board sync error: \);
       }
     }
 

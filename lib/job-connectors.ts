@@ -51,6 +51,29 @@ const COMPANY_NAMES: Record<string, string> = {
   'harvey': 'Harvey', 'sierra': 'Sierra', 'imbue': 'Imbue',
   'poolside': 'Poolside', 'cognition': 'Cognition', 'factory': 'Factory',
   'devin': 'Cognition (Devin)', 'codegen': 'Codegen', 'tabnine': 'Tabnine',
+  // Additional companies from expanded boards
+  'wandb': 'Weights & Biases', 'palantir': 'Palantir', 'deepgram': 'Deepgram',
+  'bland': 'Bland AI', 'decagon': 'Decagon', 'lindy': 'Lindy',
+  'pinecone': 'Pinecone', 'resend': 'Resend', 'clerk': 'Clerk',
+  'inngest': 'Inngest', 'workos': 'WorkOS', 'attio': 'Attio',
+  'tinybird': 'Tinybird', 'AlephAlpha': 'Aleph Alpha', 'DeepL': 'DeepL',
+  'n8n': 'n8n', 'zapier': 'Zapier', 'synthesia': 'Synthesia',
+  'faculty': 'Faculty AI', 'lovable': 'Lovable', 'legora': 'Legora',
+  'photoroom': 'Photoroom', 'lakera.ai': 'Lakera', 'cradlebio': 'Cradle Bio',
+  'causaly': 'Causaly', 'qonto': 'Qonto', 'forto': 'Forto',
+  'pigment': 'Pigment', 'vinted': 'Vinted', 'spotify': 'Spotify',
+  'clarity-ai': 'Clarity AI', 'wandb': 'Weights & Biases',
+  'mistral': 'Mistral AI', 'runwayml': 'Runway', 'humeai': 'Hume AI',
+  'blackforestlabs': 'Black Forest Labs', 'speechmatics': 'Speechmatics',
+  'isomorphiclabs': 'Isomorphic Labs', 'physicsx': 'PhysicsX',
+  'wayve': 'Wayve', 'amplemarket': 'Amplemarket', 'gleanwork': 'Glean',
+  'hightouch': 'Hightouch', 'planetscale': 'PlanetScale',
+  'celonis': 'Celonis', 'contentful': 'Contentful',
+  'getyourguide': 'GetYourGuide', 'hellofresh': 'HelloFresh',
+  'traderepublicbank': 'Trade Republic', 'sumup': 'SumUp',
+  'arizeai': 'Arize AI', 'runpod': 'RunPod', 'temporal': 'Temporal',
+  'factorial': 'Factorial', 'scandit': 'Scandit', 'polyai': 'PolyAI',
+  'parloa': 'Parloa', 'humeai': 'Hume AI',
 };
 
 function getCompanyName(slug: string): string {
@@ -61,28 +84,54 @@ function getCompanyName(slug: string): string {
 // ─── Top company boards hardcoded for Zach (SWE/AI/startup focus) ─────────────
 
 export const TOP_GREENHOUSE_BOARDS = [
-  'anthropic', 'openai', 'cohere', 'scale', 'huggingface', 'runway',
-  'mistral', 'perplexity', 'elevenlabs',
+  // AI Labs
+  'anthropic', 'scale', 'runway', 'runwayml', 'humeai',
+  'blackforestlabs', 'speechmatics', 'stabilityai', 'isomorphiclabs',
+  'physicsx', 'wayve', 'amplemarket', 'gleanwork', 'hightouch', 'planetscale',
+  'celonis', 'contentful', 'getyourguide', 'hellofresh',
+  'n26', 'traderepublicbank', 'sumup',
+  'helsinki', 'arizeai', 'runpod', 'temporal',
+  'factorial', 'scandit', 'polyai', 'parloa',
+  // Core Tech/Startup
   'stripe', 'plaid', 'brex', 'marqeta', 'affirm', 'robinhood', 'coinbase',
-  'notion', 'figma', 'linear', 'vercel', 'supabase', 'retool', 'loom', 'coda',
+  'notion', 'figma', 'linear', 'vercel', 'retool', 'loom', 'coda',
   'airbnb', 'reddit', 'lyft', 'doordash', 'instacart',
   'databricks', 'snowflake', 'amplitude', 'mixpanel', 'segment', 'dbt-labs',
   'intercom', 'hubspot', 'monday', 'asana', 'chainalysis', 'alchemy',
 ];
 
 export const TOP_LEVER_BOARDS = [
+  // Core
   'rippling', 'lattice', 'canva', 'airtable', 'miro',
   'mercury', 'klarna', 'nubank', 'wise',
   'gitlab', 'datadog', 'atlassian', 'hashicorp',
-  'square', 'shopify', 'flexport',
-  'pitch', 'superhuman',
+  'square', 'shopify', 'flexport', 'pitch', 'superhuman',
+  // AI/ML
+  'mistral', 'wandb', 'palantir',
+  // EU
+  'qonto', 'forto', 'pigment', 'vinted', 'spotify',
+  // Clarity AI
+  'clarity-ai',
 ];
 
 export const TOP_ASHBY_BOARDS = [
-  'elevenlabs', 'luma', 'vapi', 'cursor', 'glean',
+  // Voice AI
+  'elevenlabs', 'vapi', 'deepgram', 'bland',
+  // AI platforms
+  'cursor', 'luma', 'glean', 'perplexity', 'sierra', 'decagon',
+  // AI infra
   'modal', 'replicate', 'together', 'fireworks', 'groq', 'cerebras',
-  'harvey', 'sierra', 'cognition', 'factory',
-  'langchain', 'llamaindex',
+  'langchain', 'llamaindex', 'pinecone',
+  // Legal/enterprise AI
+  'harvey', 'cognition', 'factory',
+  // Dev tools
+  'supabase', 'resend', 'clerk', 'inngest', 'workos', 'attio', 'tinybird',
+  // EU AI
+  'AlephAlpha', 'DeepL', 'n8n', 'zapier', 'travelperk',
+  'synthesia', 'faculty', 'lovable', 'legora',
+  'photoroom', 'lakera.ai', 'cradlebio', 'causaly',
+  // Automation
+  'lindy', 'cohere',
 ];
 
 // ─── Shared utilities ─────────────────────────────────────────────────────────

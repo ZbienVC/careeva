@@ -279,7 +279,7 @@ export async function syncGreenhouseBoard(
       externalId: String(job.id),
       postedAt: job.updated_at ? new Date(job.updated_at) : undefined,
     });
-    if (result === 'new') jobsNew++; else jobsDuped++;
+    if (result === 'new') jobsNew++; else if (result === 'duped') jobsDuped++; // 'filtered' = silently skipped
   }
   return { jobsFound: jobs.length, jobsNew, jobsDuped };
 }
@@ -316,7 +316,7 @@ export async function syncLeverBoard(
       externalId: posting.id,
       postedAt: posting.createdAt ? new Date(posting.createdAt) : undefined,
     });
-    if (result === 'new') jobsNew++; else jobsDuped++;
+    if (result === 'new') jobsNew++; else if (result === 'duped') jobsDuped++; // 'filtered' = silently skipped
   }
   return { jobsFound: postings.length, jobsNew, jobsDuped };
 }
@@ -380,7 +380,7 @@ export async function syncAshbyBoard(
       externalId: posting.id, salary,
       postedAt: posting.publishedDate ? new Date(posting.publishedDate) : undefined,
     });
-    if (result === 'new') jobsNew++; else jobsDuped++;
+    if (result === 'new') jobsNew++; else if (result === 'duped') jobsDuped++; // 'filtered' = silently skipped
   }
   return { jobsFound: postings.length, jobsNew, jobsDuped };
 }

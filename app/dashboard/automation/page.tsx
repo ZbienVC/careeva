@@ -30,10 +30,11 @@ function PipelineCard({ label, value, sub, color, icon }: { label: string; value
 type LogLine = { text: string; type: 'success' | 'error' | 'info' | 'warn' | 'header' };
 
 function classifyLog(line: string): LogLine['type'] {
-  if (line.startsWith('✓') || line.includes('Submitted') || line.includes('submitted')) return 'success';
-  if (line.startsWith('✗') || line.startsWith('❌') || line.includes('Error') || line.includes('error')) return 'error';
-  if (line.startsWith('⚠') || line.includes('Queued') || line.includes('queued') || line.includes('missing')) return 'warn';
-  if (line.startsWith('📊') || line.startsWith('🔍') || line.startsWith('Run Summary')) return 'header';
+  const l = line.toLowerCase();
+  if (l.includes('submitted') || l.includes('complete') || l.includes('scored') || l.startsWith('board sync complete')) return 'success';
+  if (l.includes('error') || l.includes('failed') || l.includes('unauthorized')) return 'error';
+  if (l.includes('queued') || l.includes('missing') || l.includes('deactivated') || l.includes('stale') || l.includes('warning')) return 'warn';
+  if (l.includes('syncing') || l.includes('searching') || l.includes('summary') || l.includes('run summary')) return 'header';
   return 'info';
 }
 
@@ -114,10 +115,16 @@ export default function AutomatePage() {
           <h1 className="text-2xl font-bold text-slate-900">Job Application Engine</h1>
           <p className="text-slate-400 text-sm mt-0.5">AI-powered · quality-gated · automated</p>
         </div>
-        <Link href="/dashboard/profile"
-          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-all">
-          Edit Profile →
-        </Link>
+        <div className="flex gap-2">
+          <a href="/api/applications/patterns" target="_blank" rel="noopener noreferrer"
+            className="text-xs font-semibold text-purple-600 hover:text-purple-800 px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 transition-all">
+            📊 Patterns
+          </a>
+          <Link href="/dashboard/profile"
+            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-all">
+            Edit Profile →
+          </Link>
+        </div>
       </div>
 
       {/* Pipeline stats */}

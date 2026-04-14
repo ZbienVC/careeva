@@ -46,8 +46,15 @@ async function buildScoringProfile(userId: string) {
     industries: [...new Set([...(profile?.industries || []), ...(jobPrefs?.targetIndustries || [])])],
     yearsExperience: yearsExp || profile?.yearsExperience || 0,
     education: profile?.education || [],
-    technologies: [...new Set([...(profile?.technologies || []), ...workHistory.flatMap(w => w.technologies || [])])],
-    targetTitles: jobPrefs?.targetTitles || [],
+    technologies: [...new Set([
+      ...(profile?.technologies || []),
+      ...workHistory.flatMap(w => w.technologies || []),
+      ...skills.filter(s => /python|sql|typescript|javascript|react|node|aws|gcp|docker|kubernetes/i.test(s.name)).map(s => s.name.toLowerCase()),
+    ])],
+    targetTitles: [
+      ...(jobPrefs?.targetTitles || []),
+      ...(profile?.jobTitle ? [profile.jobTitle] : []),
+    ].filter(Boolean),
     targetIndustries: jobPrefs?.targetIndustries || [],
     roleFamilies: jobPrefs?.roleFamilies || [],
     salaryMin: jobPrefs?.salaryMinUSD || undefined,

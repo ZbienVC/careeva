@@ -79,9 +79,9 @@ export async function POST(request: NextRequest) {
     if (body.search !== false) {
       // Clean stale jobs first
       const stale = await cleanupStaleJobs(user.id);
-      if (stale > 0) runLog.push(\uD83E\uDDF9 Deactivated \ stale jobs (>45 days old));
-      runLog.push(\uD83D\uDD0D Syncing \ company boards...);
-      const boardSources = [
+      if (stale > 0) runLog.push('Deactivated ' + stale + ' stale jobs (>45 days old)');
+      const total = TOP_GREENHOUSE_BOARDS.length + TOP_LEVER_BOARDS.length + TOP_ASHBY_BOARDS.length;
+      runLog.push('Syncing ' + total + ' company boards (Greenhouse + Lever + Ashby)...');
         ...TOP_GREENHOUSE_BOARDS.map(s => ({ type: 'greenhouse' as const, slug: s })),
         ...TOP_LEVER_BOARDS.map(s => ({ type: 'lever' as const, slug: s })),
         ...TOP_ASHBY_BOARDS.map(s => ({ type: 'ashby' as const, slug: s })),
@@ -89,11 +89,11 @@ export async function POST(request: NextRequest) {
       try {
         const syncResult = await runJobSync(user.id, boardSources);
         stats.searched = syncResult.totalNew;
-        runLog.push(\u2705 Board sync: \ new jobs from \ companies);
+        stats.searched = syncResult.totalNew;
+        runLog.push('Board sync complete: ' + syncResult.totalNew + ' new jobs from ' + boardSources.length + ' companies');
       } catch (syncErr) {
-        runLog.push(\u26A0\uFE0F Board sync error: \);
+        runLog.push('Board sync error: ' + (syncErr instanceof Error ? syncErr.message : String(syncErr)));
       }
-    }
 
     // ── Step 2: Score all unscored jobs ──────────────────────────────────────
     const profileData = await buildScoringProfile(user.id);

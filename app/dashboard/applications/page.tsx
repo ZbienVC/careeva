@@ -68,6 +68,9 @@ export default function Applications() {
   const [feedbackApp, setFeedbackApp] = useState<Application | null>(null);
   const [feedbackNote, setFeedbackNote] = useState('');
   const [coverLetterApp, setCoverLetterApp] = useState<Application | null>(null);
+  const [followupApp, setFollowupApp] = useState<Application | null>(null);
+  const [followupDraft, setFollowupDraft] = useState('');
+  const [generatingFollowup, setGeneratingFollowup] = useState(false);
   const [view, setView] = useState<'board' | 'list'>('list');
 
   const fetchApplications = async () => {
@@ -123,6 +126,22 @@ export default function Applications() {
       });
       setApps(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     } catch { /* non-fatal */ }
+  };
+
+  const generateFollowup = async (app: Application) => {
+    setFollowupApp(app);
+    setGeneratingFollowup(true);
+    setFollowupDraft('');
+    try {
+      const res = await fetch('/api/applications/followups', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId: app.id, action: 'email_sent', generateDraft: true }),
+      });
+      const data = await res.json();
+      if (data.draft) setFollowupDraft(data.draft);
+    } catch { /* non-fatal */ }
+    setGeneratingFollowup(false);
   };
 
   const submitFeedback = async (signal: 'interview' | 'rejection' | 'offer') => {
@@ -237,6 +256,14 @@ export default function Applications() {
                 >
                   {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                 </select>
+                {/* Follow up button */}
+                <button
+                  onClick={() => generateFollowup(app)}
+                  title="Generate follow-up email"
+                  className="text-xs px-2 py-1 rounded-lg bg-purple-50 text-purple-700 font-semibold hover:bg-purple-100 transition-all"
+                >
+                  Follow Up
+                </button>
                 {/* Feedback button */}
                 <button
                   onClick={() => setFeedbackApp(app)}
@@ -388,6 +415,44 @@ export default function Applications() {
               className="w-full py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Follow-up draft modal */}
+      {followupApp && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-black text-slate-900">Follow-Up Draft</h2>
+              <p className="text-sm text-slate-400">{followupApp.role} at {followupApp.company}</p>
+            </div>
+            {generatingFollowup ? (
+              <div className="flex items-center gap-3 py-6 justify-center text-slate-400">
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/></svg>
+                <span className="text-sm">Generating draft...</span>
+              </div>
+            ) : followupDraft ? (
+              <>
+                <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                  {followupDraft}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => navigator.clipboard.writeText(followupDraft)}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                    Copy
+                  </button>
+                  <button onClick={() => { setFollowupApp(null); setFollowupDraft('); }}
+                    className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
+                    style={{ background: "linear-gradient(135deg,#8b5cf6,#6d28d9)" }}>
+                    Done
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-slate-400 text-sm text-center py-4">Could not generate draft. Try again.</p>
+            )}
+            <button onClick={() => { setFollowupApp(null); setFollowupDraft(""); }} className="w-full py-2 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
           </div>
         </div>
       )}

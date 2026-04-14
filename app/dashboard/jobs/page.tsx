@@ -181,6 +181,9 @@ export default function JobsPage() {
   const [filter, setFilter] = useState<'all' | 'remote' | 'new' | 'high-match'>('all');
   const [sortBy, setSortBy] = useState<'match' | 'recent' | 'company'>('match');
   const [searchResult, setSearchResult] = useState<{ total: number; new: number } | null>(null);
+  const [urlInput, setUrlInput] = useState('');
+  const [evaluatingUrl, setEvaluatingUrl] = useState(false);
+  const [urlResult, setUrlResult] = useState<any>(null);
 
   useEffect(() => {
     (async () => {
@@ -191,6 +194,28 @@ export default function JobsPage() {
       setLoading(false);
     })();
   }, [router]);
+
+  const evaluateUrl = async () => {
+    if (!urlInput.trim() || !urlInput.startsWith('http')) return;
+    setEvaluatingUrl(true);
+    setUrlResult(null);
+    try {
+      const res = await fetch('/api/jobs/evaluate-url', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlInput }),
+      });
+      const data = await res.json();
+      if (data.jobId) {
+        setUrlResult(data);
+        setUrlInput('');
+        // Reload jobs
+        const result = await jobsAPI.list({ page: 1, pageSize: 50 });
+        if (result.success) setJobs(result.data?.jobs || []);
+      }
+    } catch { /* handle */ }
+    setEvaluatingUrl(false);
+  };
 
   const triggerSync = async () => {
     setSearching(true);
@@ -259,6 +284,28 @@ export default function JobsPage() {
             )}
           </button>
         </div>
+      </div>
+
+      {/* URL Evaluator */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <p className="text-xs font-bold text-slate-600 mb-2">Paste a job URL for instant evaluation</p>
+        <div className="flex gap-2">
+          <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && evaluateUrl()}
+            placeholder="https://jobs.ashbyhq.com/... or any job URL"
+            className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white" />
+          <button onClick={evaluateUrl} disabled={evaluatingUrl || !urlInput.startsWith('http')}
+            className="px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-50 whitespace-nowrap"
+            style={{ background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' }}>
+            {evaluatingUrl ? 'Evaluating...' : 'Evaluate'}
+          </button>
+        </div>
+        {urlResult && (
+          <div className="mt-3 flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
+            <span className="text-emerald-600 font-bold text-sm">✓ {urlResult.job?.title} @ {urlResult.job?.company}</span>
+            <a href={'/dashboard/jobs/' + urlResult.jobId} className="ml-auto text-xs text-indigo-600 font-bold">View evaluation →</a>
+          </div>
+        )}
       </div>
 
       {/* Search result banner */}

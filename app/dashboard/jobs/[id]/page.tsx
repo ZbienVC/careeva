@@ -189,7 +189,17 @@ export default function JobDetailPage() {
     navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(''), 2000); });
   };
 
-    if (loading) return <LoadingPage />;
+    const handleInterviewPrep = async () => {
+    setLoadingPrep(true);
+    try {
+      const res = await fetch(/api/jobs//interview-prep, { method: 'POST', credentials: 'include' });
+      const data = await res.json();
+      if (data.rounds) setInterviewPrep(data);
+    } catch { /* non-fatal */ }
+    setLoadingPrep(false);
+  };
+
+  if (loading) return <LoadingPage />;
   if (error || !job) return (
     <div className="max-w-4xl mx-auto px-4 py-12">
       <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">

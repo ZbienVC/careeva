@@ -175,14 +175,46 @@ function detectRoleFamilies(title: string, description: string): string[] {
   return [...new Set(families)];
 }
 
+
+// ─── Title relevance filter (from career-ops) ────────────────────────────────
+// Only save jobs that match Zach's target roles. Blocks retail/unrelated jobs.
+
+const TITLE_POSITIVE = [
+  'engineer', 'developer', 'software', 'full.?stack', 'backend', 'frontend',
+  'platform', 'infrastructure', 'devops', 'sre', 'ml', 'ai', 'machine learning',
+  'llm', 'nlp', 'data', 'product manager', 'pm', 'solutions architect',
+  'forward deployed', 'solutions engineer', 'technical', 'architect',
+  'founding', 'staff', 'principal', 'lead', 'senior', 'head of',
+  'automation', 'integration', 'api', 'cloud', 'security', 'analytics',
+  'growth engineer', 'gtm engineer', 'devrel', 'developer advocate',
+  'customer engineer', 'implementation', 'applied ai', 'agent',
+];
+
+const TITLE_NEGATIVE = [
+  'retail', 'cashier', 'driver', 'delivery', 'warehouse', 'store manager',
+  'pharmacy', 'nurse', 'doctor', 'medical', 'dental', 'healthcare worker',
+  'teacher', 'instructor', 'janitor', 'cleaner', 'cook', 'chef', 'barista',
+  'accountant', 'auditor', 'paralegal', 'legal assistant', 'recruiter',
+  'hr business partner', 'hr generalist', 'payroll',
+];
+
+function isTitleRelevant(title: string): boolean {
+  const t = title.toLowerCase();
+  // Hard reject obvious non-tech roles
+  if (TITLE_NEGATIVE.some(n => t.includes(n))) return false;
+  // Must match at least one positive keyword
+  return TITLE_POSITIVE.some(p => new RegExp(p).test(t));
+}
 async function upsertJob(userId: string, scrapeRunId: string, jobData: {
   title: string; company: string; description: string; requirements: string;
   location: string; isRemote: boolean; isHybrid: boolean;
   url: string; applyUrl: string; source: string; atsType: string;
   externalId?: string; salary?: string; salaryMin?: number; salaryMax?: number;
   postedAt?: Date;
-}): Promise<'new' | 'duped'> {
+}): Promise<'new' | 'duped' | 'filtered'> {
   const { isRemote, isHybrid, title, company, location } = jobData;
+  // Filter irrelevant titles before saving
+  if (!isTitleRelevant(title)) return 'filtered';
   const dedupeKey = makeDedupeKey(company, title, location);
   const roleFamilies = detectRoleFamilies(title, jobData.description);
 

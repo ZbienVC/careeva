@@ -12,17 +12,39 @@ interface Application {
   role: string;
   status: 'applied' | 'phone_screen' | 'interview' | 'offer' | 'rejected';
   dateApplied: string;
+  createdAt?: string;
   notes: string;
   url?: string;
+  coverLetter?: string;
+  jobId?: string;
 }
 
 const COLUMNS = [
-  { key: 'applied', label: 'Applied', color: 'bg-blue-400' },
-  { key: 'phone_screen', label: 'Phone Screen', color: 'bg-amber-400' },
-  { key: 'interview', label: 'Interview', color: 'bg-violet-400' },
-  { key: 'offer', label: 'Offer', color: 'bg-emerald-400' },
-  { key: 'rejected', label: 'Rejected', color: 'bg-slate-400' },
+  { key: 'applied', label: 'Applied', color: 'bg-blue-400', dot: 'bg-blue-400' },
+  { key: 'phone_screen', label: 'Phone Screen', color: 'bg-amber-400', dot: 'bg-amber-400' },
+  { key: 'interview', label: 'Interview', color: 'bg-violet-400', dot: 'bg-violet-400' },
+  { key: 'offer', label: 'Offer', color: 'bg-emerald-400', dot: 'bg-emerald-400' },
+  { key: 'rejected', label: 'Rejected', color: 'bg-slate-400', dot: 'bg-slate-300' },
 ] as const;
+
+type StatusKey = typeof COLUMNS[number]['key'];
+
+function StatusBadge({ status }: { status: string }) {
+  const col = COLUMNS.find(c => c.key === status);
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
+      status === 'applied' ? 'bg-blue-50 text-blue-700' :
+      status === 'phone_screen' ? 'bg-amber-50 text-amber-700' :
+      status === 'interview' ? 'bg-violet-50 text-violet-700' :
+      status === 'offer' ? 'bg-emerald-50 text-emerald-700' :
+      status === 'rejected' ? 'bg-slate-100 text-slate-500' :
+      'bg-slate-100 text-slate-500'
+    }`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${col?.dot || 'bg-slate-400'}`} />
+      {col?.label || status}
+    </span>
+  );
+}
 
 const blank = (): Application => ({
   id: '',
@@ -43,6 +65,13 @@ export default function Applications() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [feedbackApp, setFeedbackApp] = useState<Application | null>(null);
+  const [feedbackNote, setFeedbackNote] = useState('');
+  const [coverLetterApp, setCoverLetterApp] = useState<Application | null>(null);
+  const [followupApp, setFollowupApp] = useState<Application | null>(null);
+  const [followupDraft, setFollowupDraft] = useState('');
+  const [generatingFollowup, setGeneratingFollowup] = useState(false);
+  const [view, setView] = useState<'board' | 'list'>('list');
 
   const fetchApplications = async () => {
     try {
@@ -59,233 +88,397 @@ export default function Applications() {
 
   useEffect(() => {
     profileAPI.get().then((result) => {
-      if (!result.success) {
-        router.push('/login');
-        return;
-      }
-      fetchApplications();
+      if (!result.success) router.push('/login');
+      else fetchApplications();
     });
   }, [router]);
 
-  const save = async () => {
-    if (!form.company.trim() || !form.role.trim()) {
-      setError('Company and role are required.');
-      return;
-    }
-
+  const saveApp = async () => {
+    setSaving(true);
     try {
-      setSaving(true);
-      setError('');
       const method = editing ? 'PUT' : 'POST';
-      const res = await fetch('/api/applications', {
+      const url = editing ? `/api/applications/${editing}` : '/api/applications';
+      const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editing ? { ...form, id: editing } : form),
         credentials: 'include',
+        body: JSON.stringify(form),
       });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || 'Failed to save application');
-
+      if (!res.ok) throw new Error('Save failed');
       await fetchApplications();
       setModal(false);
       setForm(blank());
       setEditing(null);
     } catch (e) {
-      console.error('Failed to save application:', e);
-      setError(e instanceof Error ? e.message : 'Failed to save application');
+      setError('Failed to save application');
     } finally {
       setSaving(false);
     }
   };
 
-  const remove = async (id: string) => {
+  const updateStatus = async (id: string, status: StatusKey) => {
     try {
-      setError('');
-      const res = await fetch(`/api/applications?id=${id}`, {
-        method: 'DELETE',
+      await fetch(`/api/applications/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
+        body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error('Failed to delete application');
-      await fetchApplications();
-    } catch (e) {
-      console.error('Failed to delete application:', e);
-      setError('Failed to remove application.');
-    }
+      setApps(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+    } catch { /* non-fatal */ }
   };
 
-  const move = async (id: string, status: string) => {
+  const generateFollowup = async (app: Application) => {
+    setFollowupApp(app);
+    setGeneratingFollowup(true);
+    setFollowupDraft('');
     try {
-      const app = apps.find((a) => a.id === id);
-      if (app) {
-        const res = await fetch('/api/applications', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...app, status }),
-          credentials: 'include',
-        });
-        if (!res.ok) throw new Error('Failed to update application');
-        await fetchApplications();
-      }
-    } catch (e) {
-      console.error('Failed to move application:', e);
-      setError('Failed to update application status.');
-    }
+      const res = await fetch('/api/applications/followups', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId: app.id, action: 'email_sent', generateDraft: true }),
+      });
+      const data = await res.json();
+      if (data.draft) setFollowupDraft(data.draft);
+    } catch { /* non-fatal */ }
+    setGeneratingFollowup(false);
   };
 
-  const openEdit = (app: Application) => {
-    setForm(app);
-    setEditing(app.id);
-    setModal(true);
+  const submitFeedback = async (signal: 'interview' | 'rejection' | 'offer') => {
+    if (!feedbackApp) return;
+    try {
+      await fetch(`/api/applications/${feedbackApp.id}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ signal, notes: feedbackNote }),
+      });
+      // Also update status
+      const newStatus: StatusKey = signal === 'interview' ? 'interview' : signal === 'offer' ? 'offer' : 'rejected';
+      await updateStatus(feedbackApp.id, newStatus);
+    } catch { /* non-fatal */ }
+    setFeedbackApp(null);
+    setFeedbackNote('');
   };
 
-  const metrics = useMemo(
-    () => ({
-      total: apps.length,
-      active: apps.filter((app) => ['applied', 'phone_screen', 'interview'].includes(app.status)).length,
-      interviews: apps.filter((app) => app.status === 'interview').length,
-      offers: apps.filter((app) => app.status === 'offer').length,
-    }),
-    [apps]
+  const byStatus = useMemo(() => {
+    const map: Record<string, Application[]> = {};
+    COLUMNS.forEach(c => { map[c.key] = []; });
+    apps.forEach(a => {
+      if (map[a.status]) map[a.status].push(a);
+      else map['applied'].push(a);
+    });
+    return map;
+  }, [apps]);
+
+  // Stats
+  const stats = useMemo(() => ({
+    total: apps.length,
+    interviews: apps.filter(a => ['interview', 'offer'].includes(a.status)).length,
+    offers: apps.filter(a => a.status === 'offer').length,
+    rejected: apps.filter(a => a.status === 'rejected').length,
+    rate: apps.length > 0 ? Math.round(apps.filter(a => ['interview', 'offer'].includes(a.status)).length / apps.length * 100) : 0,
+  }), [apps]);
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    </div>
   );
 
-  if (loading) {
-    return (
-      <div className="page-shell">
-        <div className="premium-card p-8 text-slate-300">Loading application tracker...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="page-shell space-y-8">
-      <section className="hero-panel gradient-border p-8 md:p-10">
-        <div className="relative z-10 flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <div className="badge mb-4">Application tracker</div>
-            <h1 className="section-heading text-4xl md:text-5xl">Run your job pipeline like a clean sales funnel.</h1>
-            <p className="section-subcopy mt-4 text-base md:text-lg">
-              Track momentum, update statuses fast, and keep every opportunity visible from applied to offer.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              setForm(blank());
-              setEditing(null);
-              setModal(true);
-            }}
-            className="btn-primary"
-          >
-            + Add application
-          </button>
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900">Applications</h1>
+          <p className="text-slate-400 text-sm mt-0.5">{apps.length} total · {stats.rate}% interview rate</p>
         </div>
-      </section>
+        <button
+          onClick={() => { setForm(blank()); setEditing(null); setModal(true); }}
+          className="px-5 py-2.5 rounded-xl text-white font-bold text-sm"
+          style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+          + Add Application
+        </button>
+      </div>
 
-      {error && <div className="premium-card border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
+      {/* Stats row */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: 'Applied', value: stats.total, color: 'text-slate-900' },
+          { label: 'Interviews', value: stats.interviews, color: 'text-violet-600' },
+          { label: 'Offers', value: stats.offers, color: 'text-emerald-600' },
+          { label: 'Interview Rate', value: `${stats.rate}%`, color: stats.rate >= 15 ? 'text-emerald-600' : 'text-slate-900' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{s.label}</p>
+            <p className={`text-2xl font-black tabular-nums ${s.color}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="stat-tile"><div className="text-sm text-slate-400">Total tracked</div><div className="mt-2 text-3xl font-bold text-white">{metrics.total}</div></div>
-        <div className="stat-tile"><div className="text-sm text-slate-400">Active process</div><div className="mt-2 text-3xl font-bold text-blue-300">{metrics.active}</div></div>
-        <div className="stat-tile"><div className="text-sm text-slate-400">Interviews</div><div className="mt-2 text-3xl font-bold text-violet-300">{metrics.interviews}</div></div>
-        <div className="stat-tile"><div className="text-sm text-slate-400">Offers</div><div className="mt-2 text-3xl font-bold text-emerald-300">{metrics.offers}</div></div>
-      </section>
+      {error && <div className="text-red-500 text-sm bg-red-50 rounded-xl p-3">{error}</div>}
 
-      <section className="grid gap-4 xl:grid-cols-5">
-        {COLUMNS.map((column) => {
-          const columnApps = apps.filter((app) => app.status === column.key);
-          return (
-            <div key={column.key} className="premium-card min-h-[360px] p-4 md:p-5">
-              <div className="mb-4 flex items-center gap-3">
-                <div className={`h-2.5 w-2.5 rounded-full ${column.color}`} />
-                <span className="font-semibold text-white">{column.label}</span>
-                <span className="ml-auto rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-slate-400">{columnApps.length}</span>
+      {/* View toggle */}
+      <div className="flex gap-2">
+        {(['list', 'board'] as const).map(v => (
+          <button key={v} onClick={() => setView(v)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-all ${view === v ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:text-slate-700'}`}>
+            {v}
+          </button>
+        ))}
+      </div>
+
+      {/* List view */}
+      {view === 'list' && (
+        <div className="space-y-2">
+          {apps.length === 0 && (
+            <div className="text-center py-16 text-slate-400">
+              <p className="text-4xl mb-3">📋</p>
+              <p className="font-semibold">No applications yet</p>
+              <p className="text-sm mt-1">Run automation to start applying, or add manually above</p>
+            </div>
+          )}
+          {apps.map(app => (
+            <div key={app.id} className="bg-white rounded-2xl border border-slate-100 px-5 py-4 flex items-center gap-4 hover:border-slate-200 transition-all">
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-slate-900 text-sm">{app.role}</p>
+                <p className="text-slate-400 text-xs">{app.company} · {new Date(app.dateApplied || app.createdAt || Date.now()).toLocaleDateString()}</p>
+                {app.notes && <p className="text-slate-400 text-xs mt-0.5 truncate">{app.notes}</p>}
               </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <StatusBadge status={app.status} />
+                {/* Status quick-update */}
+                <select
+                  value={app.status}
+                  onChange={e => updateStatus(app.id, e.target.value as StatusKey)}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 bg-white cursor-pointer"
+                >
+                  {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+                {/* Follow up button */}
+                <button
+                  onClick={() => generateFollowup(app)}
+                  title="Generate follow-up email"
+                  className="text-xs px-2 py-1 rounded-lg bg-purple-50 text-purple-700 font-semibold hover:bg-purple-100 transition-all"
+                >
+                  Follow Up
+                </button>
+                {/* Feedback button */}
+                <button
+                  onClick={() => setFeedbackApp(app)}
+                  title="Log outcome"
+                  className="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold hover:bg-amber-100 transition-all"
+                >
+                  Feedback
+                </button>
+                {/* Cover letter button */}
+                {app.coverLetter && (
+                  <button
+                    onClick={() => setCoverLetterApp(app)}
+                    title="View cover letter"
+                    className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold hover:bg-indigo-100 transition-all"
+                  >
+                    CL
+                  </button>
+                )}
+                {/* Edit */}
+                <button
+                  onClick={() => { setForm({ ...app }); setEditing(app.id); setModal(true); }}
+                  className="text-xs px-2 py-1 rounded-lg bg-slate-50 text-slate-500 font-semibold hover:bg-slate-100 transition-all"
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-              <div className="space-y-3">
-                {columnApps.map((app) => (
-                  <div key={app.id} className="premium-card-soft p-4">
-                    <div className="text-base font-semibold text-white">{app.company}</div>
-                    <div className="mt-1 text-sm text-slate-300">{app.role}</div>
-                    <div className="mt-2 text-xs text-slate-500">Applied {app.dateApplied}</div>
-
-                    {app.notes && <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">{app.notes}</p>}
-
-                    <div className="mt-4 space-y-3">
-                      <select value={app.status} onChange={(e) => move(app.id, e.target.value)} className="!rounded-xl !py-2 text-sm">
-                        {COLUMNS.map((col) => (
-                          <option key={col.key} value={col.key}>{col.label}</option>
-                        ))}
-                      </select>
-
-                      <div className="flex flex-wrap gap-2">
-                        <button onClick={() => openEdit(app)} className="btn-secondary !rounded-xl !px-3 !py-2 text-xs">Edit</button>
-                        {app.url && (
-                          <a href={app.url} target="_blank" rel="noreferrer" className="btn-secondary !rounded-xl !px-3 !py-2 text-xs">
-                            Open link
-                          </a>
-                        )}
-                        <button onClick={() => remove(app.id)} className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-200 hover:bg-red-500/20">
-                          Remove
+      {/* Board view */}
+      {view === 'board' && (
+        <div className="grid grid-cols-5 gap-3 overflow-x-auto pb-4">
+          {COLUMNS.map(col => (
+            <div key={col.key} className="bg-slate-50 rounded-2xl p-3 min-h-[300px]">
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`w-2 h-2 rounded-full ${col.dot}`} />
+                <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">{col.label}</p>
+                <span className="ml-auto text-xs text-slate-400 font-semibold">{byStatus[col.key]?.length || 0}</span>
+              </div>
+              <div className="space-y-2">
+                {(byStatus[col.key] || []).map(app => (
+                  <div key={app.id} className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm">
+                    <p className="font-bold text-slate-900 text-xs leading-tight">{app.role}</p>
+                    <p className="text-slate-400 text-xs mt-0.5">{app.company}</p>
+                    <div className="flex gap-1 mt-2">
+                      <button onClick={() => setFeedbackApp(app)} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold">
+                        Feedback
+                      </button>
+                      {app.coverLetter && (
+                        <button onClick={() => setCoverLetterApp(app)} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold">
+                          CL
                         </button>
-                      </div>
+                      )}
                     </div>
                   </div>
                 ))}
-
-                {columnApps.length === 0 && (
-                  <div className="rounded-2xl border border-dashed border-white/10 p-5 text-center text-sm text-slate-500">
-                    No applications in {column.label.toLowerCase()} yet.
-                  </div>
-                )}
               </div>
             </div>
-          );
-        })}
-      </section>
+          ))}
+        </div>
+      )}
 
+      {/* Add/Edit modal */}
       {modal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 px-4 backdrop-blur-sm">
-          <div className="premium-card w-full max-w-2xl p-6 md:p-8">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-white">{editing ? 'Edit application' : 'Add application'}</h2>
-                <p className="mt-1 text-sm text-slate-400">Keep every role, status change, and note in one polished workflow.</p>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-black text-slate-900">{editing ? 'Edit Application' : 'Add Application'}</h2>
+            {[
+              { label: 'Company', field: 'company' as const, type: 'text' },
+              { label: 'Role / Title', field: 'role' as const, type: 'text' },
+              { label: 'Date Applied', field: 'dateApplied' as const, type: 'date' },
+              { label: 'Job URL', field: 'url' as const, type: 'url' },
+            ].map(({ label, field, type }) => (
+              <div key={field}>
+                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">{label}</label>
+                <input
+                  type={type}
+                  value={(form as any)[field] || ''}
+                  onChange={e => setForm(p => ({ ...p, [field]: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400"
+                />
               </div>
-              <button onClick={() => { setModal(false); setEditing(null); }} className="btn-ghost">Close</button>
+            ))}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Status</label>
+              <select
+                value={form.status}
+                onChange={e => setForm(p => ({ ...p, status: e.target.value as StatusKey }))}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400"
+              >
+                {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
             </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="field-label">Company</label>
-                <input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} placeholder="Company name" />
-              </div>
-              <div>
-                <label className="field-label">Role</label>
-                <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="Job title" />
-              </div>
-              <div>
-                <label className="field-label">Status</label>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as Application['status'] })}>
-                  {COLUMNS.map((column) => <option key={column.key} value={column.key}>{column.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">Date applied</label>
-                <input type="date" value={form.dateApplied} onChange={(e) => setForm({ ...form, dateApplied: e.target.value })} />
-              </div>
-              <div className="md:col-span-2">
-                <label className="field-label">Job URL</label>
-                <input value={form.url || ''} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..." />
-              </div>
-              <div className="md:col-span-2">
-                <label className="field-label">Notes</label>
-                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={4} placeholder="Key touchpoints, referrals, takeaways, follow-up reminders..." />
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Notes</label>
+              <textarea
+                value={form.notes || ''}
+                onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+                rows={2}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400 resize-none"
+              />
             </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => { setModal(false); setForm(blank()); setEditing(null); }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button onClick={saveApp} disabled={saving || !form.company || !form.role}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-            <div className="mt-6 flex flex-wrap justify-end gap-3">
-              <button onClick={() => { setModal(false); setEditing(null); }} className="btn-secondary">Cancel</button>
-              <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">{saving ? 'Saving...' : 'Save application'}</button>
+      {/* Feedback modal */}
+      {feedbackApp && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-black text-slate-900">Log Outcome</h2>
+            <p className="text-slate-500 text-sm">{feedbackApp.role} at {feedbackApp.company}</p>
+            <p className="text-xs text-slate-400">This helps Careeva learn what's working and improve future cover letters.</p>
+            <textarea
+              value={feedbackNote}
+              onChange={e => setFeedbackNote(e.target.value)}
+              placeholder="Optional notes (e.g. interviewer name, feedback received...)"
+              rows={2}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400 resize-none"
+            />
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={() => submitFeedback('interview')}
+                className="py-2.5 rounded-xl text-sm font-bold text-violet-700 bg-violet-50 hover:bg-violet-100">
+                🎉 Interview
+              </button>
+              <button onClick={() => submitFeedback('offer')}
+                className="py-2.5 rounded-xl text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
+                🏆 Offer
+              </button>
+              <button onClick={() => submitFeedback('rejection')}
+                className="py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 hover:bg-slate-100">
+                ✗ Rejected
+              </button>
+            </div>
+            <button onClick={() => { setFeedbackApp(null); setFeedbackNote(''); }}
+              className="w-full py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Follow-up draft modal */}
+      {followupApp && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-black text-slate-900">Follow-Up Draft</h2>
+              <p className="text-sm text-slate-400">{followupApp.role} at {followupApp.company}</p>
+            </div>
+            {generatingFollowup ? (
+              <div className="flex items-center gap-3 py-6 justify-center text-slate-400">
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/></svg>
+                <span className="text-sm">Generating draft...</span>
+              </div>
+            ) : followupDraft ? (
+              <>
+                <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                  {followupDraft}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => navigator.clipboard.writeText(followupDraft)}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                    Copy
+                  </button>
+                  <button onClick={() => { setFollowupApp(null); setFollowupDraft('); }}
+                    className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
+                    style={{ background: "linear-gradient(135deg,#8b5cf6,#6d28d9)" }}>
+                    Done
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-slate-400 text-sm text-center py-4">Could not generate draft. Try again.</p>
+            )}
+            <button onClick={() => { setFollowupApp(null); setFollowupDraft(""); }} className="w-full py-2 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Cover letter modal */}
+      {coverLetterApp && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-black text-slate-900">Cover Letter</h2>
+              <p className="text-sm text-slate-400">{coverLetterApp.role} at {coverLetterApp.company}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-slate-50 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap font-mono leading-relaxed">
+              {coverLetterApp.coverLetter || 'No cover letter stored for this application.'}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => navigator.clipboard.writeText(coverLetterApp.coverLetter || '')}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                Copy
+              </button>
+              <button onClick={() => setCoverLetterApp(null)}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                Close
+              </button>
             </div>
           </div>
         </div>

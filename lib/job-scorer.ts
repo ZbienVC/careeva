@@ -1,151 +1,182 @@
-interface ResumeData {
+/**
+ * Careeva Job Scorer v2
+ * Multi-dimensional scoring using all profile data
+ * Returns 0-100 score + dimension breakdown
+ */
+
+interface ProfileData {
   skills: string[];
   roles: string[];
   industries: string[];
   yearsExperience: number;
   education: string[];
   technologies: string[];
+  // New structured fields
+  targetTitles?: string[];
+  targetIndustries?: string[];
+  roleFamilies?: string[];
+  salaryMin?: number;
+  salaryMax?: number;
+  remotePreference?: string;
+  preferredLocations?: string[];
 }
 
 interface JobData {
   title: string;
   description: string;
   requirements: string;
+  // New fields
+  salaryMin?: number;
+  salaryMax?: number;
+  isRemote?: boolean;
+  isHybrid?: boolean;
+  location?: string;
+  roleFamilies?: string[];
+  atsType?: string;
 }
 
-interface ScoringResult {
+export interface ScoringResult {
   score: number;
+  overallScore: number;
+  skillScore: number;
+  roleScore: number;
+  techScore: number;
+  experienceScore: number;
+  locationScore: number;
+  compensationScore: number;
+  roleFamilyScore: number;
   reasoning: string;
+  recommendation: 'auto_apply' | 'autofill_draft' | 'save_for_review' | 'ignore';
 }
 
-function normalizeText(text: string): string {
+function normalize(text: string): string {
   return text.toLowerCase().trim();
 }
 
-function calculateSkillOverlap(
-  userSkills: string[],
-  jobText: string
-): { matched: number; total: number } {
-  if (userSkills.length === 0) return { matched: 0, total: 0 };
-
-  const jobLower = normalizeText(jobText);
-  let matched = 0;
-
-  for (const skill of userSkills) {
-    const skillLower = normalizeText(skill);
-    if (jobLower.includes(skillLower)) {
-      matched++;
-    }
-  }
-
-  return { matched, total: userSkills.length };
+function overlap(userItems: string[], jobText: string): number {
+  if (!userItems?.length) return 0;
+  const jLow = normalize(jobText);
+  const matched = userItems.filter(i => jLow.includes(normalize(i))).length;
+  return Math.min(1, matched / Math.min(userItems.length, 10));
 }
 
-function calculateRoleRelevance(
-  userRoles: string[],
-  jobTitle: string
-): number {
-  if (userRoles.length === 0) return 0;
-
-  const jobTitleLower = normalizeText(jobTitle);
-  let relevantRoles = 0;
-
-  for (const role of userRoles) {
-    const roleLower = normalizeText(role);
-    if (
-      jobTitleLower.includes(roleLower) ||
-      roleLower.includes(jobTitleLower.split(" ")[0])
-    ) {
-      relevantRoles++;
-    }
+function titleMatch(userTitles: string[], jobTitle: string): number {
+  if (!userTitles?.length) return 0;
+  const jLow = normalize(jobTitle);
+  // Exact or partial title match
+  for (const t of userTitles) {
+    const tLow = normalize(t);
+    if (jLow.includes(tLow) || tLow.includes(jLow)) return 1;
+    // Word-level overlap
+    const tWords = tLow.split(/\s+/);
+    const jWords = jLow.split(/\s+/);
+    const shared = tWords.filter(w => w.length > 3 && jWords.includes(w)).length;
+    if (shared >= 2) return 0.7;
+    if (shared >= 1) return 0.4;
   }
-
-  return Math.min((relevantRoles / userRoles.length) * 100, 100);
+  return 0;
 }
 
-function calculateTechnologyMatch(
-  userTechs: string[],
-  jobText: string
-): { matched: number; total: number } {
-  if (userTechs.length === 0) return { matched: 0, total: 0 };
+function locationMatch(job: JobData, prefs: ProfileData): number {
+  if (!prefs.remotePreference) return 0.5; // no preference = neutral
 
-  const jobLower = normalizeText(jobText);
-  let matched = 0;
+  if (job.isRemote) {
+    if (prefs.remotePreference === 'remote_only' || prefs.remotePreference === 'hybrid_ok' || prefs.remotePreference === 'any') return 1;
+    return 0.4;
+  }
+  if (job.isHybrid) {
+    if (prefs.remotePreference === 'hybrid_ok' || prefs.remotePreference === 'onsite_ok' || prefs.remotePreference === 'any') return 0.85;
+    if (prefs.remotePreference === 'remote_only') return 0.2;
+    return 0.6;
+  }
+  // Onsite
+  if (prefs.remotePreference === 'remote_only') return 0.1;
+  if (prefs.remotePreference === 'hybrid_ok') return 0.5;
+  if (prefs.remotePreference === 'onsite_ok' || prefs.remotePreference === 'any') return 0.9;
 
-  for (const tech of userTechs) {
-    const techLower = normalizeText(tech);
-    if (jobLower.includes(techLower)) {
-      matched++;
-    }
+  // Location text match
+  if (job.location && prefs.preferredLocations?.length) {
+    const jLoc = normalize(job.location);
+    const matches = prefs.preferredLocations.some(l => jLoc.includes(normalize(l)) || normalize(l).includes(jLoc));
+    return matches ? 0.9 : 0.4;
   }
 
-  return { matched, total: userTechs.length };
+  return 0.5;
 }
 
-function calculateExperienceScore(
-  userYearsExp: number,
-  jobText: string
-): number {
-  // Extract required years from job description
-  const yearsMatch = jobText.match(/(\d+)\s+years?/i);
-  if (!yearsMatch) return 50; // neutral if not specified
+function compensationMatch(job: JobData, prefs: ProfileData): number {
+  if (!prefs.salaryMin || (!job.salaryMin && !job.salaryMax)) return 0.5; // unknown = neutral
 
-  const requiredYears = parseInt(yearsMatch[1], 10);
+  const jobMax = job.salaryMax || job.salaryMin || 0;
+  const jobMin = job.salaryMin || jobMax;
+  const userMin = prefs.salaryMin || 0;
 
-  if (userYearsExp >= requiredYears) {
-    return 100;
-  } else if (userYearsExp >= requiredYears * 0.5) {
-    return 75;
-  } else {
-    return Math.max(0, (userYearsExp / requiredYears) * 100);
-  }
+  if (jobMax >= userMin) return 1;                    // job pays enough
+  if (jobMax >= userMin * 0.9) return 0.8;            // close
+  if (jobMax >= userMin * 0.75) return 0.5;           // below but maybe negotiable
+  return 0.2;                                         // too low
 }
 
-export function scoreJob(
-  resume: ResumeData,
-  job: JobData
-): ScoringResult {
+function roleFamilyMatch(job: JobData, prefs: ProfileData): number {
+  if (!job.roleFamilies?.length || !prefs.roleFamilies?.length) return 0.5;
+  const matches = job.roleFamilies.filter(rf => prefs.roleFamilies!.includes(rf)).length;
+  return matches > 0 ? Math.min(1, matches * 0.5) : 0.2;
+}
+
+export function scoreJob(profile: ProfileData, job: JobData): ScoringResult {
   const jobText = `${job.title} ${job.description} ${job.requirements}`;
 
-  // Calculate individual scores
-  const skillOverlap = calculateSkillOverlap(resume.skills, jobText);
-  const skillScore =
-    skillOverlap.total > 0
-      ? (skillOverlap.matched / skillOverlap.total) * 100
-      : 0;
+  // Dimension scores (0-1)
+  const skillScore = overlap(profile.skills, jobText) * 0.9 + overlap(profile.technologies, jobText) * 0.1;
+  const roleScore = titleMatch([...(profile.targetTitles || []), ...(profile.roles || [])], job.title);
+  const techScore = overlap(profile.technologies, jobText);
+  const experienceScore = profile.yearsExperience > 0
+    ? Math.min(1, profile.yearsExperience / 8)  // Normalize to 8 years = perfect
+    : 0.3;
+  const locationScore = locationMatch(job, profile);
+  const compensationScore = compensationMatch(job, profile);
+  const roleFamilyScore = roleFamilyMatch(job, profile);
+  const industryScore = overlap(profile.industries || [], jobText);
 
-  const roleScore = calculateRoleRelevance(resume.roles, job.title);
+  // Weighted final score
+  const weightedScore = (
+    skillScore * 0.30 +
+    roleScore * 0.25 +
+    techScore * 0.15 +
+    experienceScore * 0.10 +
+    locationScore * 0.10 +
+    compensationScore * 0.05 +
+    roleFamilyScore * 0.03 +
+    industryScore * 0.02
+  );
 
-  const techMatch = calculateTechnologyMatch(resume.technologies, jobText);
-  const techScore =
-    techMatch.total > 0 ? (techMatch.matched / techMatch.total) * 100 : 0;
-
-  const expScore = calculateExperienceScore(resume.yearsExperience, jobText);
-
-  // Weighted average
-  const weights = {
-    skill: 0.35,
-    role: 0.25,
-    tech: 0.25,
-    experience: 0.15,
-  };
-
-  const finalScore =
-    skillScore * weights.skill +
-    roleScore * weights.role +
-    techScore * weights.tech +
-    expScore * weights.experience;
+  const overallScore = Math.round(weightedScore * 100);
 
   // Build reasoning
-  const reasoning = `
-    Skill Match: ${skillScore.toFixed(0)}% (${skillOverlap.matched}/${skillOverlap.total})
-    Role Relevance: ${roleScore.toFixed(0)}%
-    Technology Match: ${techScore.toFixed(0)}% (${techMatch.matched}/${techMatch.total})
-    Experience: ${expScore.toFixed(0)}% (${resume.yearsExperience} years)
-  `.trim();
+  const reasons: string[] = [];
+  if (skillScore > 0.6) reasons.push(`Strong skill match (${Math.round(skillScore * 100)}%)`);
+  if (roleScore > 0.5) reasons.push(`Title aligns with your targets`);
+  if (locationScore < 0.3) reasons.push(`⚠️ Location may not match preferences`);
+  if (compensationScore < 0.4) reasons.push(`⚠️ Salary may be below minimum`);
+  if (skillScore < 0.3) reasons.push(`Low skill overlap - consider gap analysis`);
+
+  // Recommendation
+  let recommendation: ScoringResult['recommendation'] = 'ignore';
+  if (overallScore >= 80) recommendation = 'auto_apply';
+  else if (overallScore >= 65) recommendation = 'autofill_draft';
+  else if (overallScore >= 45) recommendation = 'save_for_review';
 
   return {
-    score: Math.round(finalScore),
-    reasoning,
+    score: overallScore,
+    overallScore,
+    skillScore: Math.round(skillScore * 100),
+    roleScore: Math.round(roleScore * 100),
+    techScore: Math.round(techScore * 100),
+    experienceScore: Math.round(experienceScore * 100),
+    locationScore: Math.round(locationScore * 100),
+    compensationScore: Math.round(compensationScore * 100),
+    roleFamilyScore: Math.round(roleFamilyScore * 100),
+    reasoning: reasons.join('. ') || `Score: ${overallScore}/100`,
+    recommendation,
   };
 }

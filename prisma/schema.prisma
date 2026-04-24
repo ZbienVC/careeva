@@ -1,5 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Careeva â€” Prisma Schema
+// Personal-use-first job application operating system
+// Extended schema: profile engine, materials library, job pipeline, application tracker
 
 generator client {
   provider = "prisma-client-js"
@@ -10,61 +11,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// â”€â”€â”€ AUTH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
   name          String?
+  passwordHash  String?
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  profile       UserProfile?
-  jobs          Job[]
-  applications  Application[]
-  jobScores     JobScore[]
-  writingSamples WritingSample[]
+  // Profile engine
+  profile            UserProfile?
+  personalInfo       PersonalInfo?
+  workHistory        WorkHistory[]
+  educationEntries   EducationEntry[]
+  projects           Project[]
+  certifications     Certification[]
+  socialLinks        SocialLink[]
+  skills             Skill[]
+  jobPreferences     JobPreferences?
+  writingPreferences WritingPreferences?
+  autoApplyConfig    AutoApplyConfig?
 
+  // Materials
+  resumes           Resume[]
+  coverLetters      CoverLetter[]
+  reusableAnswers   ReusableAnswer[]
+  writingSamples    WritingSample[]
+
+  // Job pipeline
+  jobs       Job[]
+  jobScores  JobScore[]
+  scrapeRuns ScrapeRun[]
+
+  // Applications
+  applications Application[]
+
+  // Generation
+  generationRuns GenerationRun[]
+
+  jobEvaluations JobEvaluation[]
+  starStories    StarStory[]
   @@map("users")
 }
 
-model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?  @db.Text
-  access_token       String?  @db.Text
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?  @db.Text
-  session_state      String?
+// â”€â”€â”€ PROFILE ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-  @@map("accounts")
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("sessions")
-}
-
+// Legacy flat profile â€” kept for backward compat, gradually migrated
 model UserProfile {
   id                 String   @id @default(cuid())
   userId             String   @unique
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Resume parsed data
   skills             String[]
   roles              String[]
   industries         String[]
@@ -73,12 +73,11 @@ model UserProfile {
   technologies       String[]
   resumeUrl          String?
 
-  // Onboarding data
   jobTitle           String?
   targetIndustries   String[]
   desiredSalaryMin   Float?
   desiredSalaryMax   Float?
-  jobType            String[] // "remote", "hybrid", "onsite", "any"
+  jobType            String[]
   willingToRelocate  Boolean  @default(false)
   careerGoals        String?
   additionalInfo     String?
@@ -89,67 +88,457 @@ model UserProfile {
   @@map("user_profiles")
 }
 
+// Rich personal/contact info
+model PersonalInfo {
+  id              String  @id @default(cuid())
+  userId          String  @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fullName        String?
+  preferredName   String?
+  email           String?
+  phone           String?
+  addressLine1    String?
+  addressLine2    String?
+  city            String?
+  state           String?
+  zipCode         String?
+  country         String?  @default("US")
+
+  timezone        String?
+  linkedinUrl     String?
+  githubUrl       String?
+  portfolioUrl    String?
+  websiteUrl      String?
+  otherLinks      Json?    // [{label, url}]
+
+  // Work auth
+  workAuthorization   String?  // "us_citizen", "green_card", "h1b", "opt", "other"
+  requiresSponsorship Boolean  @default(false)
+  sponsorshipNote     String?
+
+  // Availability
+  noticePeriodDays    Int?
+  availableStartDate  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("personal_info")
+}
+
+// Structured work history entry
+model WorkHistory {
+  id          String  @id @default(cuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  company     String
+  title       String
+  startDate   DateTime?
+  endDate     DateTime?
+  isCurrent   Boolean  @default(false)
+  location    String?
+  isRemote    Boolean  @default(false)
+
+  // Rich content
+  summary     String?  @db.Text
+  bullets     ResumeBullet[]
+
+  // Tagging for role-family matching
+  roleFamilies   String[]  // "analytics", "ops", "fintech", "crypto", etc.
+  skills         String[]
+  technologies   String[]
+
+  // Order for display
+  sortOrder   Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("work_history")
+}
+
+// Individual resume bullets â€” stored separately for tailoring
+model ResumeBullet {
+  id            String      @id @default(cuid())
+  workHistoryId String?
+  workHistory   WorkHistory? @relation(fields: [workHistoryId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  content       String      @db.Text
+  isQuantified  Boolean     @default(false)
+  metric        String?     // e.g. "increased by 40%"
+
+  // Tagging
+  roleFamilies  String[]
+  skills        String[]
+  isHighlight   Boolean     @default(false)
+
+  sortOrder     Int         @default(0)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("resume_bullets")
+}
+
+model EducationEntry {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  institution  String
+  degree       String?
+  fieldOfStudy String?
+  startDate    DateTime?
+  endDate      DateTime?
+  isCurrent    Boolean  @default(false)
+  gpa          String?
+  honors       String?
+  notes        String?  @db.Text
+
+  sortOrder    Int      @default(0)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("education_entries")
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String
+  description  String?  @db.Text
+  url          String?
+  startDate    DateTime?
+  endDate      DateTime?
+  isOngoing    Boolean  @default(false)
+
+  roleFamilies String[]
+  skills       String[]
+  technologies String[]
+  bullets      ResumeBullet[]
+
+  sortOrder    Int      @default(0)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model Certification {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String
+  issuer       String?
+  issueDate    DateTime?
+  expiryDate   DateTime?
+  credentialId String?
+  credentialUrl String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("certifications")
+}
+
+model SocialLink {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  platform String   // "linkedin", "github", "portfolio", "twitter", "other"
+  url      String
+  label    String?
+
+  @@map("social_links")
+}
+
+model Skill {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String
+  category     String?  // "technical", "soft", "tool", "language", "domain"
+  proficiency  String?  // "expert", "proficient", "familiar"
+  yearsUsed    Int?
+  roleFamilies String[]
+
+  createdAt    DateTime @default(now())
+
+  @@map("skills")
+}
+
+// Job search targeting preferences
+model JobPreferences {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  targetTitles      String[]
+  targetFunctions   String[]
+  targetIndustries  String[]
+  targetCompanyTypes String[]  // "startup", "enterprise", "nonprofit", "agency"
+  roleFamilies      String[]
+
+  // Compensation
+  salaryMinUSD     Int?
+  salaryMaxUSD     Int?
+  salaryNote       String?
+
+  // Location
+  preferredLocations String[]
+  remotePreference   String?   // "remote_only", "hybrid_ok", "onsite_ok", "any"
+  willingToRelocate  Boolean   @default(false)
+  relocationNote     String?
+
+  // Work type
+  fullTimeOk         Boolean   @default(true)
+  partTimeOk         Boolean   @default(false)
+  contractOk         Boolean   @default(false)
+
+  // Other
+  willingToTravel    Boolean   @default(false)
+  travelPercent      Int?
+  seniority          String[]  // "ic", "senior", "staff", "lead", "manager"
+
+  updatedAt          DateTime  @updatedAt
+
+  @@map("job_preferences")
+}
+
+model WritingPreferences {
+  id     String  @id @default(cuid())
+  userId String  @unique
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Tone descriptors
+  toneWords    String[]  // "concise", "authentic", "direct", "warm", "professional"
+  avoidWords   String[]  // words/phrases to avoid
+  exampleBio   String?   @db.Text
+  positioningStatement String? @db.Text
+
+  // Per role-family tone overrides
+  roleFamilyTones Json?  // { "fintech": "professional", "startup": "casual" }
+
+  updatedAt DateTime @updatedAt
+
+  @@map("writing_preferences")
+}
+
+model AutoApplyConfig {
+  id     String  @id @default(cuid())
+  userId String  @unique
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Global switches
+  autoApplyEnabled       Boolean  @default(false)
+  defaultMode            String   @default("prep_only")
+  // modes: discover_only | save_for_review | prep_only | autofill_draft | safe_auto | full_auto
+
+  // Limits
+  maxApplicationsPerDay  Int      @default(5)
+  requireResumeReview    Boolean  @default(true)
+  requireCoverReview     Boolean  @default(true)
+
+  // Safety
+  stopOnCaptcha          Boolean  @default(true)
+  stopOnUnknownQuestion  Boolean  @default(true)
+  stopOnLowConfidence    Boolean  @default(true)
+  confidenceThreshold    Float    @default(0.75)
+
+  // Score gates
+  minScoreToApply        Float    @default(60.0)
+  minScoreToAutoApply    Float    @default(75.0)
+
+  // Source-level enables
+  enabledSources   String[]  // ["greenhouse", "lever", "workday"]
+  disabledAts      String[]  // specific ATS types to skip
+
+  // Company filters
+  companyBlacklist String[]
+  companyPriority  String[]
+  titleWhitelist   String[]
+  titleBlacklist   String[]
+
+  updatedAt DateTime @updatedAt
+
+  @@map("auto_apply_config")
+}
+
+// â”€â”€â”€ MATERIALS LIBRARY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model Resume {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name      String   // "Master Resume", "Analytics Focus", "Fintech v2"
+  fileUrl   String?  // object storage URL
+  fileType  String?  // "pdf", "docx"
+  isBase    Boolean  @default(false)  // the master/base resume
+
+  // Role family this variant targets (empty = general)
+  roleFamilies String[]
+
+  // Parsed sections (stored after parse)
+  sections  ResumeSection[]
+
+  // Raw text (for search/grounding)
+  rawText   String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applicationDocuments ApplicationDocument[]
+
+  @@map("resumes")
+}
+
+model ResumeSection {
+  id        String  @id @default(cuid())
+  resumeId  String
+  resume    Resume  @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  type      String  // "summary", "experience", "education", "skills", "projects", "certifications"
+  title     String?
+  content   String  @db.Text
+  sortOrder Int     @default(0)
+
+  @@map("resume_sections")
+}
+
+model CoverLetter {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String?
+  jobId        String?
+  jobTitle     String?
+  company      String?
+  content      String   @db.Text
+  tone         String?  // "professional", "warm", "direct"
+  roleFamilies String[]
+  isTemplate   Boolean  @default(false)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  applicationDocuments ApplicationDocument[]
+
+  @@map("cover_letters")
+}
+
+// Reusable application Q&A bank
+model ReusableAnswer {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Question normalization
+  questionKey     String   // normalized key: "work_authorization", "salary_expectation", "why_this_role"
+  questionFamily  String   // "legal", "compensation", "logistics", "experience", "behavioral"
+  questionText    String?  @db.Text  // original question text that triggered this
+
+  // Answer
+  answer          String   @db.Text
+  answerShort     String?  @db.Text  // <=100 char version
+  answerLong      String?  @db.Text  // expanded version
+
+  // Confidence + review
+  isVerified      Boolean  @default(false)
+  isAutoGenerated Boolean  @default(false)
+  confidence      Float?
+
+  // Scoping
+  roleFamilies    String[]
+  companyTypes    String[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, questionKey])
+  @@map("reusable_answers")
+}
+
 model WritingSample {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  title      String
-  type       String   // "cover_letter", "bio", "summary"
-  content    String   @db.Text
-  
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  type      String   // "cover_letter", "bio", "summary", "answer", "positioning"
+  content   String   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("writing_samples")
 }
+
+// â”€â”€â”€ JOB PIPELINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model Job {
   id             String   @id @default(cuid())
   userId         String
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Core
   title          String
   company        String
   description    String   @db.Text
   requirements   String   @db.Text
   salary         String?
+  salaryMin      Int?
+  salaryMax      Int?
   location       String?
-  jobType        String?  // "remote", "hybrid", "onsite"
+  isRemote       Boolean  @default(false)
+  isHybrid       Boolean  @default(false)
+  jobType        String?
+
+  // Source tracking
   url            String?
-  source         String   // "manual", "linkedin", "indeed", etc.
+  applyUrl       String?
+  source         String   @default("manual")  // "greenhouse", "lever", "workday", "linkedin", "manual"
+  externalId     String?   // ID from source ATS
+  atsType        String?   // "greenhouse", "lever", "workday", "ashby", "icims", "smartrecruiters"
+
+  // Dedup
+  dedupeKey      String?   // hash of company+title+location for dedup
+  isDuplicate    Boolean   @default(false)
+  canonicalJobId String?   // points to the canonical version if duplicate
+
+  // Freshness
+  postedAt       DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean  @default(true)
+  lastScrapedAt  DateTime?
+
+  // Scoring metadata
+  roleFamilies   String[]
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  applications   Application[]
-  jobScores      JobScore[]
+  applications  Application[]
+  jobScores     JobScore[]
+  scrapeRunId   String?
+  scrapeRun     ScrapeRun? @relation(fields: [scrapeRunId], references: [id], onDelete: SetNull)
 
+  @@index([userId, isActive])
+  @@index([dedupeKey])
   @@map("jobs")
 }
-
-model Application {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobId     String?
-  job       Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
-
-  // Kanban board fields
-  company   String
-  role      String
-  status    String   @default("applied") // "applied", "phone_screen", "interview", "offer", "rejected"
-  appliedAt DateTime @default(now())
-  dateApplied String? // YYYY-MM-DD format for Kanban UI
-  url       String?
-  notes     String?  @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("applications")
-}
-
 
 model JobScore {
   id        String   @id @default(cuid())
@@ -158,12 +547,299 @@ model JobScore {
   jobId     String
   job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  score     Float    // 0-100
-  reasoning String?  @db.Text
+  // Composite score
+  score          Float
+  overallScore   Float    @default(0)
+
+  // Dimension scores
+  skillScore     Float?
+  roleScore      Float?
+  techScore      Float?
+  experienceScore Float?
+  locationScore  Float?
+  compensationScore Float?
+  roleFamilyScore Float?
+
+  // Recommendation
+  recommendation String?  // "auto_apply", "autofill_draft", "save_for_review", "ignore"
+  reasoning      String?  @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([userId, jobId])
   @@map("job_scores")
+}
+
+model ScrapeRun {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  source      String   // "greenhouse", "lever", "workday", "manual"
+  status      String   @default("pending")  // "pending", "running", "complete", "failed"
+  jobsFound   Int      @default(0)
+  jobsNew     Int      @default(0)
+  jobsDuped   Int      @default(0)
+  errorMessage String?  @db.Text
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  jobs        Job[]
+
+  @@map("scrape_runs")
+}
+
+// Company registry for dedup and enrichment
+model Company {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  aliases      String[]
+  domain       String?
+  atsType      String?
+  careerPageUrl String?
+  greenhouseId String?
+  leverId      String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("companies")
+}
+
+// â”€â”€â”€ APPLICATION TRACKER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model Application {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String?
+  job       Job?     @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  // Core kanban fields
+  company     String
+  role        String
+  status      String   @default("saved")
+  // statuses: saved | prepping | applied | phone_screen | interview | offer | rejected | withdrawn | archived
+
+  appliedAt   DateTime?
+  dateApplied String?
+  url         String?
+  applyUrl    String?
+  notes       String?  @db.Text
+
+  // ATS metadata
+  atsType     String?
+  externalApplicationId String?
+
+  // Submission details
+  submittedVia String?  // "manual", "auto", "autofill"
+  automationRunId String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents   ApplicationDocument[]
+  answers     ApplicationAnswer[]
+  events      ApplicationEvent[]
+  artifacts   ApplicationArtifact[]
+  automationRun AutomationRun? @relation(fields: [automationRunId], references: [id], onDelete: SetNull)
+
+  @@map("applications")
+}
+
+// Which docs were submitted with an application
+model ApplicationDocument {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  type          String   // "resume", "cover_letter"
+  resumeId      String?
+  resume        Resume?  @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  coverLetterId String?
+  coverLetter   CoverLetter? @relation(fields: [coverLetterId], references: [id], onDelete: SetNull)
+
+  fileUrl       String?  // snapshot URL at time of application
+  createdAt     DateTime @default(now())
+
+  @@map("application_documents")
+}
+
+// Per-question answers stored per application
+model ApplicationAnswer {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  questionText  String   @db.Text
+  questionKey   String?  // normalized key if matched
+  answer        String   @db.Text
+  isAutoGenerated Boolean @default(false)
+  confidence    Float?
+  needsReview   Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+
+  @@map("application_answers")
+}
+
+// Application status event log
+model ApplicationEvent {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  eventType     String   // "status_change", "note_added", "interview_scheduled", "offer_received"
+  fromStatus    String?
+  toStatus      String?
+  note          String?  @db.Text
+  metadata      Json?
+
+  createdAt     DateTime @default(now())
+
+  @@map("application_events")
+}
+
+// Screenshots, logs, artifacts per application
+model ApplicationArtifact {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  type          String   // "screenshot", "log", "generated_answer", "error"
+  url           String?
+  content       String?  @db.Text
+  metadata      Json?
+
+  createdAt     DateTime @default(now())
+
+  @@map("application_artifacts")
+}
+
+// â”€â”€â”€ AUTOMATION ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model AutomationRun {
+  id          String   @id @default(cuid())
+  userId      String?
+  jobId       String?
+
+  status      String   @default("pending")
+  // pending | running | paused | complete | failed | needs_review
+
+  mode        String   @default("prep_only")
+  atsType     String?
+  url         String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  pausedAt    DateTime?
+
+  // Results
+  stepsCompleted Int    @default(0)
+  stepsFailed    Int    @default(0)
+  lastCheckpoint String?
+  failureReason  String? @db.Text
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks       AutomationTask[]
+  applications Application[]
+
+  @@map("automation_runs")
+}
+
+model AutomationTask {
+  id              String   @id @default(cuid())
+  automationRunId String
+  automationRun   AutomationRun @relation(fields: [automationRunId], references: [id], onDelete: Cascade)
+
+  stepName        String   // "detect_ats", "fill_name", "upload_resume", "answer_question", "submit"
+  status          String   @default("pending")
+  inputData       Json?
+  outputData      Json?
+  errorMessage    String?  @db.Text
+  screenshotUrl   String?
+
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  @@map("automation_tasks")
+}
+
+// â”€â”€â”€ AI GENERATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+model GenerationRun {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type       String   // "cover_letter", "resume_bullet", "answer", "summary", "tailored_resume"
+  model      String   @default("gpt-4o-mini")
+  promptKey  String?
+
+  // Input context
+  jobId      String?
+  jobTitle   String?
+  company    String?
+
+  // Grounding inputs used
+  groundedFields String[]  // which profile fields were used
+
+  // Output
+  output     String?  @db.Text
+  isApproved Boolean  @default(false)
+  feedback   String?
+
+  createdAt  DateTime @default(now())
+
+  @@map("generation_runs")
+}
+
+// ═══ JOB EVALUATION (career-ops port) ═══════════════════════════════════════
+
+model JobEvaluation {
+  id        String   @id @default(cuid())
+  jobId     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  blockA    Json     // role summary: archetype, domain, seniority, remote, TL;DR
+  blockB    Json     // CV match: requirements mapped to profile, gaps, mitigation
+  blockC    Json     // level strategy: sell senior, downlevel plan
+  blockD    Json     // comp research: structured data/questions
+  blockE    Json     // personalization: top 5 CV changes, top 5 LinkedIn changes
+  blockF    Json     // interview prep: STAR+R stories, red-flag Q&As
+  blockG    Json     // posting legitimacy: ghost job signals, tier assessment
+
+  archetype String
+  score     Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("job_evaluations")
+}
+
+model StarStory {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId       String?
+
+  requirement String   // the JD requirement this story maps to
+  situation   String   @db.Text
+  task        String   @db.Text
+  action      String   @db.Text
+  result      String   @db.Text
+  reflection  String   @db.Text  // the +R: what was learned
+  tags        String[]
+
+  createdAt   DateTime @default(now())
+
+  @@map("star_stories")
 }

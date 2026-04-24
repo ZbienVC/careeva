@@ -14,14 +14,28 @@ export async function GET(req: NextRequest) {
       orderBy: { appliedAt: 'desc' },
     });
 
+    // Fetch cover letters for each application that has a jobId
+    const jobIds = applications.filter(a => a.jobId).map(a => a.jobId as string);
+    const coverLetters = jobIds.length > 0 ? await prisma.coverLetter.findMany({
+      where: { userId: user.id, jobId: { in: jobIds } },
+      orderBy: { createdAt: 'desc' },
+      select: { jobId: true, content: true },
+    }) : [];
+    const clByJobId: Record<string, string> = {};
+    for (const cl of coverLetters) {
+      if (cl.jobId && !clByJobId[cl.jobId]) clByJobId[cl.jobId] = cl.content;
+    }
+
     const formatted = applications.map((app) => ({
       id: app.id,
       company: app.company,
       role: app.role,
       status: app.status,
-      dateApplied: app.dateApplied || app.appliedAt.toISOString().split('T')[0],
+      dateApplied: app.dateApplied || app.appliedAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       notes: app.notes || '',
       url: app.url || '',
+      coverLetter: app.jobId ? (clByJobId[app.jobId] || '') : '',
+      jobId: app.jobId,
     }));
 
     return NextResponse.json(formatted);
@@ -63,7 +77,7 @@ export async function POST(req: NextRequest) {
       company: application.company,
       role: application.role,
       status: application.status,
-      dateApplied: application.dateApplied || application.appliedAt.toISOString().split('T')[0],
+      dateApplied: application.dateApplied || application.appliedAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       notes: application.notes || '',
       url: application.url || '',
     });
@@ -110,7 +124,7 @@ export async function PUT(req: NextRequest) {
       company: updated.company,
       role: updated.role,
       status: updated.status,
-      dateApplied: updated.dateApplied || updated.appliedAt.toISOString().split('T')[0],
+      dateApplied: updated.dateApplied || updated.appliedAt?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0],
       notes: updated.notes || '',
       url: updated.url || '',
     });

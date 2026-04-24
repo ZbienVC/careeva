@@ -1,66 +1,179 @@
-import OpenAI from 'openai';
+import { generateCoverLetter, isAIConfigured } from '@/lib/ai-client';
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/session';
+import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUserFromRequest(req);
-  if (!user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { jobDescription, jobTitle, company, hiringManager, candidateName, tone } = await req.json();
+    const { jobDescription, jobTitle, company, hiringManager, tone = 'professional', jobId } = await req.json();
 
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: 'OPENAI_API_KEY is not configured' }, { status: 500 });
+    if (!isAIConfigured()) {
+      return NextResponse.json(
+        { error: 'No AI API key configured. Add ANTHROPIC_API_KEY (Claude) or OPENAI_API_KEY to your environment.' },
+        { status: 500 }
+      );
+    }
+    if (!jobTitle || !company) {
+      return NextResponse.json({ error: 'jobTitle and company required' }, { status: 400 });
     }
 
-    if (!jobDescription || !jobTitle || !company) {
-      return NextResponse.json({ error: 'Job description, job title, and company are required' }, { status: 400 });
+    // Fetch full profile for rich context
+    const [personalInfo, workHistory, skills, education, certs, projects, writingPrefs, storedAnswers] = await Promise.all([
+      prisma.personalInfo.findUnique({ where: { userId: user.id } }),
+      prisma.workHistory.findMany({ where: { userId: user.id }, include: { bullets: true }, orderBy: { startDate: 'desc' } }),
+      prisma.skill.findMany({ where: { userId: user.id }, take: 30 }),
+      prisma.educationEntry.findMany({ where: { userId: user.id } }),
+      prisma.certification.findMany({ where: { userId: user.id } }),
+      prisma.project.findMany({ where: { userId: user.id }, include: { bullets: true }, take: 3 }),
+      prisma.writingPreferences.findUnique({ where: { userId: user.id } }),
+      prisma.reusableAnswer.findMany({ where: { userId: user.id, isVerified: true }, take: 10 }),
+    ]);
+
+    const name = personalInfo?.fullName || user.name || 'The candidate';
+    const toneWords = writingPrefs?.toneWords?.join(', ') || 'professional, authentic, concise';
+    const avoidWords = writingPrefs?.avoidWords?.join(', ') || 'synergy, leverage, utilize, passionate';
+    const posStatement = writingPrefs?.positioningStatement || '';
+
+    // Build profile context block
+    let profileContext = `CANDIDATE: ${name}\n`;
+    if (personalInfo?.linkedinUrl) profileContext += `LinkedIn: ${personalInfo.linkedinUrl}\n`;
+    if (personalInfo?.githubUrl) profileContext += `GitHub: ${personalInfo.githubUrl}\n`;
+
+    if (workHistory.length > 0) {
+      profileContext += '\nWORK EXPERIENCE:\n';
+      for (const wh of workHistory.slice(0, 4)) {
+        const start = wh.startDate ? new Date(wh.startDate).getFullYear() : '';
+        const end = wh.isCurrent ? 'Present' : (wh.endDate ? new Date(wh.endDate).getFullYear() : '');
+        profileContext += `\n${wh.title} @ ${wh.company} (${start}-${end})\n`;
+        if (wh.summary) profileContext += `Summary: ${wh.summary}\n`;
+        for (const b of wh.bullets.slice(0, 4)) {
+          profileContext += ` ${b.content}${b.metric ? ` (${b.metric})` : ''}\n`;
+        }
+        if (wh.skills?.length) profileContext += `Skills: ${wh.skills.join(', ')}\n`;
+      }
     }
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    if (education.length > 0) {
+      profileContext += '\nEDUCATION: ';
+      profileContext += education.map(e => `${e.degree || ''} ${e.fieldOfStudy || ''} at ${e.institution}`).join(' | ') + '\n';
+    }
 
-    const prompt = `You are an expert cover letter writer. Generate a professional, tailored cover letter based on the following information:
+    if (skills.length > 0) {
+      profileContext += `\nKEY SKILLS: ${skills.map(s => s.name).join(', ')}\n`;
+    }
 
-Company: ${company}
-Job Title: ${jobTitle}
-Hiring Manager: ${hiringManager || 'Hiring Team'}
-Candidate Name: ${candidateName || user.name || 'The candidate'}
-Tone: ${tone}
-Candidate Background Signals: ${[
-      user.profile?.jobTitle ? `Target role: ${user.profile.jobTitle}` : '',
-      user.profile?.careerGoals ? `Career goals: ${user.profile.careerGoals}` : '',
-      user.profile?.skills?.length ? `Skills: ${user.profile.skills.slice(0, 12).join(', ')}` : '',
-      user.profile?.roles?.length ? `Prior roles: ${user.profile.roles.slice(0, 6).join(', ')}` : '',
-      user.profile?.additionalInfo ? `Additional context: ${user.profile.additionalInfo}` : '',
-    ].filter(Boolean).join(' | ') || 'No extra profile context available.'}
+    if (certs.length > 0) {
+      profileContext += `CERTIFICATIONS: ${certs.map(c => c.name).join(', ')}\n`;
+    }
 
-Job Description:
-${jobDescription}
+    if (projects.length > 0) {
+      profileContext += '\nKEY PROJECTS:\n';
+      for (const p of projects) {
+        profileContext += ` ${p.name}${p.description ? ': ' + p.description.slice(0, 100) : ''}\n`;
+      }
+    }
 
-Write a compelling cover letter that:
-- Opens with a strong hook showing enthusiasm for the role
-- Highlights relevant experience and skills aligned with the job description
-- Shows understanding of the company and why the candidate wants to work there
-- Uses the specified tone (${tone})
-- Closes with a clear call to action
-- Is professional and concise (3-4 paragraphs)
+    const pitch = storedAnswers.find(a => a.questionKey === 'describe_yourself');
+    if (posStatement) profileContext += `\nPOSITIONING: ${posStatement}\n`;
+    else if (pitch) profileContext += `\nELEVATOR PITCH: ${pitch.answer}\n`;
 
-Do not include placeholders or brackets. Write a complete, ready-to-send cover letter.`;
+    // Build professional header
+    const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const cityState = [
+      personalInfo?.city,
+      personalInfo?.state ? (personalInfo.state + ' ' + (personalInfo?.zipCode || '')).trim() : '',
+    ].filter(Boolean).join(', ');
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
+    const headerLines: string[] = [
+      name,
+      ...(personalInfo?.addressLine1 ? [personalInfo.addressLine1] : []),
+      ...(cityState ? [cityState] : []),
+      ...(personalInfo?.phone ? [personalInfo.phone] : []),
+      ...(personalInfo?.email ? [personalInfo.email] : []),
+      ...(personalInfo?.linkedinUrl ? [personalInfo.linkedinUrl] : []),
+      ...(personalInfo?.githubUrl || personalInfo?.websiteUrl ? [personalInfo?.githubUrl || personalInfo?.websiteUrl || ''] : []),
+      '',
+      today,
+      '',
+      ...(hiringManager ? [hiringManager] : []),
+      'Hiring Team',
+      company,
+      '',
+      `Re: ${jobTitle} Position`,
+      '',
+      `Dear ${hiringManager || 'Hiring Team'},`,
+    ];
+    const letterHeader = headerLines.join('\n');
+
+    // Build the generation prompt
+    const prompt = [
+      'TASK: Write the body of a professional cover letter (NOT the header/date/greeting — that is already written).',
+      '',
+      'HARD RULES — FOLLOW EXACTLY:',
+      '1. NEVER fabricate, invent, or exaggerate ANY experience, skill, metric, company name, project, or achievement.',
+      '2. ONLY use facts explicitly stated in the CANDIDATE PROFILE below.',
+      '3. If the job requires a skill not in the profile, do NOT claim it — focus on transferable skills that ARE present.',
+      `4. Keep total body under 300 words (3 paragraphs + closing — fits on one page).`,
+      `5. Writing tone: ${toneWords}. Avoid these words: ${avoidWords}`,
+      '',
+      'CANDIDATE PROFILE (ONLY use facts from here):',
+      profileContext,
+      '',
+      'JOB DESCRIPTION:',
+      (jobDescription || '').slice(0, 1500),
+      '',
+      'FORMAT — write EXACTLY this structure:',
+      'PARAGRAPH 1 (2-3 sentences): Why this specific role at this specific company. Reference something specific from the job description.',
+      'PARAGRAPH 2 (3-4 sentences): Most relevant experience from the profile. Use real job titles, company names, and real accomplishments. Show direct overlap with job requirements.',
+      'PARAGRAPH 3 (2 sentences): 2-3 specific skills/technologies that appear in BOTH the job description AND the profile. Be explicit.',
+      'CLOSING: One sentence. Then a blank line. Then: Sincerely, Then a blank line. Then the full name.',
+      '',
+      'Begin writing from Paragraph 1 now:',
+    ].join('\n');
+
+    // Generate via Claude Sonnet 4.6 (or GPT-4o-mini fallback)
+    const body = await generateCoverLetter(prompt);
+    const coverLetter = letterHeader + '\n\n' + body;
+
+    // Save to DB
+    const saved = await prisma.coverLetter.create({
+      data: {
+        userId: user.id,
+        jobId: jobId || undefined,
+        jobTitle,
+        company,
+        content: coverLetter,
+        tone,
+        isTemplate: false,
+      },
     });
 
-    const coverLetter = completion.choices?.[0]?.message?.content || 'Failed to generate cover letter';
-    return NextResponse.json({ coverLetter });
+    // Log generation run
+    await prisma.generationRun.create({
+      data: {
+        userId: user.id,
+        type: 'cover_letter',
+        model: 'claude-sonnet-4-5',
+        jobId: jobId || undefined,
+        jobTitle,
+        company,
+        groundedFields: ['workHistory', 'skills', 'education', 'writingPrefs'],
+        output: coverLetter,
+        isApproved: false,
+      },
+    }).catch(() => {});
+
+    return NextResponse.json({ coverLetter, coverLetterId: saved.id });
   } catch (error) {
-    console.error('Failed to generate cover letter:', error);
-    return NextResponse.json({ error: 'Failed to generate cover letter' }, { status: 500 });
+    console.error('Cover letter error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed' },
+      { status: 500 }
+    );
   }
 }

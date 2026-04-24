@@ -12,7 +12,7 @@ const BENEFITS = [
 ];
 
 export default function SignupPage() {
-  const [formData, setFormData] = useState({ email: '', name: '' });
+  const [formData, setFormData] = useState({ email: '', name: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState('');
@@ -40,7 +40,7 @@ export default function SignupPage() {
       const response = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email, name: formData.name }),
+        body: JSON.stringify({ email: formData.email, name: formData.name, password: formData.password }),
       });
 
       const data = await response.json();
@@ -113,7 +113,21 @@ export default function SignupPage() {
 
               {error && <div className="rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>}
 
-              <button type="submit" disabled={loading || !formData.email || !formData.name} className="btn-primary w-full disabled:opacity-50">
+              <div>
+                <label htmlFor="signup-password" className="field-label">Password</label>
+                <input
+                  id="signup-password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => handleChange('password', e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  placeholder="Choose a password (min. 6 characters)"
+                  className="field-input mt-1 w-full"
+                />
+              </div>
+              <button type="submit" disabled={loading || !formData.email || !formData.password || formData.password.length < 6} className="btn-primary w-full disabled:opacity-50">
                 {loading && <LoadingSpinner />}
                 {loading ? 'Creating your workspace...' : 'Create account'}
               </button>

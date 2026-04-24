@@ -54,6 +54,15 @@ export default function DashboardPage() {
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   }, [profile]);
 
+  const completedActions = useMemo(() => {
+    if (!profile) return new Set<string>();
+    const done = new Set<string>();
+    if (profile.jobTitle || profile.targetIndustries?.length) done.add('onboarding');
+    if (profile.careerGoals) done.add('coverletter');
+    if (profile.skills?.length && profile.skills.length > 2) done.add('profile');
+    return done;
+  }, [profile]);
+
   const topMatches = useMemo(
     () => [...recentJobs].sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0)).slice(0, 3),
     [recentJobs]
@@ -80,6 +89,11 @@ export default function DashboardPage() {
     { label: 'Target industries', value: profile.targetIndustries?.length || 0, detail: 'Powering search alignment' },
     { label: 'Saved opportunities', value: recentJobs.length, detail: 'Fresh roles in your pipeline' },
   ];
+
+  // SVG ring circumference
+  const radius = 15.9;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (readinessScore / 100) * circumference;
 
   return (
     <div className="page-shell space-y-8">
@@ -108,22 +122,66 @@ export default function DashboardPage() {
           </div>
 
           <div className="premium-card-soft p-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              {/* SVG Ring Gauge */}
+              <div className="relative h-24 w-24 flex-shrink-0">
+                <svg className="h-24 w-24 -rotate-90" viewBox="0 0 36 36">
+                  <circle
+                    cx="18" cy="18" r={radius}
+                    fill="none"
+                    stroke="rgba(255,255,255,0.06)"
+                    strokeWidth="3"
+                  />
+                  <circle
+                    cx="18" cy="18" r={radius}
+                    fill="none"
+                    stroke="url(#gaugeGrad)"
+                    strokeWidth="3"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={dashOffset}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+                  />
+                  <defs>
+                    <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#3b82f6" />
+                      <stop offset="100%" stopColor="#8b5cf6" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-blue-300">
+                  {readinessScore}%
+                </div>
+              </div>
               <div>
                 <div className="text-sm uppercase tracking-[0.22em] text-slate-500">Profile readiness</div>
-                <div className="mt-2 text-5xl font-bold text-white">{readinessScore}%</div>
-              </div>
-              <div className="h-24 w-24 rounded-full border-[10px] border-blue-500/30 flex items-center justify-center text-lg font-semibold text-blue-300">
-                {readinessScore}
+                <div className="mt-1 text-4xl font-bold text-white">{readinessScore}%</div>
+                <div className="mt-1 text-xs text-slate-400">
+                  {readinessScore < 50 ? 'Complete your profile to improve matching' : readinessScore < 80 ? 'Good progress — keep going!' : 'Profile is strong'}
+                </div>
               </div>
             </div>
-            <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500" style={{ width: `${readinessScore}%` }} />
+            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500 transition-all duration-700"
+                style={{ width: `${readinessScore}%` }}
+              />
             </div>
-            <div className="mt-6 space-y-3 text-sm text-slate-300">
-              <div className="flex items-center justify-between"><span>Resume uploaded</span><span>{profile.resumeUrl ? 'Yes' : 'Not yet'}</span></div>
-              <div className="flex items-center justify-between"><span>Career goals defined</span><span>{profile.careerGoals ? 'Yes' : 'Add context'}</span></div>
-              <div className="flex items-center justify-between"><span>Preferred industries</span><span>{profile.targetIndustries?.length || 0}</span></div>
+            <div className="mt-5 space-y-3 text-sm text-slate-300">
+              <div className="flex items-center justify-between">
+                <span>Resume uploaded</span>
+                <span className={profile.resumeUrl ? 'text-emerald-400' : 'text-slate-500'}>{profile.resumeUrl ? '✓ Done' : 'Not yet'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Career goals defined</span>
+                <span className={profile.careerGoals ? 'text-emerald-400' : 'text-slate-500'}>{profile.careerGoals ? '✓ Done' : 'Add context'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Preferred industries</span>
+                <span className={(profile.targetIndustries?.length || 0) > 0 ? 'text-emerald-400' : 'text-slate-500'}>
+                  {profile.targetIndustries?.length || 0} added
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -181,7 +239,7 @@ export default function DashboardPage() {
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
                       <div className="text-lg font-semibold text-white">{job.title}</div>
-                      <div className="mt-1 text-sm text-slate-300">{job.company} · {job.location}</div>
+                      <div className="mt-1 text-sm text-slate-300">{job.company} &middot; {job.location}</div>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
                         <span className="badge capitalize">{job.jobType}</span>
                         {job.salary && <span className="badge">{job.salary}</span>}
@@ -197,7 +255,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="empty-state !p-8">
-              <div className="text-4xl">💼</div>
+              <div className="text-4xl">&#x1F4CB;</div>
               <h3 className="mt-4 text-xl font-semibold text-white">No role recommendations yet</h3>
               <p className="mt-2 text-slate-400">Complete onboarding and upload a resume to unlock stronger job matching.</p>
               <div className="mt-6 flex justify-center gap-3">
@@ -212,27 +270,41 @@ export default function DashboardPage() {
           <div className="premium-card p-7">
             <h2 className="text-2xl font-semibold text-white">Next best actions</h2>
             <div className="mt-5 space-y-3 text-sm">
-              <Link href="/dashboard/onboarding" className="premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05]">
-                <div>
-                  <div className="font-medium text-white">Refine your job preferences</div>
-                  <div className="mt-1 text-slate-400">Dial in salary, industries, and job types for stronger targeting.</div>
-                </div>
-                <span className="text-slate-500">→</span>
-              </Link>
-              <Link href="/dashboard/cover-letter" className="premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05]">
-                <div>
-                  <div className="font-medium text-white">Generate a tailored cover letter</div>
-                  <div className="mt-1 text-slate-400">Turn a job description into a polished draft in one flow.</div>
-                </div>
-                <span className="text-slate-500">→</span>
-              </Link>
-              <Link href="/dashboard/profile" className="premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05]">
-                <div>
-                  <div className="font-medium text-white">Polish profile context</div>
-                  <div className="mt-1 text-slate-400">Add goals and positioning to improve application quality.</div>
-                </div>
-                <span className="text-slate-500">→</span>
-              </Link>
+              {[
+                {
+                  id: 'onboarding',
+                  href: '/dashboard/onboarding',
+                  title: 'Refine your job preferences',
+                  desc: 'Dial in salary, industries, and job types for stronger targeting.',
+                },
+                {
+                  id: 'coverletter',
+                  href: '/dashboard/cover-letter',
+                  title: 'Generate a tailored cover letter',
+                  desc: 'Turn a job description into a polished draft in one flow.',
+                },
+                {
+                  id: 'profile',
+                  href: '/dashboard/profile',
+                  title: 'Polish profile context',
+                  desc: 'Add goals and positioning to improve application quality.',
+                },
+              ].map((action) => {
+                const done = completedActions.has(action.id);
+                return (
+                  <Link
+                    key={action.id}
+                    href={action.href}
+                    className={`premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05] ${done ? 'opacity-60' : ''}`}
+                  >
+                    <div>
+                      <div className={`font-medium ${done ? 'line-through text-slate-400' : 'text-white'}`}>{action.title}</div>
+                      <div className="mt-1 text-slate-400">{action.desc}</div>
+                    </div>
+                    <span className={done ? 'text-emerald-400' : 'text-slate-500'}>{done ? '✓' : '→'}</span>
+                  </Link>
+                );
+              })}
             </div>
           </div>
 

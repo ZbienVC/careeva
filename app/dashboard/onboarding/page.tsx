@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
@@ -26,7 +26,7 @@ export default function OnboardingPage() {
       <div className="page-shell">
         <div className="hero-panel gradient-border p-10 text-center">
           <div className="relative z-10 mx-auto max-w-2xl">
-            <div className="text-6xl">✓</div>
+            <div className="text-6xl">&#x1F680;</div>
             <h1 className="mt-6 text-4xl font-bold text-white">You’re dialed in.</h1>
             <p className="mt-4 text-lg text-slate-300">
               Your preferences are saved. Careeva can now personalize job matching, ranking, and cover letter generation much more effectively.

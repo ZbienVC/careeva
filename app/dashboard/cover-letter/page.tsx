@@ -2,8 +2,8 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { profileAPI } from '@/lib/api';
 
 interface SavedLetter {
@@ -16,19 +16,30 @@ interface SavedLetter {
 
 const toneOptions = [
   { value: 'professional', label: 'Professional' },
-  { value: 'enthusiastic', label: 'Enthusiastic' },
+  { value: 'confident', label: 'Confident' },
   { value: 'conversational', label: 'Conversational' },
+  { value: 'creative', label: 'Creative' },
 ];
 
 export default function CoverLetterPage() {
-  const router = useRouter();
+  return (
+    <Suspense fallback={null}>
+      <CoverLetterInner />
+    </Suspense>
+  );
+}
 
-  const [company, setCompany] = useState('');
-  const [jobTitle, setJobTitle] = useState('');
+function CoverLetterInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [company, setCompany] = useState(searchParams.get('company') || '');
+  const [jobTitle, setJobTitle] = useState(searchParams.get('jobTitle') || '');
   const [hiringManager, setHiringManager] = useState('');
   const [candidateName, setCandidateName] = useState('');
   const [tone, setTone] = useState('professional');
-  const [jd, setJd] = useState('');
+  const [jd, setJd] = useState(searchParams.get('jd') || '');
+  const [variation, setVariation] = useState(0);
   const [loading, setLoading] = useState(false);
   const [letter, setLetter] = useState('');
   const [copied, setCopied] = useState(false);
@@ -89,6 +100,7 @@ export default function CoverLetterPage() {
           hiringManager,
           candidateName,
           tone,
+          variation,
         }),
         credentials: 'include',
       });
@@ -107,6 +119,21 @@ export default function CoverLetterPage() {
     await navigator.clipboard.writeText(letter);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const download = () => {
+    const blob = new Blob([letter], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cover-letter-${company || 'draft'}-${jobTitle || 'role'}.txt`.replace(/\s+/g, '-').toLowerCase();
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const regenerate = async () => {
+    setVariation((v) => v + 1);
+    await generate();
   };
 
   const save = async () => {
@@ -231,7 +258,7 @@ export default function CoverLetterPage() {
           </div>
 
           <div>
-            <label className="field-label">Job description *</label>
+            <label className="field-label">Job description * <span className="text-slate-500 font-normal normal-case tracking-normal">({jd.length} chars)</span></label>
             <textarea value={jd} onChange={(e) => setJd(e.target.value)} rows={12} placeholder="Paste the job description here..." />
           </div>
 
@@ -254,6 +281,8 @@ export default function CoverLetterPage() {
             {letter && (
               <div className="flex flex-wrap gap-2">
                 <button onClick={copy} className="btn-secondary !px-4 !py-2 text-sm">{copied ? 'Copied' : 'Copy'}</button>
+                <button onClick={regenerate} disabled={loading} className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-50">Regenerate</button>
+                <button onClick={download} className="btn-secondary !px-4 !py-2 text-sm">Download .txt</button>
                 <button onClick={save} className="btn-primary !px-4 !py-2 text-sm">Save</button>
               </div>
             )}

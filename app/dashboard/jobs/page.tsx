@@ -7,6 +7,26 @@ import { jobsAPI, profileAPI } from '@/lib/api';
 import JobCard from '@/components/JobCard';
 import { LoadingPage, LoadingSkeleton } from '@/components/Loading';
 
+const FILTER_CHIPS = [
+  { key: 'all', label: 'All' },
+  { key: 'remote', label: 'Remote' },
+  { key: 'full_time', label: 'Full-time' },
+  { key: 'senior', label: 'Senior' },
+  { key: 'entry', label: 'Entry-level' },
+];
+
+function matchesChip(job: JobWithScore, chip: string): boolean {
+  if (chip === 'all') return true;
+  const loc = (job.location || '').toLowerCase();
+  const type = (job.jobType || '').toLowerCase();
+  const title = (job.title || '').toLowerCase();
+  if (chip === 'remote') return loc.includes('remote') || type.includes('remote');
+  if (chip === 'full_time') return type.includes('full') || type.includes('full_time');
+  if (chip === 'senior') return title.includes('senior') || title.includes('sr.');
+  if (chip === 'entry') return title.includes('junior') || title.includes('entry') || title.includes('associate');
+  return true;
+}
+
 export default function JobsPage() {
   const router = useRouter();
   const [jobs, setJobs] = useState<JobWithScore[]>([]);
@@ -16,6 +36,7 @@ export default function JobsPage() {
   const [page, setPage] = useState(1);
   const [totalJobs, setTotalJobs] = useState(0);
   const [sortBy, setSortBy] = useState<'match' | 'recent' | 'company'>('match');
+  const [activeChip, setActiveChip] = useState('all');
   const pageSize = 9;
 
   useEffect(() => {
@@ -56,15 +77,15 @@ export default function JobsPage() {
   }, [search, page, router]);
 
   const sortedJobs = useMemo(() => {
-    const nextJobs = [...jobs];
+    let filtered = jobs.filter((job) => matchesChip(job, activeChip));
     if (sortBy === 'company') {
-      return nextJobs.sort((a, b) => a.company.localeCompare(b.company));
+      return filtered.sort((a, b) => a.company.localeCompare(b.company));
     }
     if (sortBy === 'recent') {
-      return nextJobs.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+      return filtered.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
     }
-    return nextJobs.sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0));
-  }, [jobs, sortBy]);
+    return filtered.sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0));
+  }, [jobs, sortBy, activeChip]);
 
   if (loading && jobs.length === 0) return <LoadingPage />;
 
@@ -100,7 +121,7 @@ export default function JobsPage() {
         </div>
       </section>
 
-      <section className="premium-card p-6 md:p-7">
+      <section className="premium-card p-6 md:p-7 space-y-4">
         <div className="grid gap-4 lg:grid-cols-[1.4fr_0.7fr_0.7fr]">
           <div>
             <label className="field-label">Search roles</label>
@@ -128,6 +149,23 @@ export default function JobsPage() {
               <div className="mt-1">{totalJobs} jobs surfaced for your current profile.</div>
             </div>
           </div>
+        </div>
+
+        {/* Filter chips */}
+        <div className="flex flex-wrap gap-2">
+          {FILTER_CHIPS.map((chip) => (
+            <button
+              key={chip.key}
+              onClick={() => setActiveChip(chip.key)}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors border ${
+                activeChip === chip.key
+                  ? 'border-blue-400/50 bg-blue-500/15 text-blue-200'
+                  : 'border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:border-white/20'
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
       </section>
 
@@ -174,11 +212,21 @@ export default function JobsPage() {
           </>
         ) : (
           <div className="empty-state">
-            <div className="text-5xl">🔍</div>
+            <div className="text-5xl">&#x1F4CB;</div>
             <h3 className="mt-4 text-2xl font-semibold text-white">No jobs found</h3>
             <p className="mt-2 text-slate-400">
-              {search ? 'Try broadening the search, removing a company name, or using fewer keywords.' : 'No opportunities are currently available for this account yet.'}
+              {search
+                ? 'Try broadening the search, removing a company name, or using fewer keywords.'
+                : activeChip !== 'all'
+                ? 'No jobs match this filter. Try switching to "All" or a different filter.'
+                : 'No opportunities are currently available. Complete your profile to unlock AI-matched roles.'}
             </p>
+            {!search && activeChip === 'all' && (
+              <div className="mt-6 flex justify-center gap-3">
+                <a href="/dashboard/profile" className="btn-primary">Complete profile</a>
+                <a href="https://www.linkedin.com/jobs" target="_blank" rel="noreferrer" className="btn-secondary">Browse LinkedIn Jobs</a>
+              </div>
+            )}
           </div>
         )}
       </section>

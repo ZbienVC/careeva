@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { profileAPI } from '@/lib/api';
 
@@ -20,11 +20,11 @@ interface Application {
 }
 
 const COLUMNS = [
-  { key: 'applied', label: 'Applied', color: 'bg-blue-400', dot: 'bg-blue-400' },
-  { key: 'phone_screen', label: 'Phone Screen', color: 'bg-amber-400', dot: 'bg-amber-400' },
-  { key: 'interview', label: 'Interview', color: 'bg-violet-400', dot: 'bg-violet-400' },
-  { key: 'offer', label: 'Offer', color: 'bg-emerald-400', dot: 'bg-emerald-400' },
-  { key: 'rejected', label: 'Rejected', color: 'bg-slate-400', dot: 'bg-slate-300' },
+  { key: 'applied',       label: 'Applied',       color: 'bg-blue-400',   dot: 'bg-blue-400'   },
+  { key: 'phone_screen',  label: 'Screening',     color: 'bg-amber-400',  dot: 'bg-amber-400'  },
+  { key: 'interview',     label: 'Interview',     color: 'bg-violet-400', dot: 'bg-violet-400' },
+  { key: 'offer',         label: 'Offer',         color: 'bg-emerald-400',dot: 'bg-emerald-400'},
+  { key: 'rejected',      label: 'Rejected',      color: 'bg-slate-400',  dot: 'bg-slate-300'  },
 ] as const;
 
 type StatusKey = typeof COLUMNS[number]['key'];
@@ -33,11 +33,11 @@ function StatusBadge({ status }: { status: string }) {
   const col = COLUMNS.find(c => c.key === status);
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
-      status === 'applied' ? 'bg-blue-50 text-blue-700' :
-      status === 'phone_screen' ? 'bg-amber-50 text-amber-700' :
-      status === 'interview' ? 'bg-violet-50 text-violet-700' :
-      status === 'offer' ? 'bg-emerald-50 text-emerald-700' :
-      status === 'rejected' ? 'bg-slate-100 text-slate-500' :
+      status === 'applied'      ? 'bg-blue-50 text-blue-700'    :
+      status === 'phone_screen' ? 'bg-amber-50 text-amber-700'  :
+      status === 'interview'    ? 'bg-violet-50 text-violet-700' :
+      status === 'offer'        ? 'bg-emerald-50 text-emerald-700' :
+      status === 'rejected'     ? 'bg-slate-100 text-slate-500' :
       'bg-slate-100 text-slate-500'
     }`}>
       <span className={`w-1.5 h-1.5 rounded-full ${col?.dot || 'bg-slate-400'}`} />
@@ -56,6 +56,33 @@ const blank = (): Application => ({
   url: '',
 });
 
+function NotesPanel({ app, onSave }: { app: Application; onSave: (id: string, notes: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [val, setVal] = useState(app.notes || '');
+
+  return (
+    <div>
+      <button onClick={() => setOpen(v => !v)}
+        className="text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1">
+        {open ? '▼' : '▶'} {app.notes ? 'Notes' : 'Add notes'}
+      </button>
+      {open && (
+        <div className="mt-2">
+          <textarea
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            onBlur={() => onSave(app.id, val)}
+            rows={2}
+            placeholder="Add notes about this application..."
+            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 resize-none focus:outline-none focus:border-indigo-300"
+          />
+          <p className="text-[10px] text-slate-400 mt-0.5">Saves automatically on blur</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Applications() {
   const router = useRouter();
   const [apps, setApps] = useState<Application[]>([]);
@@ -72,6 +99,9 @@ export default function Applications() {
   const [followupDraft, setFollowupDraft] = useState('');
   const [generatingFollowup, setGeneratingFollowup] = useState(false);
   const [view, setView] = useState<'board' | 'list'>('list');
+  const [reminders, setReminders] = useState<Record<string, string>>({});
+  const [reminderApp, setReminderApp] = useState<Application | null>(null);
+  const [reminderDate, setReminderDate] = useState('');
 
   const fetchApplications = async () => {
     try {
@@ -91,7 +121,17 @@ export default function Applications() {
       if (!result.success) router.push('/login');
       else fetchApplications();
     });
+    // Load reminders from localStorage
+    try {
+      const stored = localStorage.getItem('careeva_reminders');
+      if (stored) setReminders(JSON.parse(stored));
+    } catch { /* ignore */ }
   }, [router]);
+
+  const overdueCount = useMemo(() => {
+    const today = new Date();
+    return Object.values(reminders).filter(d => d && new Date(d) < today).length;
+  }, [reminders]);
 
   const saveApp = async () => {
     setSaving(true);
@@ -128,6 +168,26 @@ export default function Applications() {
     } catch { /* non-fatal */ }
   };
 
+  const saveNotes = async (id: string, notes: string) => {
+    try {
+      await fetch(`/api/applications/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ notes }),
+      });
+      setApps(prev => prev.map(a => a.id === id ? { ...a, notes } : a));
+    } catch { /* non-fatal */ }
+  };
+
+  const saveReminder = (appId: string, date: string) => {
+    const updated = { ...reminders, [appId]: date };
+    setReminders(updated);
+    try { localStorage.setItem('careeva_reminders', JSON.stringify(updated)); } catch { /* ignore */ }
+    setReminderApp(null);
+    setReminderDate('');
+  };
+
   const generateFollowup = async (app: Application) => {
     setFollowupApp(app);
     setGeneratingFollowup(true);
@@ -153,7 +213,6 @@ export default function Applications() {
         credentials: 'include',
         body: JSON.stringify({ signal, notes: feedbackNote }),
       });
-      // Also update status
       const newStatus: StatusKey = signal === 'interview' ? 'interview' : signal === 'offer' ? 'offer' : 'rejected';
       await updateStatus(feedbackApp.id, newStatus);
     } catch { /* non-fatal */ }
@@ -171,7 +230,6 @@ export default function Applications() {
     return map;
   }, [apps]);
 
-  // Stats
   const stats = useMemo(() => ({
     total: apps.length,
     interviews: apps.filter(a => ['interview', 'offer'].includes(a.status)).length,
@@ -192,7 +250,7 @@ export default function Applications() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900">Applications</h1>
-          <p className="text-slate-400 text-sm mt-0.5">{apps.length} total · {stats.rate}% interview rate</p>
+          <p className="text-slate-400 text-sm mt-0.5">{apps.length} total • {stats.rate}% interview rate{overdueCount > 0 ? ` • ⚠️ ${overdueCount} follow-up${overdueCount > 1 ? 's' : ''} overdue` : ''}</p>
         </div>
         <button
           onClick={() => { setForm(blank()); setEditing(null); setModal(true); }}
@@ -205,10 +263,10 @@ export default function Applications() {
       {/* Stats row */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: 'Applied', value: stats.total, color: 'text-slate-900' },
-          { label: 'Interviews', value: stats.interviews, color: 'text-violet-600' },
-          { label: 'Offers', value: stats.offers, color: 'text-emerald-600' },
-          { label: 'Interview Rate', value: `${stats.rate}%`, color: stats.rate >= 15 ? 'text-emerald-600' : 'text-slate-900' },
+          { label: 'Applied',        value: stats.total,      color: 'text-slate-900' },
+          { label: 'Interviews',     value: stats.interviews, color: 'text-violet-600' },
+          { label: 'Offers',         value: stats.offers,     color: 'text-emerald-600' },
+          { label: 'Response Rate',  value: `${stats.rate}%`, color: stats.rate >= 15 ? 'text-emerald-600' : 'text-slate-900' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{s.label}</p>
@@ -240,55 +298,72 @@ export default function Applications() {
             </div>
           )}
           {apps.map(app => (
-            <div key={app.id} className="bg-white rounded-2xl border border-slate-100 px-5 py-4 flex items-center gap-4 hover:border-slate-200 transition-all">
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-slate-900 text-sm">{app.role}</p>
-                <p className="text-slate-400 text-xs">{app.company} · {new Date(app.dateApplied || app.createdAt || Date.now()).toLocaleDateString()}</p>
-                {app.notes && <p className="text-slate-400 text-xs mt-0.5 truncate">{app.notes}</p>}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <StatusBadge status={app.status} />
-                {/* Status quick-update */}
-                <select
-                  value={app.status}
-                  onChange={e => updateStatus(app.id, e.target.value as StatusKey)}
-                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 bg-white cursor-pointer"
-                >
-                  {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                </select>
-                {/* Follow up button */}
-                <button
-                  onClick={() => generateFollowup(app)}
-                  title="Generate follow-up email"
-                  className="text-xs px-2 py-1 rounded-lg bg-purple-50 text-purple-700 font-semibold hover:bg-purple-100 transition-all"
-                >
-                  Follow Up
-                </button>
-                {/* Feedback button */}
-                <button
-                  onClick={() => setFeedbackApp(app)}
-                  title="Log outcome"
-                  className="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold hover:bg-amber-100 transition-all"
-                >
-                  Feedback
-                </button>
-                {/* Cover letter button */}
-                {app.coverLetter && (
-                  <button
-                    onClick={() => setCoverLetterApp(app)}
-                    title="View cover letter"
-                    className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold hover:bg-indigo-100 transition-all"
+            <div key={app.id} className="bg-white rounded-2xl border border-slate-100 px-5 py-4 hover:border-slate-200 transition-all">
+              <div className="flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 text-sm">{app.role}</p>
+                  <p className="text-slate-400 text-xs">{app.company} • {new Date(app.dateApplied || app.createdAt || Date.now()).toLocaleDateString()}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <StatusBadge status={app.status} />
+                  {/* Status quick-update */}
+                  <select
+                    value={app.status}
+                    onChange={e => updateStatus(app.id, e.target.value as StatusKey)}
+                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 bg-white cursor-pointer"
                   >
-                    CL
+                    {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                  {/* Reminder indicator */}
+                  {reminders[app.id] && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${new Date(reminders[app.id]) < new Date() ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'}`}>
+                      🔔 {new Date(reminders[app.id]).toLocaleDateString()}
+                    </span>
+                  )}
+                  {/* Set reminder */}
+                  <button
+                    onClick={() => { setReminderApp(app); setReminderDate(reminders[app.id] || ''); }}
+                    title="Set follow-up reminder"
+                    className="text-xs px-2 py-1 rounded-lg bg-slate-50 text-slate-500 font-semibold hover:bg-slate-100 transition-all"
+                  >
+                    🔔
                   </button>
-                )}
-                {/* Edit */}
-                <button
-                  onClick={() => { setForm({ ...app }); setEditing(app.id); setModal(true); }}
-                  className="text-xs px-2 py-1 rounded-lg bg-slate-50 text-slate-500 font-semibold hover:bg-slate-100 transition-all"
-                >
-                  Edit
-                </button>
+                  {/* Follow up button */}
+                  <button
+                    onClick={() => generateFollowup(app)}
+                    title="Generate follow-up email"
+                    className="text-xs px-2 py-1 rounded-lg bg-purple-50 text-purple-700 font-semibold hover:bg-purple-100 transition-all"
+                  >
+                    Follow Up
+                  </button>
+                  {/* Feedback button */}
+                  <button
+                    onClick={() => setFeedbackApp(app)}
+                    title="Log outcome"
+                    className="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold hover:bg-amber-100 transition-all"
+                  >
+                    Feedback
+                  </button>
+                  {app.coverLetter && (
+                    <button
+                      onClick={() => setCoverLetterApp(app)}
+                      title="View cover letter"
+                      className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold hover:bg-indigo-100 transition-all"
+                    >
+                      CL
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setForm({ ...app }); setEditing(app.id); setModal(true); }}
+                    className="text-xs px-2 py-1 rounded-lg bg-slate-50 text-slate-500 font-semibold hover:bg-slate-100 transition-all"
+                  >
+                    Edit
+                  </button>
+                </div>
+              </div>
+              {/* Expandable notes */}
+              <div className="mt-2">
+                <NotesPanel app={app} onSave={saveNotes} />
               </div>
             </div>
           ))}
@@ -310,7 +385,14 @@ export default function Applications() {
                   <div key={app.id} className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm">
                     <p className="font-bold text-slate-900 text-xs leading-tight">{app.role}</p>
                     <p className="text-slate-400 text-xs mt-0.5">{app.company}</p>
-                    <div className="flex gap-1 mt-2">
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      <select
+                        value={app.status}
+                        onChange={e => updateStatus(app.id, e.target.value as StatusKey)}
+                        className="text-[10px] border border-slate-200 rounded px-1 py-0.5 text-slate-600 bg-white cursor-pointer w-full"
+                      >
+                        {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                      </select>
                       <button onClick={() => setFeedbackApp(app)} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold">
                         Feedback
                       </button>
@@ -325,6 +407,36 @@ export default function Applications() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Reminder modal */}
+      {reminderApp && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-black text-slate-900">Set Follow-Up Reminder</h2>
+            <p className="text-slate-500 text-sm">{reminderApp.role} at {reminderApp.company}</p>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Reminder Date</label>
+              <input
+                type="date"
+                value={reminderDate}
+                onChange={e => setReminderDate(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setReminderApp(null); setReminderDate(''); }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button onClick={() => saveReminder(reminderApp.id, reminderDate)} disabled={!reminderDate}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                Save Reminder
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -389,7 +501,7 @@ export default function Applications() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
             <h2 className="text-lg font-black text-slate-900">Log Outcome</h2>
             <p className="text-slate-500 text-sm">{feedbackApp.role} at {feedbackApp.company}</p>
-            <p className="text-xs text-slate-400">This helps Careeva learn what's working and improve future cover letters.</p>
+            <p className="text-xs text-slate-400">This helps Careeva learn what is working and improve future cover letters.</p>
             <textarea
               value={feedbackNote}
               onChange={e => setFeedbackNote(e.target.value)}
@@ -400,15 +512,15 @@ export default function Applications() {
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => submitFeedback('interview')}
                 className="py-2.5 rounded-xl text-sm font-bold text-violet-700 bg-violet-50 hover:bg-violet-100">
-                🎉 Interview
+                🎯 Interview
               </button>
               <button onClick={() => submitFeedback('offer')}
                 className="py-2.5 rounded-xl text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
-                🏆 Offer
+                ✅ Offer
               </button>
               <button onClick={() => submitFeedback('rejection')}
                 className="py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 hover:bg-slate-100">
-                ✗ Rejected
+                Rejected
               </button>
             </div>
             <button onClick={() => { setFeedbackApp(null); setFeedbackNote(''); }}
@@ -442,9 +554,9 @@ export default function Applications() {
                     className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
                     Copy
                   </button>
-                  <button onClick={() => { setFollowupApp(null); setFollowupDraft('); }}
+                  <button onClick={() => { setFollowupApp(null); setFollowupDraft(''); }}
                     className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
-                    style={{ background: "linear-gradient(135deg,#8b5cf6,#6d28d9)" }}>
+                    style={{ background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' }}>
                     Done
                   </button>
                 </div>
@@ -452,7 +564,7 @@ export default function Applications() {
             ) : (
               <p className="text-slate-400 text-sm text-center py-4">Could not generate draft. Try again.</p>
             )}
-            <button onClick={() => { setFollowupApp(null); setFollowupDraft(""); }} className="w-full py-2 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+            <button onClick={() => { setFollowupApp(null); setFollowupDraft(''); }} className="w-full py-2 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
           </div>
         </div>
       )}

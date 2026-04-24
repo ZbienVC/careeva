@@ -1,22 +1,30 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { profileAPI } from '@/lib/api';
 
 type Mode = 'score_only' | 'prep_all' | 'auto_safe' | 'full_auto';
 
-const MODES: { id: Mode; label: string; tagline: string; icon: string; risk: 'low' | 'medium' | 'high' }[] = [
-  { id: 'score_only',  label: 'Find & Score',    tagline: 'Discover jobs, score them. No applications yet.',          icon: '🔍', risk: 'low'    },
-  { id: 'prep_all',   label: 'Prepare Packets',  tagline: 'Generate cover letters + answers. Review before sending.', icon: '📄', risk: 'low'    },
-  { id: 'auto_safe',  label: 'Auto-Apply (Safe)', tagline: 'Submit where confident (score ≥ 80 + quality gate). Queue rest.', icon: '⚡', risk: 'medium' },
-  { id: 'full_auto',  label: 'Full Auto',         tagline: 'Submit everything above threshold automatically.',          icon: '🚀', risk: 'high'   },
+const MODES: { id: Mode; label: string; tagline: string; icon: string; risk: 'low' | 'medium' | 'high'; recommended?: boolean }[] = [
+  { id: 'score_only',  label: 'Find & Score',     tagline: 'Discover jobs, score them. No applications yet.',           icon: '📊', risk: 'low'    },
+  { id: 'prep_all',   label: 'Prepare Packets',   tagline: 'Generate cover letters + answers. Review before sending.',  icon: '📋', risk: 'low',   recommended: true },
+  { id: 'auto_safe',  label: 'Auto-Apply (Safe)', tagline: 'Submit where confident (score \u2265 80 + quality gate). Queue rest.', icon: '✅', risk: 'medium' },
+  { id: 'full_auto',  label: 'Full Auto',          tagline: 'Submit everything above threshold automatically.',           icon: '🤖', risk: 'high'   },
 ];
 
-function PipelineCard({ label, value, sub, color, icon }: { label: string; value: number | string; sub?: string; color?: string; icon: string }) {
-  return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4">
+interface RunHistoryEntry {
+  date: string;
+  mode: Mode;
+  submitted: number;
+  scored: number;
+  errors: number;
+}
+
+function PipelineCard({ label, value, sub, color, icon, href }: { label: string; value: number | string; sub?: string; color?: string; icon: string; href?: string }) {
+  const inner = (
+    <div className={`bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4 transition-all ${href ? 'cursor-pointer hover:border-indigo-200 hover:shadow-sm' : ''}`}>
       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl bg-slate-50 flex-shrink-0">{icon}</div>
       <div>
         <p className={`text-2xl font-black tabular-nums leading-none ${color || 'text-slate-900'}`}>{value}</p>
@@ -25,6 +33,8 @@ function PipelineCard({ label, value, sub, color, icon }: { label: string; value
       </div>
     </div>
   );
+  if (href) return <Link href={href}>{inner}</Link>;
+  return inner;
 }
 
 type LogLine = { text: string; type: 'success' | 'error' | 'info' | 'warn' | 'header' };
@@ -46,6 +56,13 @@ const LOG_COLORS: Record<LogLine['type'], string> = {
   info: 'text-slate-300',
 };
 
+const MODE_LABELS: Record<Mode, string> = {
+  score_only: 'Find & Score',
+  prep_all: 'Prepare Packets',
+  auto_safe: 'Auto-Apply Safe',
+  full_auto: 'Full Auto',
+};
+
 export default function AutomatePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -60,6 +77,12 @@ export default function AutomatePage() {
   const [runStats, setRunStats] = useState<any>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [lastRan, setLastRan] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const [logCopied, setLogCopied] = useState(false);
+  const [showFullAutoWarning, setShowFullAutoWarning] = useState(false);
+  const [pendingMode, setPendingMode] = useState<Mode | null>(null);
+  const [runHistory, setRunHistory] = useState<RunHistoryEntry[]>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   const loadPipeline = async () => {
     const res = await fetch('/api/automate');
@@ -67,6 +90,7 @@ export default function AutomatePage() {
       const data = await res.json();
       setPipeline(data.pipeline);
       setRecentApps(data.recentApplications || []);
+      setLastSynced(new Date().toLocaleTimeString());
     }
   };
 
@@ -75,9 +99,36 @@ export default function AutomatePage() {
       const auth = await profileAPI.get();
       if (!auth.success) { router.push('/login'); return; }
       await loadPipeline();
+      // Load run history from localStorage
+      try {
+        const stored = localStorage.getItem('careeva_run_history');
+        if (stored) setRunHistory(JSON.parse(stored));
+      } catch { /* ignore */ }
       setLoading(false);
     })();
   }, [router]);
+
+  // Auto-scroll log to bottom
+  useEffect(() => {
+    if (logLines.length > 0) {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logLines]);
+
+  const selectMode = (m: Mode) => {
+    if (m === 'full_auto') {
+      setPendingMode(m);
+      setShowFullAutoWarning(true);
+    } else {
+      setMode(m);
+    }
+  };
+
+  const confirmFullAuto = () => {
+    if (pendingMode) setMode(pendingMode);
+    setShowFullAutoWarning(false);
+    setPendingMode(null);
+  };
 
   const runAutomation = async () => {
     setRunning(true);
@@ -93,27 +144,75 @@ export default function AutomatePage() {
       const lines: LogLine[] = (data.log || []).map((l: string) => ({ text: l, type: classifyLog(l) }));
       setLogLines(lines);
       setRunStats(data.stats);
-      setLastRan(new Date().toLocaleTimeString());
+      const now = new Date().toLocaleTimeString();
+      setLastRan(now);
       await loadPipeline();
+      // Save run to history
+      const entry: RunHistoryEntry = {
+        date: new Date().toLocaleString(),
+        mode,
+        submitted: data.stats?.submitted || 0,
+        scored: data.stats?.scored || 0,
+        errors: data.stats?.errors || 0,
+      };
+      setRunHistory(prev => {
+        const updated = [entry, ...prev].slice(0, 5);
+        try { localStorage.setItem('careeva_run_history', JSON.stringify(updated)); } catch { /* ignore */ }
+        return updated;
+      });
     } catch {
       setLogLines([{ text: '❌ Failed to run automation', type: 'error' }]);
     }
     setRunning(false);
   };
 
+  const copyLog = async () => {
+    const text = logLines.map(l => l.text).join('\n');
+    await navigator.clipboard.writeText(text);
+    setLogCopied(true);
+    setTimeout(() => setLogCopied(false), 2000);
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading pipeline…</div>;
 
   const selectedMode = MODES.find(m => m.id === mode)!;
-  const readyToRun = pipeline?.highMatchJobs > 0 || pipeline?.totalJobs > 0;
+  const runBtnBg = running ? '#94a3b8'
+    : selectedMode.risk === 'high' ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)'
+    : selectedMode.risk === 'medium' ? 'linear-gradient(135deg,#f59e0b,#d97706)'
+    : 'linear-gradient(135deg,#6366f1,#4f46e5)';
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+
+      {/* Full Auto Warning Modal */}
+      {showFullAutoWarning && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">⚠️</span>
+              <h2 className="text-lg font-black text-slate-900">Full Automation Warning</h2>
+            </div>
+            <p className="text-sm text-slate-600">This will <strong>automatically submit applications</strong> without manual review. Make sure your profile and preferences are fully set up before proceeding.</p>
+            <div className="flex gap-3">
+              <button onClick={() => { setShowFullAutoWarning(false); setPendingMode(null); }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button onClick={confirmFullAuto}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
+                style={{ background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' }}>
+                Yes, enable Full Auto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Job Application Engine</h1>
-          <p className="text-slate-400 text-sm mt-0.5">AI-powered · quality-gated · automated</p>
+          <p className="text-slate-400 text-sm mt-0.5">AI-powered • quality-gated • automated</p>
         </div>
         <div className="flex gap-2">
           <a href="/api/applications/patterns" target="_blank" rel="noopener noreferrer"
@@ -129,18 +228,23 @@ export default function AutomatePage() {
 
       {/* Pipeline stats */}
       {pipeline && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <PipelineCard label="Jobs Found" value={pipeline.totalJobs} sub="in pipeline" icon="📋" />
-          <PipelineCard label="High Match" value={pipeline.highMatchJobs} sub={`score ≥ ${threshold}`} color="text-emerald-600" icon="⭐" />
-          <PipelineCard label="Applied" value={pipeline.applications} sub="total sent" color="text-indigo-600" icon="✅" />
-          <PipelineCard label="Scored" value={pipeline.scoredJobs} sub={`of ${pipeline.totalJobs}`} icon="📊" />
+        <div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <PipelineCard label="Jobs Found" value={pipeline.totalJobs} sub="in pipeline" icon="📊" href="/dashboard/jobs" />
+            <PipelineCard label="High Match" value={pipeline.highMatchJobs} sub={`score \u2265 ${threshold}`} color="text-emerald-600" icon="🎯" href="/dashboard/jobs" />
+            <PipelineCard label="Applied" value={pipeline.applications} sub="total sent" color="text-indigo-600" icon="✅" href="/dashboard/applications" />
+            <PipelineCard label="Scored" value={pipeline.scoredJobs} sub={`of ${pipeline.totalJobs}`} icon="⭐" />
+          </div>
+          {lastSynced && (
+            <p className="text-[10px] text-slate-400 mt-2 text-right">Last synced: {lastSynced}</p>
+          )}
         </div>
       )}
 
       {/* No jobs yet nudge */}
       {pipeline && pipeline.totalJobs === 0 && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 flex items-start gap-3">
-          <span className="text-2xl mt-0.5">💡</span>
+          <span className="text-2xl mt-0.5">📋</span>
           <div>
             <p className="text-sm font-semibold text-indigo-800">No jobs in pipeline yet</p>
             <p className="text-xs text-indigo-600 mt-0.5">Run <strong>Find & Score</strong> to pull jobs from 8+ job boards based on your target titles.</p>
@@ -154,25 +258,30 @@ export default function AutomatePage() {
         <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">What do you want to do?</p>
         <div className="grid grid-cols-2 gap-2.5">
           {MODES.map(m => (
-            <button key={m.id} onClick={() => setMode(m.id)}
+            <button key={m.id} onClick={() => selectMode(m.id)}
               className={`text-left p-4 rounded-2xl border-2 transition-all ${
                 mode === m.id
-                  ? m.risk === 'high' ? 'border-purple-400 bg-purple-50' : m.risk === 'medium' ? 'border-emerald-400 bg-emerald-50' : 'border-indigo-400 bg-indigo-50'
+                  ? m.risk === 'high' ? 'border-purple-400 bg-purple-50' : m.risk === 'medium' ? 'border-amber-400 bg-amber-50' : 'border-indigo-400 bg-indigo-50'
                   : 'border-slate-100 bg-white hover:border-slate-200'
               }`}>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">{m.icon}</span>
                 <span className="font-bold text-slate-900 text-sm">{m.label}</span>
-                {mode === m.id && (
-                  <span className="ml-auto text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-900 text-white">SELECTED</span>
-                )}
+                <div className="ml-auto flex items-center gap-1">
+                  {m.recommended && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">RECOMMENDED</span>
+                  )}
+                  {mode === m.id && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-slate-900 text-white">SELECTED</span>
+                  )}
+                </div>
               </div>
               <p className="text-slate-500 text-xs leading-relaxed">{m.tagline}</p>
               {m.risk !== 'low' && (
                 <div className={`mt-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   m.risk === 'high' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'
                 }`}>
-                  {m.risk === 'high' ? '⚡ Full automation' : '🛡️ Quality-gated'}
+                  {m.risk === 'high' ? '🤖 Full automation' : '⚠️ Quality-gated'}
                 </div>
               )}
             </button>
@@ -183,11 +292,11 @@ export default function AutomatePage() {
       {/* Quality note */}
       {(mode === 'auto_safe' || mode === 'full_auto') && (
         <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-start gap-3">
-          <span className="text-base mt-0.5">🛡️</span>
+          <span className="text-base mt-0.5">🤖</span>
           <div>
             <p className="text-xs font-bold text-slate-700">Quality gate active</p>
             <p className="text-xs text-slate-500 mt-0.5">
-              Every cover letter is scored 0–100 before submission. Anything below 65 is queued for your review instead of auto-submitted. Cover letters are archetype-aware and keyword-injected from the actual JD.
+              Every cover letter is scored 0-100 before submission. Anything below 65 is queued for your review instead of auto-submitted. Cover letters are archetype-aware and keyword-injected from the actual JD.
             </p>
           </div>
         </div>
@@ -238,7 +347,7 @@ export default function AutomatePage() {
         <button onClick={runAutomation} disabled={running}
           className="flex items-center gap-2.5 px-7 py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-60 transition-all active:scale-[0.98]"
           style={{
-            background: running ? '#94a3b8' : selectedMode.risk === 'high' ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)' : selectedMode.risk === 'medium' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#6366f1,#4f46e5)',
+            background: runBtnBg,
             boxShadow: running ? 'none' : '0 4px 20px rgba(99,102,241,0.3)',
           }}>
           {running ? (
@@ -252,23 +361,56 @@ export default function AutomatePage() {
         )}
       </div>
 
+      {/* Run history */}
+      {runHistory.length > 0 && (
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Run History</p>
+          <div className="space-y-1.5">
+            {runHistory.map((h, i) => (
+              <div key={i} className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-2.5 text-xs">
+                <span className="text-slate-400 tabular-nums flex-shrink-0">{h.date}</span>
+                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] flex-shrink-0 ${
+                  h.mode === 'full_auto' ? 'bg-purple-100 text-purple-700' :
+                  h.mode === 'auto_safe' ? 'bg-amber-100 text-amber-700' :
+                  'bg-indigo-100 text-indigo-700'
+                }`}>{MODE_LABELS[h.mode]}</span>
+                <span className="text-slate-500">{h.scored} scored</span>
+                {h.submitted > 0 && <span className="text-emerald-600 font-semibold">{h.submitted} submitted</span>}
+                {h.errors > 0 && <span className="text-red-500">{h.errors} errors</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Run log */}
       {logLines.length > 0 && (
         <div className="bg-slate-950 rounded-2xl p-5 font-mono text-xs space-y-1 max-h-80 overflow-y-auto border border-slate-800">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <p className="text-slate-500 text-[10px] uppercase tracking-wider">Run log</p>
-            {runStats && (
-              <div className="flex gap-3 text-[10px]">
-                {runStats.submitted > 0 && <span className="text-emerald-400 font-bold">✓ {runStats.submitted} submitted</span>}
-                {runStats.queued > 0 && <span className="text-amber-400">📋 {runStats.queued} queued</span>}
-                {runStats.scored > 0 && <span className="text-indigo-300">📊 {runStats.scored} scored</span>}
-                {runStats.errors > 0 && <span className="text-red-400">✗ {runStats.errors} errors</span>}
-              </div>
-            )}
+            <button onClick={copyLog}
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all">
+              {logCopied ? '✅ Copied' : '📋 Copy log'}
+            </button>
           </div>
+          {/* Log legend */}
+          <div className="flex gap-3 pb-2 border-b border-slate-800 mb-2">
+            <span className="text-emerald-400 text-[10px]">✅ Success</span>
+            <span className="text-amber-300 text-[10px]">⚠️ Warning</span>
+            <span className="text-red-400 text-[10px]">❌ Error</span>
+          </div>
+          {runStats && (
+            <div className="flex gap-3 text-[10px] pb-2 border-b border-slate-800 mb-2">
+              {runStats.submitted > 0 && <span className="text-emerald-400 font-bold">✅ {runStats.submitted} submitted</span>}
+              {runStats.queued > 0 && <span className="text-amber-400">⚠️ {runStats.queued} queued</span>}
+              {runStats.scored > 0 && <span className="text-indigo-300">📊 {runStats.scored} scored</span>}
+              {runStats.errors > 0 && <span className="text-red-400">❌ {runStats.errors} errors</span>}
+            </div>
+          )}
           {logLines.map((line, i) => (
             <div key={i} className={LOG_COLORS[line.type]}>{line.text}</div>
           ))}
+          <div ref={logEndRef} />
         </div>
       )}
 

@@ -14,12 +14,36 @@ interface SavedLetter {
   content: string;
 }
 
+interface LocalDraft {
+  company: string;
+  jobTitle: string;
+  content: string;
+  date: string;
+}
+
 const toneOptions = [
-  { value: 'professional', label: 'Professional' },
-  { value: 'confident', label: 'Confident' },
-  { value: 'conversational', label: 'Conversational' },
-  { value: 'creative', label: 'Creative' },
+  { value: 'professional', label: 'Professional', desc: 'Formal, polished, traditional. Great for corporate roles.' },
+  { value: 'confident', label: 'Confident', desc: 'Bold and assertive. Shows conviction in your value.' },
+  { value: 'conversational', label: 'Conversational', desc: 'Natural and approachable. Works well for startups.' },
+  { value: 'creative', label: 'Creative', desc: 'Distinct and memorable. Best for creative/marketing roles.' },
 ];
+
+const LOCAL_DRAFTS_KEY = 'careeva_cover_letter_drafts';
+
+function loadLocalDrafts(): LocalDraft[] {
+  try {
+    const stored = localStorage.getItem(LOCAL_DRAFTS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch { return []; }
+}
+
+function saveLocalDraft(draft: LocalDraft) {
+  try {
+    const existing = loadLocalDrafts();
+    const updated = [draft, ...existing].slice(0, 3);
+    localStorage.setItem(LOCAL_DRAFTS_KEY, JSON.stringify(updated));
+  } catch { /* ignore */ }
+}
 
 export default function CoverLetterPage() {
   return (
@@ -46,6 +70,8 @@ function CoverLetterInner() {
   const [error, setError] = useState('');
   const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
   const [saveMessage, setSaveMessage] = useState('');
+  const [localDrafts, setLocalDrafts] = useState<LocalDraft[]>([]);
+  const [showDrafts, setShowDrafts] = useState(false);
 
   useEffect(() => {
     profileAPI.get().then((result) => {
@@ -53,8 +79,8 @@ function CoverLetterInner() {
         router.push('/login');
         return;
       }
-
       fetchSavedLetters();
+      setLocalDrafts(loadLocalDrafts());
     });
   }, [router]);
 
@@ -78,6 +104,8 @@ function CoverLetterInner() {
       console.error('Failed to fetch letters:', e);
     }
   };
+
+  const wordCount = letter.trim() ? letter.trim().split(/\s+/).length : 0;
 
   const generate = async () => {
     if (!company || !jobTitle || !jd) {
@@ -108,6 +136,14 @@ function CoverLetterInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setLetter(data.coverLetter);
+      // Save to localStorage drafts
+      saveLocalDraft({
+        company,
+        jobTitle,
+        content: data.coverLetter,
+        date: new Date().toLocaleString(),
+      });
+      setLocalDrafts(loadLocalDrafts());
     } catch (e: any) {
       setError(e.message || 'Generation failed');
     } finally {
@@ -164,10 +200,11 @@ function CoverLetterInner() {
     }
   };
 
-  const loadLetter = (savedLetter: SavedLetter) => {
+  const loadLetter = (savedLetter: SavedLetter | LocalDraft) => {
     setLetter(savedLetter.content);
     setCompany(savedLetter.company);
     setJobTitle(savedLetter.jobTitle);
+    setShowDrafts(false);
   };
 
   const seedPrompt = (preset: 'analyst' | 'growth' | 'ops') => {
@@ -194,6 +231,8 @@ function CoverLetterInner() {
     setJobTitle(next.jobTitle);
     setJd(next.jd);
   };
+
+  const selectedTone = toneOptions.find(t => t.value === tone);
 
   return (
     <div className="page-shell space-y-8">
@@ -243,18 +282,22 @@ function CoverLetterInner() {
 
           <div>
             <label className="field-label">Tone</label>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2">
               {toneOptions.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   onClick={() => setTone(option.value)}
-                  className={`rounded-2xl border px-4 py-3 text-sm font-medium ${tone === option.value ? 'border-blue-400/40 bg-blue-500/10 text-white' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.05]'}`}
+                  className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-all ${tone === option.value ? 'border-blue-400/40 bg-blue-500/10 text-white' : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.05]'}`}
                 >
-                  {option.label}
+                  <span className="font-semibold block">{option.label}</span>
+                  {tone === option.value && <span className="text-xs text-slate-400 mt-0.5 block">{option.desc}</span>}
                 </button>
               ))}
             </div>
+            {selectedTone && tone !== 'professional' && (
+              <p className="text-xs text-slate-500 mt-2">{selectedTone.desc}</p>
+            )}
           </div>
 
           <div>
@@ -277,16 +320,44 @@ function CoverLetterInner() {
             <div>
               <div className="text-sm uppercase tracking-[0.22em] text-slate-500">Draft output</div>
               <h2 className="mt-2 text-2xl font-bold text-white">Cover letter preview</h2>
+              {letter && <p className="text-xs text-slate-500 mt-0.5">{wordCount} words</p>}
             </div>
             {letter && (
               <div className="flex flex-wrap gap-2">
-                <button onClick={copy} className="btn-secondary !px-4 !py-2 text-sm">{copied ? 'Copied' : 'Copy'}</button>
+                <button onClick={copy} className="btn-primary !px-4 !py-2 text-sm">{copied ? '✅ Copied' : '📋 Copy'}</button>
                 <button onClick={regenerate} disabled={loading} className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-50">Regenerate</button>
-                <button onClick={download} className="btn-secondary !px-4 !py-2 text-sm">Download .txt</button>
-                <button onClick={save} className="btn-primary !px-4 !py-2 text-sm">Save</button>
+                <button onClick={download} className="btn-secondary !px-4 !py-2 text-sm">⬇ Download .txt</button>
+                <button onClick={save} className="btn-secondary !px-4 !py-2 text-sm">Save</button>
               </div>
             )}
           </div>
+
+          {/* Previous drafts */}
+          {localDrafts.length > 0 && (
+            <div className="mb-4">
+              <button onClick={() => setShowDrafts(v => !v)}
+                className="text-xs text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-1.5 transition-colors">
+                {showDrafts ? '▼' : '▶'} Previous drafts ({localDrafts.length})
+              </button>
+              {showDrafts && (
+                <div className="mt-2 space-y-1.5">
+                  {localDrafts.map((d, i) => (
+                    <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                      <div>
+                        <span className="text-xs font-semibold text-white">{d.jobTitle}</span>
+                        <span className="text-xs text-slate-400 ml-2">@ {d.company}</span>
+                        <span className="text-[10px] text-slate-500 ml-2">{d.date}</span>
+                      </div>
+                      <button onClick={() => loadLetter(d)}
+                        className="text-xs px-2 py-1 rounded-lg bg-white/10 text-slate-300 hover:bg-white/20 font-semibold transition-all">
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <textarea
             value={letter}

@@ -5,13 +5,86 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import { LoadingPage } from '@/components/Loading';
 
-// ─── Section components ───────────────────────────────────────────────────────
+// ─── Resume Score Card ────────────────────────────────────────────────────────
 
-function Section({ title, subtitle, icon, children, completeness }: {
-  title: string; subtitle: string; icon: string; children: React.ReactNode; completeness?: number;
+function ResumeScoreCard({ personal, workHistory, education, skills, writing }: {
+  personal: any; workHistory: any[]; education: any[]; skills: any[]; writing: any;
 }) {
+  const checks = {
+    contact: !!(personal.fullName && personal.email && personal.phone),
+    summary: !!(writing?.summary || personal.careerSummary || workHistory.length > 0),
+    workHistory: workHistory.length >= 2,
+    skills: skills.length >= 10,
+    education: education.length >= 1,
+  };
+  const skillScore = Math.min(skills.length, 15);
+  const score = Math.round(
+    (checks.contact ? 20 : 0) +
+    (checks.summary ? 15 : 0) +
+    (checks.workHistory ? 25 : workHistory.length === 1 ? 15 : 0) +
+    (skillScore / 15) * 25 +
+    (checks.education ? 15 : 0)
+  );
+  const scoreColor = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+
+  const items = [
+    { label: 'Contact Info',                     ok: checks.contact,    warn: false, tip: 'Add name, email and phone' },
+    { label: 'Summary / Work History',            ok: checks.summary,    warn: false, tip: 'Add at least 1 work position' },
+    { label: 'Work History (2+ roles)',           ok: checks.workHistory, warn: false, tip: 'Add at least 2 positions' },
+    { label: `Skills (${skills.length}/15 recommended)`, ok: checks.skills, warn: skills.length > 0 && skills.length < 10, tip: 'Add more skills to improve scoring' },
+    { label: 'Education',                         ok: checks.education,  warn: false, tip: 'Add at least one education entry' },
+  ];
+
+  const suggestions = items.filter(i => !i.ok).map(i => i.tip);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">📈</span>
+          <div>
+            <h3 className="font-bold text-slate-900 text-sm">Resume Score</h3>
+            <p className="text-slate-400 text-xs mt-0.5">Calculated from your profile completeness</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center"
+            style={{ background: `conic-gradient(${scoreColor} ${score}%, #e2e8f0 0)` }}>
+            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-sm font-black text-slate-700">{score}</div>
+          </div>
+        </div>
+      </div>
+      <div className="p-6">
+        <div className="space-y-2 mb-4">
+          {items.map((item, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              <span className={item.ok ? 'text-emerald-500' : item.warn ? 'text-amber-500' : 'text-slate-300'}>
+                {item.ok ? '✅' : item.warn ? '⚠️' : '❌'}
+              </span>
+              <span className={item.ok ? 'text-slate-700' : 'text-slate-400'}>{item.label}</span>
+            </div>
+          ))}
+        </div>
+        {suggestions.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <p className="text-xs font-bold text-amber-800 mb-1">Improve your resume:</p>
+            <ul className="space-y-0.5">
+              {suggestions.map((s, i) => <li key={i} className="text-xs text-amber-700">• {s}</li>)}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Section components ────────────────────────────────────────────────────────
+
+function Section({ title, subtitle, icon, children, completeness, id }: {
+  title: string; subtitle: string; icon: string; children: React.ReactNode; completeness?: number; id?: string;
+}) {
+  return (
+    <div id={id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-xl">{icon}</span>
@@ -76,7 +149,6 @@ function MonthYearPicker({ label, value, onChange, required = false }: any) {
   );
 }
 
-
 function TextArea({ label, value, onChange, placeholder = '', rows = 3 }: any) {
   return (
     <div>
@@ -109,26 +181,20 @@ export default function ProfileBuilderPage() {
   const [resumes, setResumes] = useState<any[]>([]);
   const [resumeUploading, setResumeUploading] = useState(false);
   const [resumeUploadMsg, setResumeUploadMsg] = useState('');
+  const [showKeywords, setShowKeywords] = useState(false);
   const resumeInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Personal info
   const [personal, setPersonal] = useState<any>({});
-  // Work history
   const [workHistory, setWorkHistory] = useState<any[]>([]);
   const [newWork, setNewWork] = useState<any>({ company: '', title: '', startDate: '', endDate: '', isCurrent: false, summary: '', skills: '', technologies: '' });
   const [parsing, setParsing] = useState(false);
   const [parseMsg, setParseMsg] = useState('');
-  // Education
   const [education, setEducation] = useState<any[]>([]);
   const [newEdu, setNewEdu] = useState<any>({ institution: '', degree: '', fieldOfStudy: '', startDate: '', endDate: '', isCurrent: false });
-  // Skills
   const [skills, setSkills] = useState<any[]>([]);
   const [skillInput, setSkillInput] = useState('');
-  // Job preferences
   const [prefs, setPrefs] = useState<any>({});
-  // Writing style
   const [writing, setWriting] = useState<any>({});
-  // Answers bank
   const [answers, setAnswers] = useState<any[]>([]);
 
   useEffect(() => {
@@ -150,9 +216,7 @@ export default function ProfileBuilderPage() {
         setPrefs(prefsRes.prefs || {});
         setAnswers(answersRes.answers || []);
         setResumes((resumesRes as any).resumes || []);
-      } catch {
-        // first load
-      }
+      } catch { /* first load */ }
       setLoading(false);
     };
     load();
@@ -177,28 +241,22 @@ export default function ProfileBuilderPage() {
       const res = await fetch('/api/upload', { method: 'POST', credentials: 'include', body: formData });
       const result = await res.json().catch(() => ({ success: false, error: 'Server error' }));
       if (result.success || result.profile) {
-        setResumeUploadMsg('✓ Resume uploaded and parsed successfully!');
-        // Reload resumes list
         const profileRes = await fetch('/api/profile/full', { credentials: 'include' });
         const profile = profileRes.ok ? await profileRes.json() : null;
         setResumes(profile?.resumes || []);
-        // Auto-populate work history and education from parsed data
         const savedWorkHistory: any[] = profile?.workHistory || [];
         const savedEducation: any[] = profile?.educationEntries || [];
         if (savedWorkHistory.length > 0) setWorkHistory(savedWorkHistory);
         if (savedEducation.length > 0) setEducation(savedEducation);
-        // Reload skills too
         const skillsRes = await fetch('/api/skills').then(r => r.json());
         setSkills(skillsRes.skills || []);
-        const positions = savedWorkHistory.length;
-        const edus = savedEducation.length;
         const skillCount = result.skillsAdded || 0;
-        setResumeUploadMsg('✓ Resume saved! ' + positions + ' position(s), ' + edus + ' education entry/entries, and ' + skillCount + ' skills imported. Review below.');
+        setResumeUploadMsg('✅ Resume saved! ' + savedWorkHistory.length + ' position(s), ' + savedEducation.length + ' education entry/entries, and ' + skillCount + ' skills imported. Review below.');
       } else {
-        setResumeUploadMsg('✗ ' + (result.error || 'Upload failed. Please try again.'));
+        setResumeUploadMsg('❌ ' + (result.error || 'Upload failed. Please try again.'));
       }
     } catch {
-      setResumeUploadMsg('✗ Upload failed — check your connection and try again.');
+      setResumeUploadMsg('❌ Upload failed - check your connection and try again.');
     } finally {
       setResumeUploading(false);
     }
@@ -217,55 +275,23 @@ export default function ProfileBuilderPage() {
     try {
       const profileRes = await fetch('/api/profile/full', { credentials: 'include' });
       const profile = profileRes.ok ? await profileRes.json() : null;
-
-      // Use structured data already saved to DB from resume upload
       const savedWorkHistory: any[] = profile?.workHistory || [];
-      // educationEntries are the structured EducationEntry records, profile.education is flat strings
-      // Only use structured EducationEntry records — never fall back to flat string array
       const savedEducation: any[] = profile?.educationEntries || [];
       const userProfile = profile?.userProfile;
-
       if (savedWorkHistory.length === 0 && savedEducation.length === 0 && !userProfile?.roles?.length) {
-        setParseMsg('No resume data found. Upload your resume first (Resume step), then come back to import.');
+        setParseMsg('No resume data found. Upload your resume first, then come back to import.');
         return;
       }
-
       let imported = 0;
-
-      // Import all work history positions not already shown
-      for (const wh of savedWorkHistory) {
-        if (!wh.company || !wh.title) continue;
-        // Check if already in local state
-        const alreadyHave = workHistory.some(
-          (w: any) => w.company?.toLowerCase() === wh.company?.toLowerCase() &&
-                      w.title?.toLowerCase() === wh.title?.toLowerCase()
-        );
-        if (alreadyHave) continue;
-        // These are already in DB (saved by upload route) — just refresh local state
-        imported++;
-      }
-
-      // If work history is in DB, just reload it
-      if (savedWorkHistory.length > 0) {
-        setWorkHistory(savedWorkHistory);
-        imported += savedWorkHistory.length;
-      }
-
-      // Import education
-      if (savedEducation.length > 0) {
-        setEducation(savedEducation);
-        imported += savedEducation.length;
-      }
-
-      // Pre-fill newWork form with first role if work history is empty
+      if (savedWorkHistory.length > 0) { setWorkHistory(savedWorkHistory); imported += savedWorkHistory.length; }
+      if (savedEducation.length > 0) { setEducation(savedEducation); imported += savedEducation.length; }
       if (savedWorkHistory.length === 0 && userProfile?.roles?.length > 0) {
         setNewWork((w: any) => ({ ...w, title: userProfile.roles[0] || '' }));
         setParseMsg('Job title pre-filled. Fill in details and click + Add Position for each role.');
         return;
       }
-
       if (imported > 0) {
-        setParseMsg('✓ Imported ' + savedWorkHistory.length + ' position(s) and ' + savedEducation.length + ' education entry/entries from your resume. Review and edit anything that looks wrong.');
+        setParseMsg('✅ Imported ' + savedWorkHistory.length + ' position(s) and ' + savedEducation.length + ' education entry/entries from your resume.');
       } else {
         setParseMsg('All resume data is already loaded. Edit any field directly to make corrections.');
       }
@@ -299,13 +325,28 @@ export default function ProfileBuilderPage() {
     setNewEdu({ institution: '', degree: '', fieldOfStudy: '', startDate: '', endDate: '', isCurrent: false });
   };
 
-  const addSkills = async () => {
-    if (!skillInput.trim()) return;
-    const skillList = skillInput.split(',').map(s => s.trim()).filter(Boolean);
-    await fetch('/api/skills', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skills: skillList }) });
+  const addSkill = async (skillName: string) => {
+    const trimmed = skillName.trim();
+    if (!trimmed) return;
+    await fetch('/api/skills', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skills: [trimmed] }) });
     const res = await fetch('/api/skills').then(r => r.json());
     setSkills(res.skills || []);
     setSkillInput('');
+  };
+
+  const handleSkillKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const parts = skillInput.split(',');
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (trimmed) await addSkill(trimmed);
+      }
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const trimmed = skillInput.trim();
+      if (trimmed) await addSkill(trimmed);
+    }
   };
 
   const removeSkill = async (id: string) => {
@@ -319,13 +360,20 @@ export default function ProfileBuilderPage() {
     setAnswers(res.answers || []);
   };
 
-  // Completeness scoring
   const personalComplete = [personal.fullName, personal.email, personal.phone, personal.linkedinUrl].filter(Boolean).length * 25;
   const workComplete = workHistory.length >= 2 ? 100 : workHistory.length === 1 ? 60 : 0;
   const eduComplete = education.length >= 1 ? 100 : 0;
   const skillsComplete = skills.length >= 10 ? 100 : skills.length >= 5 ? 60 : skills.length > 0 ? 30 : 0;
   const prefsComplete = [prefs.salaryMinUSD, prefs.remotePreference, (prefs.targetTitles || []).length > 0].filter(Boolean).length * 33;
   const overall = Math.round((personalComplete + workComplete + eduComplete + skillsComplete + prefsComplete) / 5);
+
+  const missingItems: { label: string; id: string }[] = [];
+  if (!prefs.salaryMinUSD) missingItems.push({ label: 'Add salary expectations', id: 'prefs-section' });
+  if ((prefs.targetIndustries || []).length < 3) missingItems.push({ label: `Add ${3 - Math.min(3, (prefs.targetIndustries||[]).length)} more target industries`, id: 'prefs-section' });
+  if (skills.length < 10) missingItems.push({ label: `Add ${10 - skills.length} more skills`, id: 'skills-section' });
+  if (!personal.linkedinUrl) missingItems.push({ label: 'Add LinkedIn URL', id: 'contact-section' });
+
+  const extractedKeywords = skills.slice(0, 20).map((s: any) => s.name);
 
   if (loading) return <LoadingPage />;
 
@@ -339,21 +387,39 @@ export default function ProfileBuilderPage() {
             <p className="text-slate-400 text-sm mt-0.5">The richer your profile, the better your applications</p>
           </div>
           <div className="flex flex-col items-center">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-black"
+            <div className="w-16 h-16 rounded-full flex items-center justify-center"
               style={{ background: `conic-gradient(#10b981 ${overall}%, #e2e8f0 0)` }}>
               <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-base font-bold text-slate-700">{overall}%</div>
             </div>
             <p className="text-xs text-slate-400 mt-1">Complete</p>
           </div>
         </div>
-        {overall < 80 && (
-          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
-            💡 Fill in more details to improve auto-apply quality. Aim for 80%+ for best results.
+
+        <div className="mt-3">
+          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${overall}%`, background: overall >= 80 ? '#10b981' : overall >= 50 ? '#f59e0b' : '#ef4444' }} />
+          </div>
+        </div>
+
+        {missingItems.length > 0 && (
+          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <p className="text-xs font-bold text-amber-800 mb-1.5">⚠️ Complete your profile for best results:</p>
+            <div className="flex flex-wrap gap-2">
+              {missingItems.map((item, i) => (
+                <button key={i} onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })}
+                  className="text-xs bg-white border border-amber-200 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-all font-medium">
+                  + {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* 0. Resume Management — always first */}
+      {/* Resume Score Card */}
+      <ResumeScoreCard personal={personal} workHistory={workHistory} education={education} skills={skills} writing={writing} />
+
+      {/* 0. Resume Management */}
       <Section title="Resume" subtitle="Upload your resume to auto-populate work history, education, and skills" icon="📄" completeness={resumes.length > 0 ? 100 : 0}>
         <input
           ref={resumeInputRef}
@@ -363,33 +429,52 @@ export default function ProfileBuilderPage() {
           onChange={e => { const f = e.target.files?.[0]; if (f) handleResumeUpload(f); e.target.value = ''; }}
         />
 
-        {/* Uploaded resumes list */}
         {resumes.length > 0 ? (
           <div className="space-y-2 mb-4">
             {resumes.map((r: any) => (
-              <div key={r.id} className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-lg">📄</span>
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-800">{r.name || 'Uploaded Resume'}</p>
-                    <p className="text-xs text-emerald-600">{r.fileType?.toUpperCase()} · Uploaded {new Date(r.createdAt).toLocaleDateString()}</p>
+              <div key={r.id} className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">📄</span>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-800">{r.name || 'Uploaded Resume'}</p>
+                      <p className="text-xs text-emerald-600">
+                        {r.fileType?.toUpperCase()} · Uploaded {new Date(r.createdAt).toLocaleDateString()}
+                        {r.fileSize ? ` · ${(r.fileSize / 1024).toFixed(1)} KB` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => resumeInputRef.current?.click()}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-700 font-semibold hover:bg-emerald-50 transition-all"
+                    >
+                      Replace
+                    </button>
+                    <button
+                      onClick={() => removeResume(r.id)}
+                      className="text-xs px-2 py-1.5 rounded-lg text-slate-400 hover:text-red-500 transition-all"
+                      title="Remove resume"
+                    >
+                      ×
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => resumeInputRef.current?.click()}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-700 font-semibold hover:bg-emerald-50 transition-all"
-                  >
-                    Replace
-                  </button>
-                  <button
-                    onClick={() => removeResume(r.id)}
-                    className="text-xs px-2 py-1.5 rounded-lg text-slate-400 hover:text-red-500 transition-all"
-                    title="Remove resume"
-                  >
-                    ✕
-                  </button>
-                </div>
+                {extractedKeywords.length > 0 && (
+                  <div className="mt-2">
+                    <button onClick={() => setShowKeywords(v => !v)}
+                      className="text-xs text-emerald-600 font-semibold hover:text-emerald-800 transition-colors">
+                      {showKeywords ? '▼' : '▶'} View extracted keywords ({extractedKeywords.length})
+                    </button>
+                    {showKeywords && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {extractedKeywords.map((kw: string, i: number) => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{kw}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -400,7 +485,6 @@ export default function ProfileBuilderPage() {
           </div>
         )}
 
-        {/* Upload button */}
         <button
           onClick={() => resumeInputRef.current?.click()}
           disabled={resumeUploading}
@@ -412,33 +496,31 @@ export default function ProfileBuilderPage() {
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
                 <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
               </svg>
-              Uploading & parsing resume...
+              Uploading &amp; parsing resume...
             </>
           ) : (
             <>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              {resumes.length > 0 ? 'Upload another resume' : 'Upload resume (PDF, DOCX, or TXT)'}
+              {resumes.length > 0 ? 'Replace resume' : 'Upload resume (PDF, DOCX, or TXT)'}
             </>
           )}
         </button>
 
-        {/* Status message */}
         {resumeUploadMsg && (
-          <p className={`text-xs mt-3 px-3 py-2 rounded-lg font-medium ${resumeUploadMsg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+          <p className={`text-xs mt-3 px-3 py-2 rounded-lg font-medium ${resumeUploadMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
             {resumeUploadMsg}
           </p>
         )}
 
-        {/* Info: what gets extracted */}
         {resumes.length === 0 && (
           <p className="text-xs text-slate-400 text-center mt-3">
-            After upload, your work history, education, and skills are automatically extracted and pre-filled below. You can edit everything afterward.
+            After upload, your work history, education, and skills are automatically extracted and pre-filled below.
           </p>
         )}
       </Section>
 
       {/* 1. Personal Info */}
-      <Section title="Contact & Identity" subtitle="Used on every application" icon="👤" completeness={personalComplete}>
+      <Section id="contact-section" title="Contact &amp; Identity" subtitle="Used on every application" icon="👤" completeness={personalComplete}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input label="Full Name" value={personal.fullName} onChange={(v: string) => setPersonal((p: any) => ({ ...p, fullName: v }))} required />
           <Input label="Email" type="email" value={personal.email} onChange={(v: string) => setPersonal((p: any) => ({ ...p, email: v }))} required />
@@ -473,8 +555,7 @@ export default function ProfileBuilderPage() {
       </Section>
 
       {/* 2. Work History */}
-      <Section title="Work History" subtitle="Your professional experience — be thorough" icon="💼" completeness={workComplete}>
-        {/* Existing entries */}
+      <Section title="Work History" subtitle="Your professional experience - be thorough" icon="💼" completeness={workComplete}>
         {workHistory.length > 0 && (
           <div className="space-y-3 mb-6">
             {workHistory.map((wh: any) => (
@@ -482,7 +563,7 @@ export default function ProfileBuilderPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-900 text-sm">{wh.title}</p>
-                    <p className="text-slate-500 text-xs mt-0.5">{wh.company}{wh.startDate || wh.endDate ? ' · ' + (wh.startDate ? new Date(wh.startDate).getFullYear() : '') + (wh.isCurrent ? '–Present' : wh.endDate ? '–' + new Date(wh.endDate).getFullYear() : '') : ''}</p>
+                    <p className="text-slate-500 text-xs mt-0.5">{wh.company}{wh.startDate || wh.endDate ? ' · ' + (wh.startDate ? new Date(wh.startDate).getFullYear() : '') + (wh.isCurrent ? '-Present' : wh.endDate ? '-' + new Date(wh.endDate).getFullYear() : '') : ''}</p>
                     {wh.summary && <p className="text-slate-400 text-xs mt-1 line-clamp-2">{wh.summary}</p>}
                     {(wh.skills?.length > 0 || wh.technologies?.length > 0) && (
                       <div className="flex flex-wrap gap-1 mt-1.5">
@@ -496,7 +577,7 @@ export default function ProfileBuilderPage() {
                     <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{(wh.bullets || []).length} bullets</span>
                     <button
                       onClick={() => fetch('/api/work-history?id=' + wh.id, { method: 'DELETE', credentials: 'include' }).then(() => setWorkHistory((w: any[]) => w.filter(x => x.id !== wh.id)))}
-                      className="text-slate-300 hover:text-red-400 text-xs transition-colors" title="Remove">✕</button>
+                      className="text-slate-300 hover:text-red-400 text-xs transition-colors" title="Remove">×</button>
                   </div>
                 </div>
               </div>
@@ -504,26 +585,32 @@ export default function ProfileBuilderPage() {
           </div>
         )}
 
-        {/* Import from resume CTA */}
         <div className="flex items-center justify-between mb-4">
           <p className="text-xs text-slate-400">Add each position you have held</p>
-          <button onClick={parseFromResume} disabled={parsing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
-            {parsing ? '⏳ Parsing...' : '📄 Import from Resume'}
-          </button>
+          <div className="flex gap-2">
+            <button onClick={parseFromResume} disabled={parsing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
+              {parsing ? '⏳ Parsing...' : '📋 Import from Resume'}
+            </button>
+            <button
+              onClick={() => window.open('https://www.linkedin.com/in/', '_blank')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all"
+            >
+              🔗 Import from LinkedIn
+            </button>
+          </div>
         </div>
         {parseMsg && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">{parseMsg}</p>
         )}
 
-        {/* Add new */}
         <div className="border border-dashed border-slate-200 rounded-xl p-4 space-y-4">
           <p className="text-xs font-semibold text-slate-500 uppercase">Add Position</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Job Title" value={newWork.title} onChange={(v: string) => setNewWork((w: any) => ({ ...w, title: v }))} placeholder="Senior Data Analyst" required />
             <Input label="Company" value={newWork.company} onChange={(v: string) => setNewWork((w: any) => ({ ...w, company: v }))} placeholder="Company Name" required />
-                <MonthYearPicker label="Start Date" value={newWork.startDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, startDate: v }))} />
-                <MonthYearPicker label="End Date" value={newWork.endDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, endDate: v }))} />
+            <MonthYearPicker label="Start Date" value={newWork.startDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, startDate: v }))} />
+            <MonthYearPicker label="End Date" value={newWork.endDate} onChange={(v: string) => setNewWork((w: any) => ({ ...w, endDate: v }))} />
           </div>
           <TextArea label="Summary / Key responsibilities" value={newWork.summary} onChange={(v: string) => setNewWork((w: any) => ({ ...w, summary: v }))} placeholder="Describe what you did and the impact you had..." rows={3} />
           <div className="grid grid-cols-2 gap-3">
@@ -553,7 +640,7 @@ export default function ProfileBuilderPage() {
                   <p className="text-slate-500 text-xs">{ed.institution}</p>
                 </div>
                 <button onClick={() => fetch(`/api/education?id=${ed.id}`, { method: 'DELETE' }).then(() => setEducation(e => e.filter(x => x.id !== ed.id)))}
-                  className="text-slate-300 hover:text-red-400 text-xs">✕</button>
+                  className="text-slate-300 hover:text-red-400 text-xs">×</button>
               </div>
             ))}
           </div>
@@ -562,7 +649,7 @@ export default function ProfileBuilderPage() {
           <p className="text-xs text-slate-400">{education.length === 0 ? 'No education entries yet' : education.length + ' ' + (education.length === 1 ? 'entry' : 'entries') + ' imported'}</p>
           <button onClick={parseFromResume} disabled={parsing}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
-            {parsing ? '⏳ Importing...' : '📄 Import from Resume'}
+            {parsing ? '⏳ Importing...' : '📋 Import from Resume'}
           </button>
         </div>
         <div className="border border-dashed border-slate-200 rounded-xl p-4 space-y-3">
@@ -580,31 +667,32 @@ export default function ProfileBuilderPage() {
         </div>
       </Section>
 
-      {/* 4. Skills */}
-      <Section title="Skills & Technologies" subtitle="Add everything — it powers your match scores" icon="⚡" completeness={skillsComplete}>
-        <div className="flex flex-wrap gap-2 mb-4">
+      {/* 4. Skills — tag input */}
+      <Section id="skills-section" title="Skills &amp; Technologies" subtitle="Add everything - it powers your match scores" icon="✨" completeness={skillsComplete}>
+        <div className="flex flex-wrap gap-2 mb-4 min-h-[40px]">
           {skills.map((sk: any) => (
             <span key={sk.id} className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-lg border border-indigo-100">
               {sk.name}
-              <button onClick={() => removeSkill(sk.id)} className="text-indigo-300 hover:text-red-400 ml-1">✕</button>
+              <button onClick={() => removeSkill(sk.id)} className="text-indigo-300 hover:text-red-400 ml-1 font-bold">×</button>
             </span>
           ))}
           {skills.length === 0 && <p className="text-slate-400 text-sm">No skills added yet</p>}
         </div>
+        <p className="text-xs text-slate-500 mb-2">{skills.length} skill{skills.length !== 1 ? 's' : ''} captured{skills.length < 10 ? ` · add ${10 - skills.length} more for best results` : ' ✅'}</p>
         <div className="flex gap-2">
           <input value={skillInput} onChange={e => setSkillInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addSkills()}
-            placeholder="SQL, Python, Tableau, Salesforce... (comma-separated)"
+            onKeyDown={handleSkillKeyDown}
+            placeholder="Type a skill and press Enter (or comma-separate multiple)"
             className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 bg-white" />
-          <button onClick={addSkills} className="px-4 py-2 rounded-xl text-white text-sm font-semibold whitespace-nowrap" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
-            Add Skills
+          <button onClick={() => addSkill(skillInput)} className="px-4 py-2 rounded-xl text-white text-sm font-semibold whitespace-nowrap" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+            Add
           </button>
         </div>
-        <p className="text-xs text-slate-400 mt-2">Press Enter or click Add. Include tools, languages, frameworks, methodologies, soft skills.</p>
+        <p className="text-xs text-slate-400 mt-2">Press Enter or Tab to add one skill. Use commas for multiple at once.</p>
       </Section>
 
       {/* 5. Job Preferences */}
-      <Section title="Job Preferences" subtitle="What you're looking for — used for scoring and auto-apply" icon="🎯" completeness={prefsComplete}>
+      <Section id="prefs-section" title="Job Preferences" subtitle="What you are looking for - used for scoring and auto-apply" icon="🎯" completeness={prefsComplete}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input label="Target Job Titles (comma-separated)" value={(prefs.targetTitles || []).join(', ')} onChange={(v: string) => setPrefs((p: any) => ({ ...p, targetTitles: v.split(',').map((s: string) => s.trim()).filter(Boolean) }))} placeholder="Data Analyst, Ops Manager, BI Analyst" />
           <div>
@@ -628,13 +716,13 @@ export default function ProfileBuilderPage() {
       </Section>
 
       {/* 6. Reusable Answers */}
-      <Section title="Application Answers" subtitle="Save answers to common questions — used in every application" icon="💬">
+      <Section title="Application Answers" subtitle="Save answers to common questions - used in every application" icon="💬">
         <div className="space-y-4">
           {[
             { key: 'why_this_role', family: 'experience', label: 'Why are you interested in this type of role?', placeholder: 'I have X years of experience in... I am passionate about...' },
             { key: 'biggest_achievement', family: 'experience', label: 'What is your biggest professional achievement?', placeholder: 'I led a project that resulted in...' },
-            { key: 'describe_yourself', family: 'experience', label: 'Tell us about yourself (elevator pitch)', placeholder: '2-3 sentences. Background, what you do, what you\'re looking for.' },
-            { key: 'salary_expectation', family: 'compensation', label: 'What are your salary expectations?', placeholder: '$80,000 – $110,000 depending on total compensation' },
+            { key: 'describe_yourself', family: 'experience', label: 'Tell us about yourself (elevator pitch)', placeholder: '2-3 sentences. Background, what you do, what you are looking for.' },
+            { key: 'salary_expectation', family: 'compensation', label: 'What are your salary expectations?', placeholder: '$80,000 - $110,000 depending on total compensation' },
             { key: 'notice_period', family: 'logistics', label: 'What is your notice period / when can you start?', placeholder: '2 weeks notice, available [month]' },
           ].map(q => {
             const existing = answers.find((a: any) => a.questionKey === q.key);
@@ -671,7 +759,7 @@ function AnswerField({ question, existing, onSave }: { question: any; existing?:
         <button onClick={handleSave} disabled={saving || !value.trim()}
           className={`self-end px-3 py-2 rounded-xl text-xs font-bold transition-all ${saved ? 'bg-emerald-50 text-emerald-700' : 'text-white'} disabled:opacity-40`}
           style={!saved ? { background: 'linear-gradient(135deg,#10b981,#059669)' } : {}}>
-          {saved ? '✓' : saving ? '...' : 'Save'}
+          {saved ? '✅' : saving ? '...' : 'Save'}
         </button>
       </div>
     </div>

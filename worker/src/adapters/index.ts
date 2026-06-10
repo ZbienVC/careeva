@@ -6,7 +6,10 @@
  * below: label-based field matching against the packet's answers, file upload
  * for the resume, and a field report describing exactly what happened.
  */
-import type { Page } from 'playwright';
+import type { Page, Frame } from 'playwright';
+
+/** Where form elements live — the page itself or an embedded iframe. */
+type FormScope = Page | Frame;
 
 export interface FillContext {
   resumePath: string | null;
@@ -96,6 +99,58 @@ export function buildMatchers(p: Packet): Matcher[] {
 
 const EEO_PATTERN = /gender|race|ethnic|veteran|disabilit|sexual\s+orientation|transgender/i;
 
+// ─── Overlay/consent dismissal ─────────────────────────────────────────────────
+// Cookie banners (OneTrust et al.) intercept pointer events and silently block
+// every fill. Clear them before touching the form.
+
+export async function dismissOverlays(page: Page): Promise<void> {
+  const candidates = [
+    '#onetrust-accept-btn-handler',
+    '#onetrust-reject-all-handler',
+    'button:has-text("Accept All")',
+    'button:has-text("Accept all")',
+    'button:has-text("Reject All")',
+    'button:has-text("I Accept")',
+    'button:has-text("Got it")',
+    '[id*="cookie"] button:has-text("Accept")',
+    '[class*="cookie"] button:has-text("Accept")',
+    '[aria-label="Close"], [aria-label="close"], [aria-label="Dismiss"]',
+  ];
+  for (const selector of candidates) {
+    try {
+      const btn = page.locator(selector).first();
+      if (await btn.isVisible({ timeout: 400 }).catch(() => false)) {
+        await btn.click({ timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(400);
+      }
+    } catch { /* overlay heuristics are best-effort */ }
+  }
+}
+
+// ─── Frame discovery ───────────────────────────────────────────────────────────
+// Many career sites embed the real application form in an iframe. Fill inside
+// whichever frame holds the most form fields.
+
+async function pickFormScope(page: Page): Promise<FormScope> {
+  const countIn = async (scope: FormScope) =>
+    scope
+      .locator('input[type="text"], input[type="email"], input[type="tel"], input:not([type]), textarea, input[type="file"]')
+      .count()
+      .catch(() => 0);
+
+  let best: FormScope = page;
+  let bestCount = await countIn(page);
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue;
+    const count = await countIn(frame);
+    if (count > bestCount) {
+      best = frame;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
 // ─── Shared form filler ────────────────────────────────────────────────────────
 // Walks every visible input/textarea/select on the page, resolves its label,
 // matches an answer, and fills it. EEO fields use stored answers only, else
@@ -113,15 +168,36 @@ export async function fillVisibleForm(
     filled: [], skippedOptional: [], unanswered: [], guessed: [],
     resumeAttached: false, coverLetterAttached: false,
   };
-  const scope = opts.formSelector || 'body';
+
+  // Consent banners intercept pointer events and silently break every fill.
+  await dismissOverlays(page);
+
+  // The form may live in an embedded iframe — fill where the fields are.
+  const root = await pickFormScope(page);
+  const scope = root === page ? (opts.formSelector || 'body') : 'body';
+
+  // Every fill is VERIFIED by reading the value back. A fill that didn't
+  // stick is reported as failed — the report must never claim success the
+  // screenshot can't corroborate.
+  const verifiedFill = async (el: ReturnType<FormScope['locator']>, value: string): Promise<boolean> => {
+    await el.fill(value, { timeout: 8000 }).catch(() => {});
+    let after = await el.inputValue().catch(() => '');
+    if (!after.trim()) {
+      // Some custom widgets need keyboard-style input
+      await el.click({ timeout: 3000 }).catch(() => {});
+      await el.pressSequentially(value.slice(0, 500), { timeout: 10000 }).catch(() => {});
+      after = await el.inputValue().catch(() => '');
+    }
+    return !!after.trim();
+  };
 
   // 1) Resume file input(s)
   if (ctx.resumePath) {
-    const fileInputs = page.locator(`${scope} input[type="file"]`);
+    const fileInputs = root.locator(`${scope} input[type="file"]`);
     const n = await fileInputs.count();
     for (let i = 0; i < n; i++) {
       const input = fileInputs.nth(i);
-      const label = (await labelFor(page, input)) || '';
+      const label = (await labelFor(root, input)) || '';
       if (i === 0 || /resume|cv/i.test(label)) {
         try {
           await input.setInputFiles(ctx.resumePath);
@@ -135,7 +211,7 @@ export async function fillVisibleForm(
   }
 
   // 2) Text inputs + textareas
-  const textInputs = page.locator(
+  const textInputs = root.locator(
     `${scope} input[type="text"], ${scope} input[type="email"], ${scope} input[type="tel"], ${scope} input[type="url"], ${scope} input:not([type]), ${scope} textarea`
   );
   const count = await textInputs.count();
@@ -144,7 +220,7 @@ export async function fillVisibleForm(
     if (!(await el.isVisible().catch(() => false))) continue;
     const existing = await el.inputValue().catch(() => '');
     if (existing) continue; // never clobber prefilled values
-    const label = (await labelFor(page, el)) || (await el.getAttribute('placeholder')) || (await el.getAttribute('name')) || '';
+    const label = (await labelFor(root, el)) || (await el.getAttribute('placeholder')) || (await el.getAttribute('name')) || '';
     if (!label) continue;
     const required = (await el.getAttribute('required')) !== null || (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
 
@@ -156,8 +232,11 @@ export async function fillVisibleForm(
         : packet.answers['disability_status'] && /disabilit/i.test(label) ? packet.answers['disability_status']
         : undefined;
       if (eeoVal) {
-        await el.fill(eeoVal).catch(() => {});
-        report.filled.push({ label, value: eeoVal, via: 'eeo_stored' });
+        if (await verifiedFill(el, eeoVal)) {
+          report.filled.push({ label, value: eeoVal, via: 'eeo_stored' });
+        } else {
+          report.skippedOptional.push(label + ' (EEO — fill failed)');
+        }
       } else {
         report.skippedOptional.push(label + ' (EEO — not auto-answered)');
       }
@@ -167,15 +246,23 @@ export async function fillVisibleForm(
     const m = matchers.find((mm) => mm.test.test(label));
     const value = m?.value(packet);
     if (value) {
-      await el.fill(value).catch(() => {});
-      report.filled.push({ label, value: value.slice(0, 60), via: m!.key });
-      if (m!.key === 'cover_letter') report.coverLetterAttached = true;
+      if (await verifiedFill(el, value)) {
+        report.filled.push({ label, value: value.slice(0, 60), via: m!.key });
+        if (m!.key === 'cover_letter') report.coverLetterAttached = true;
+      } else if (required) {
+        report.unanswered.push(label + ' (fill did not stick)');
+      } else {
+        report.skippedOptional.push(label + ' (fill did not stick)');
+      }
     } else if (required) {
       if (ctx.config?.unknownQuestionMode === 'ai_guess' && packet.answers['__ai_fallback_' + slug(label)]) {
         const guess = packet.answers['__ai_fallback_' + slug(label)];
-        await el.fill(guess).catch(() => {});
-        report.guessed.push(label);
-        report.filled.push({ label, value: guess.slice(0, 60), via: 'ai_guess' });
+        if (await verifiedFill(el, guess)) {
+          report.guessed.push(label);
+          report.filled.push({ label, value: guess.slice(0, 60), via: 'ai_guess' });
+        } else {
+          report.unanswered.push(label);
+        }
       } else {
         report.unanswered.push(label);
       }
@@ -186,19 +273,23 @@ export async function fillVisibleForm(
 
   // 3) Selects: match by label, choose option whose text matches the answer;
   //    EEO selects pick a "decline" option when present and no stored answer.
-  const selects = page.locator(`${scope} select`);
+  const selects = root.locator(`${scope} select`);
   const sCount = await selects.count();
   for (let i = 0; i < sCount; i++) {
     const el = selects.nth(i);
     if (!(await el.isVisible().catch(() => false))) continue;
-    const label = (await labelFor(page, el)) || (await el.getAttribute('name')) || '';
+    const label = (await labelFor(root, el)) || (await el.getAttribute('name')) || '';
     const m = matchers.find((mm) => mm.test.test(label));
     const value = m?.value(packet);
     const optionTexts: string[] = await el.locator('option').allTextContents();
+    const verifiedSelect = async (optionLabel: string): Promise<boolean> => {
+      await el.selectOption({ label: optionLabel }, { timeout: 5000 }).catch(() => {});
+      const after = await el.inputValue().catch(() => '');
+      return !!after;
+    };
     if (EEO_PATTERN.test(label) && !value) {
       const decline = optionTexts.find((o) => /decline|prefer not|don.t wish/i.test(o));
-      if (decline) {
-        await el.selectOption({ label: decline }).catch(() => {});
+      if (decline && (await verifiedSelect(decline))) {
         report.filled.push({ label, value: decline, via: 'eeo_decline' });
       }
       continue;
@@ -207,8 +298,7 @@ export async function fillVisibleForm(
       const target = optionTexts.find((o) => o.toLowerCase().includes(value.toLowerCase().slice(0, 20)))
         || (/^yes$/i.test(value) ? optionTexts.find((o) => /^yes/i.test(o)) : undefined)
         || (/^no$/i.test(value) ? optionTexts.find((o) => /^no/i.test(o)) : undefined);
-      if (target) {
-        await el.selectOption({ label: target }).catch(() => {});
+      if (target && (await verifiedSelect(target))) {
         report.filled.push({ label, value: target, via: m!.key });
       } else {
         report.unanswered.push(label + ` (no option matched "${value.slice(0, 30)}")`);
@@ -228,13 +318,13 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 50);
 }
 
-async function labelFor(page: Page, el: ReturnType<Page['locator']>): Promise<string | null> {
+async function labelFor(scope: FormScope, el: ReturnType<FormScope['locator']>): Promise<string | null> {
   // aria-label → <label for=id> → closest label wrapper → aria-labelledby
   const aria = await el.getAttribute('aria-label');
   if (aria) return aria.trim();
   const id = await el.getAttribute('id');
   if (id) {
-    const lbl = page.locator(`label[for="${id}"]`).first();
+    const lbl = scope.locator(`label[for="${id}"]`).first();
     if (await lbl.count()) {
       const t = (await lbl.textContent()) || '';
       if (t.trim()) return t.trim();

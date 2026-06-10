@@ -30,6 +30,37 @@ function deriveRemotePreference(jobType: string[] | undefined): string {
   return 'any';
 }
 
+// GET — return the user's saved onboarding answers so the wizard pre-fills
+// instead of greeting returning users with a blank form.
+export async function GET(request: NextRequest) {
+  const user = await getCurrentUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const [profile, prefs, personalInfo] = await Promise.all([
+    prisma.userProfile.findUnique({ where: { userId: user.id } }),
+    prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
+    prisma.personalInfo.findUnique({ where: { userId: user.id } }),
+  ]);
+
+  const relocationScope =
+    prefs?.relocationNote && ['none', 'regional', 'national', 'international'].includes(prefs.relocationNote)
+      ? prefs.relocationNote
+      : (prefs?.willingToRelocate ?? profile?.willingToRelocate) ? 'national' : '';
+
+  return NextResponse.json({
+    jobTitle: profile?.jobTitle || '',
+    targetIndustries: profile?.targetIndustries || [],
+    city: personalInfo?.city || '',
+    state: personalInfo?.state || '',
+    relocationScope,
+    desiredSalaryMin: profile?.desiredSalaryMin ?? null,
+    desiredSalaryMax: profile?.desiredSalaryMax ?? null,
+    jobType: profile?.jobType || [],
+    careerGoals: profile?.careerGoals || '',
+    additionalInfo: profile?.additionalInfo || '',
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request);
@@ -60,10 +91,19 @@ export async function POST(request: NextRequest) {
       additionalInfo: body.additionalInfo,
     };
 
+    // Users naturally enter several roles in one box ("Analyst, Strategy,
+    // Sales Engineer") — each becomes its OWN search target, not one giant
+    // query string.
+    const targetTitles = body.jobTitle
+      .split(/,|\/|;| and /i)
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+
     // Job search, scoring, and automation all read JobPreferences — onboarding
     // must populate it or the answers never reach the engine.
     const preferenceFields = {
-      targetTitles: [body.jobTitle],
+      targetTitles: targetTitles.length ? targetTitles : [body.jobTitle],
       targetIndustries: body.targetIndustries,
       salaryMinUSD: body.desiredSalaryMin ? Math.round(body.desiredSalaryMin) : null,
       salaryMaxUSD: body.desiredSalaryMax ? Math.round(body.desiredSalaryMax) : null,

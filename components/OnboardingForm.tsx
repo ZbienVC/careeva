@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { onboardingAPI } from '@/lib/api';
 import { LoadingSpinner } from './Loading';
-import { IconCheck, IconArrowRight } from './icons';
+import { IconCheck, IconArrowRight, IconSparkles } from './icons';
 
 interface OnboardingFormProps {
   onSuccess?: () => void;
@@ -13,16 +13,16 @@ interface OnboardingFormProps {
 const ONBOARDING_STEPS = [
   {
     id: 'jobTitle',
-    short: 'Target role',
-    label: 'What role are you pursuing next?',
-    helper: 'This becomes the anchor for recommendations and writing.',
+    short: 'Target roles',
+    label: 'What roles are you pursuing next?',
+    helper: 'Separate several with commas — each one becomes its own search target across every job board.',
     type: 'text',
   },
   {
     id: 'targetIndustries',
     short: 'Industries',
     label: 'Which industries interest you most?',
-    helper: 'Choose the spaces where you want Careeva to focus.',
+    helper: 'Pick from the list or add your own — these steer which companies and boards get searched.',
     type: 'multi-select',
   },
   {
@@ -57,14 +57,14 @@ const ONBOARDING_STEPS = [
     id: 'careerGoals',
     short: 'Career goals',
     label: 'What does a strong next step look like?',
-    helper: 'Use a sentence or two to describe your direction.',
+    helper: 'A sentence or two. This grounds every cover letter and "why this role" answer the AI writes for you.',
     type: 'textarea',
   },
   {
     id: 'additionalInfo',
     short: 'Anything else',
     label: 'Anything else we should know?',
-    helper: 'Add constraints, advantages, timing, or context. Optional.',
+    helper: 'Constraints, advantages, timing, context — woven into your application materials where relevant. Optional.',
     type: 'textarea',
   },
 ];
@@ -82,6 +82,9 @@ const RELOCATION_OPTIONS = [
 export default function OnboardingForm({ onSuccess, onError }: OnboardingFormProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [prefilling, setPrefilling] = useState(true);
+  const [hadSavedAnswers, setHadSavedAnswers] = useState(false);
+  const [customIndustry, setCustomIndustry] = useState('');
   const [formData, setFormData] = useState({
     jobTitle: '',
     targetIndustries: [] as string[],
@@ -94,6 +97,45 @@ export default function OnboardingForm({ onSuccess, onError }: OnboardingFormPro
     careerGoals: '',
     additionalInfo: '',
   });
+
+  // Returning users see their SAVED answers, not a blank slate — this is an
+  // edit of their profile, never a do-over.
+  useEffect(() => {
+    fetch('/api/onboarding', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((saved) => {
+        if (saved && (saved.jobTitle || saved.targetIndustries?.length || saved.careerGoals)) {
+          setHadSavedAnswers(true);
+          setFormData((prev) => ({
+            ...prev,
+            jobTitle: saved.jobTitle || '',
+            targetIndustries: saved.targetIndustries || [],
+            city: saved.city || '',
+            state: saved.state || '',
+            relocationScope: saved.relocationScope || '',
+            desiredSalaryMin: saved.desiredSalaryMin != null ? String(saved.desiredSalaryMin) : '',
+            desiredSalaryMax: saved.desiredSalaryMax != null ? String(saved.desiredSalaryMax) : '',
+            jobType: saved.jobType || [],
+            careerGoals: saved.careerGoals || '',
+            additionalInfo: saved.additionalInfo || '',
+          }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setPrefilling(false));
+  }, []);
+
+  const addCustomIndustry = () => {
+    const value = customIndustry.trim();
+    if (!value) return;
+    setFormData((prev) => ({
+      ...prev,
+      targetIndustries: prev.targetIndustries.includes(value)
+        ? prev.targetIndustries
+        : [...prev.targetIndustries, value],
+    }));
+    setCustomIndustry('');
+  };
 
   const step = ONBOARDING_STEPS[currentStep];
   const progress = ((currentStep + 1) / ONBOARDING_STEPS.length) * 100;
@@ -137,11 +179,25 @@ export default function OnboardingForm({ onSuccess, onError }: OnboardingFormPro
     setLoading(false);
   };
 
+  if (prefilling) {
+    return (
+      <div className="premium-card flex items-center justify-center p-12">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-8 xl:grid-cols-[0.8fr_1.2fr]">
       <div className="premium-card p-6 md:p-7">
         <div className="badge mb-4">Guided setup</div>
         <h3 className="text-2xl font-bold text-white">Build a better search baseline.</h3>
+        {hadSavedAnswers && (
+          <div className="alert-success mt-4 flex items-start gap-2 !p-3 text-xs">
+            <IconSparkles size={14} className="mt-0.5 shrink-0" />
+            <span>Your saved answers are loaded — change anything and finish to update. Nothing gets wiped.</span>
+          </div>
+        )}
         <p className="mt-3 text-sm leading-6 text-slate-400">
           A few focused answers give Careeva the context it needs to rank roles more intelligently and generate stronger application material.
         </p>
@@ -238,23 +294,48 @@ export default function OnboardingForm({ onSuccess, onError }: OnboardingFormPro
         )}
 
         {step.type === 'multi-select' && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {(step.id === 'targetIndustries' ? INDUSTRIES : JOB_TYPES).map((option) => {
-              const checked = (formData[step.id as keyof typeof formData] as string[]).includes(option);
-              return (
-                <label
-                  key={option}
-                  className={`cursor-pointer rounded-2xl border p-4 transition ${
-                    checked ? 'border-blue-400/40 bg-blue-500/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <input type="checkbox" checked={checked} onChange={() => handleMultiSelect(step.id, option)} className="h-4 w-4 accent-blue-500" />
-                    <span className="text-slate-200">{option}</span>
-                  </div>
-                </label>
-              );
-            })}
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(step.id === 'targetIndustries'
+                ? [...INDUSTRIES, ...formData.targetIndustries.filter((i) => !INDUSTRIES.includes(i))]
+                : JOB_TYPES
+              ).map((option) => {
+                const checked = (formData[step.id as keyof typeof formData] as string[]).includes(option);
+                return (
+                  <label
+                    key={option}
+                    className={`cursor-pointer rounded-2xl border p-4 transition ${
+                      checked ? 'border-blue-400/40 bg-blue-500/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input type="checkbox" checked={checked} onChange={() => handleMultiSelect(step.id, option)} className="h-4 w-4 accent-blue-500" />
+                      <span className="text-slate-200">{option}</span>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            {step.id === 'targetIndustries' && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customIndustry}
+                  onChange={(e) => setCustomIndustry(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCustomIndustry();
+                    }
+                  }}
+                  placeholder="Add your own industry, e.g. Logistics, Media, Sports…"
+                  className="flex-1"
+                />
+                <button type="button" onClick={addCustomIndustry} className="btn-secondary shrink-0 text-sm !px-4 !py-2">
+                  Add
+                </button>
+              </div>
+            )}
           </div>
         )}
 

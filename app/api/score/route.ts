@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { scoreJob } from '@/lib/job-scorer';
+import { parseRelocationScope, canonicalCountry } from '@/lib/geo';
 import { getCurrentUserFromRequest } from '@/lib/session';
 
 async function buildProfileForScoring(userId: string) {
@@ -45,6 +46,9 @@ async function buildProfileForScoring(userId: string) {
     salaryMax: jobPrefs?.salaryMaxUSD || undefined,
     remotePreference: jobPrefs?.remotePreference || undefined,
     preferredLocations: jobPrefs?.preferredLocations || [],
+    country: canonicalCountry(personalInfo?.country),
+    willingToRelocate: jobPrefs?.willingToRelocate ?? profile?.willingToRelocate ?? false,
+    relocationScope: parseRelocationScope(jobPrefs?.relocationNote, jobPrefs?.willingToRelocate ?? profile?.willingToRelocate),
   };
 }
 

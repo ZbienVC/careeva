@@ -14,6 +14,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { isForeignLocation } from '@/lib/geo';
 import crypto from 'crypto';
 
 const SERP_API_KEY = process.env.SERP_API_KEY || '';
@@ -43,6 +44,42 @@ export interface SearchJob {
 function makeDedupeKey(company: string, title: string, location: string): string {
   const s = `${company.toLowerCase().trim()}|${title.toLowerCase().trim()}|${location.toLowerCase().trim()}`;
   return crypto.createHash('md5').update(s).digest('hex');
+}
+
+// ─── Relevance filtering ──────────────────────────────────────────────────────
+// Several free sources (The Muse especially) return popular-but-unrelated jobs
+// when the query has few exact matches — e.g. retail clerk roles for "analyst".
+// Before saving, require a real lexical connection between the job and at
+// least one of the user's queries.
+
+const QUERY_STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'job', 'jobs', 'role', 'roles', 'position', 'remote', 'hybrid', 'onsite',
+]);
+
+function queryTokens(queries: string[]): string[] {
+  const tokens = new Set<string>();
+  for (const q of queries) {
+    for (const word of q.toLowerCase().split(/[^a-z0-9+#./-]+/)) {
+      if (word.length > 2 && !QUERY_STOPWORDS.has(word)) tokens.add(word);
+    }
+  }
+  return [...tokens];
+}
+
+export function isRelevantToQueries(job: Pick<SearchJob, 'title' | 'description'>, queries: string[]): boolean {
+  const tokens = queryTokens(queries);
+  if (tokens.length === 0) return true;
+
+  const title = (job.title || '').toLowerCase();
+  // Strongest signal: a query token appears in the job title
+  if (tokens.some((t) => title.includes(t))) return true;
+
+  // Fallback: a full query phrase appears in the description
+  const description = (job.description || '').toLowerCase();
+  return queries.some((q) => {
+    const phrase = q.toLowerCase().trim();
+    return phrase.length > 3 && description.includes(phrase);
+  });
 }
 
 function detectATS(url: string): string | undefined {
@@ -133,13 +170,14 @@ async function searchRemotive(query: string): Promise<SearchJob[]> {
 
 // ─── Source 3: Adzuna (free 250 calls/day) ────────────────────────────────────
 
-async function searchAdzuna(query: string, location = 'us', pages = 2): Promise<SearchJob[]> {
+async function searchAdzuna(query: string, country = 'us', pages = 2, where = ''): Promise<SearchJob[]> {
   if (!ADZUNA_APP_ID || !ADZUNA_APP_KEY) return [];
 
   const jobs: SearchJob[] = [];
   try {
     for (let page = 1; page <= pages; page++) {
-      const url = `https://api.adzuna.com/v1/api/jobs/${location}/search/${page}?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=50&what=${encodeURIComponent(query)}&content-type=application/json`;
+      const whereParam = where ? `&where=${encodeURIComponent(where)}` : '';
+      const url = `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=50&what=${encodeURIComponent(query)}${whereParam}&content-type=application/json`;
       const res = await fetch(url);
       if (!res.ok) break;
       const data = await res.json();
@@ -169,9 +207,10 @@ async function searchAdzuna(query: string, location = 'us', pages = 2): Promise<
 
 // ─── Source 4: The Muse (free, good for company culture) ─────────────────────
 
-async function searchTheMuse(query: string): Promise<SearchJob[]> {
+async function searchTheMuse(query: string, location = ''): Promise<SearchJob[]> {
   try {
-    const url = `https://www.themuse.com/api/public/jobs?descending=true&page=1&query=${encodeURIComponent(query)}`;
+    const locationParam = location ? `&location=${encodeURIComponent(location)}` : '';
+    const url = `https://www.themuse.com/api/public/jobs?descending=true&page=1&query=${encodeURIComponent(query)}${locationParam}`;
     const res = await fetch(url, { headers: { 'User-Agent': 'Careeva/1.0' } });
     if (!res.ok) return [];
     const data = await res.json();
@@ -717,9 +756,15 @@ export interface JobSearchParams {
   greenhouseBoards?: string[];
   leverBoards?: string[];
   companyCareerUrls?: string[];  // Direct company career page URLs
+  /** Drop jobs with no lexical connection to the queries (default true). */
+  applyRelevanceFilter?: boolean;
+  /** User's home country — on-site jobs detected in other countries are dropped. */
+  userCountry?: string;
+  /** Keep foreign on-site jobs when the user is open to international relocation. */
+  allowInternational?: boolean;
 }
 
-export async function aggregateJobSearch(params: JobSearchParams): Promise<{ total: number; new: number; duped: number }> {
+export async function aggregateJobSearch(params: JobSearchParams): Promise<{ total: number; new: number; duped: number; filtered: number }> {
   const {
     userId,
     queries,
@@ -728,6 +773,9 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     greenhouseBoards = [],
     leverBoards = [],
     companyCareerUrls = [],
+    applyRelevanceFilter = true,
+    userCountry = 'United States',
+    allowInternational = false,
   } = params;
 
   // Create scrape run
@@ -750,12 +798,18 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
       allJobs = allJobs.concat(r);
     }
     if (sources.includes('adzuna')) {
-      const a = await searchAdzuna(query);
+      // Adzuna supports a "where" refinement — use the user's first concrete location
+      const where = locations.find((l) => l && !/united states|remote/i.test(l)) || '';
+      const a = await searchAdzuna(query, 'us', 2, where);
       allJobs = allJobs.concat(a);
     }
     if (sources.includes('themuse')) {
-      const m = await searchTheMuse(query);
-      allJobs = allJobs.concat(m);
+      // The Muse supports location filtering — query per user location plus flexible/remote
+      const museLocations = [...locations.filter((l) => l && !/united states/i.test(l)).slice(0, 2), 'Flexible / Remote'];
+      for (const museLocation of museLocations.length ? museLocations : ['']) {
+        const m = await searchTheMuse(query, museLocation);
+        allJobs = allJobs.concat(m);
+      }
     }
     if (sources.includes('indeed')) {
       for (const location of locations) {
@@ -829,11 +883,30 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     } catch { /* skip */ }
   }
 
+  // ── Quality gates before saving ─────────────────────────────────────────────
+  // 1. Relevance: the job must actually relate to what the user is looking for.
+  //    Free sources (The Muse especially) pad weak queries with popular but
+  //    unrelated roles — retail clerks for "analyst" searches.
+  // 2. Location: on-site/hybrid jobs in a different country than the user are
+  //    useless unless they explicitly opted into international relocation.
+  let filteredCount = 0;
+  const candidateJobs = allJobs.filter((job) => {
+    if (applyRelevanceFilter && !isRelevantToQueries(job, queries)) {
+      filteredCount++;
+      return false;
+    }
+    if (!allowInternational && !job.isRemote && isForeignLocation(job.location, userCountry)) {
+      filteredCount++;
+      return false;
+    }
+    return true;
+  });
+
   // Deduplicate and save
   let newCount = 0;
   let dupedCount = 0;
 
-  for (const job of allJobs) {
+  for (const job of candidateJobs) {
     if (!job.title || !job.company) continue;
     const dedupeKey = makeDedupeKey(job.company, job.title, job.location);
 
@@ -889,7 +962,7 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     data: { status: 'complete', completedAt: new Date(), jobsFound: allJobs.length, jobsNew: newCount, jobsDuped: dupedCount },
   });
 
-  return { total: allJobs.length, new: newCount, duped: dupedCount };
+  return { total: allJobs.length, new: newCount, duped: dupedCount, filtered: filteredCount };
 }
 
 // ─── Source availability ──────────────────────────────────────────────────────

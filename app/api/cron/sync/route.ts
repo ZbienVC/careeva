@@ -15,6 +15,7 @@ import { prisma } from '@/lib/db';
 import { runJobSync, cleanupStaleJobs, TOP_GREENHOUSE_BOARDS, TOP_LEVER_BOARDS, TOP_ASHBY_BOARDS } from '@/lib/job-connectors';
 import { aggregateJobSearch, getAvailableSources } from '@/lib/job-search';
 import { scoreJob } from '@/lib/job-scorer';
+import { parseRelocationScope, canonicalCountry } from '@/lib/geo';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -44,7 +45,10 @@ export async function POST(request: NextRequest) {
         id: true,
         email: true,
         jobPreferences: {
-          select: { targetTitles: true, remotePreference: true },
+          select: { targetTitles: true, remotePreference: true, preferredLocations: true, willingToRelocate: true, relocationNote: true },
+        },
+        personalInfo: {
+          select: { city: true, state: true, country: true },
         },
       },
     });
@@ -74,11 +78,18 @@ export async function POST(request: NextRequest) {
           : [];
         if (titles.length > 0) {
           try {
+            const homeBase = [user.personalInfo?.city, user.personalInfo?.state].filter(Boolean).join(', ');
+            const userLocations: string[] = user.jobPreferences?.preferredLocations?.length
+              ? user.jobPreferences.preferredLocations
+              : homeBase ? [homeBase] : ['United States'];
+            const scope = parseRelocationScope(user.jobPreferences?.relocationNote, user.jobPreferences?.willingToRelocate);
             const agg = await aggregateJobSearch({
               userId: user.id,
               queries: [...new Set(titles)],
-              locations: ['United States'],
+              locations: userLocations,
               sources: getAvailableSources(),
+              userCountry: canonicalCountry(user.personalInfo?.country),
+              allowInternational: scope === 'international',
             });
             allStats.newJobs += agg.new;
             log.push('User ' + user.id + ': +' + agg.new + ' new jobs from aggregator');
@@ -115,6 +126,9 @@ export async function POST(request: NextRequest) {
           salaryMax: jobPrefs?.salaryMaxUSD || undefined,
           remotePreference: jobPrefs?.remotePreference || undefined,
           preferredLocations: jobPrefs?.preferredLocations || [],
+          country: canonicalCountry(user.personalInfo?.country),
+          willingToRelocate: jobPrefs?.willingToRelocate ?? profile?.willingToRelocate ?? false,
+          relocationScope: parseRelocationScope(jobPrefs?.relocationNote, jobPrefs?.willingToRelocate ?? profile?.willingToRelocate),
         };
 
         const unscoredJobs = await prisma.job.findMany({

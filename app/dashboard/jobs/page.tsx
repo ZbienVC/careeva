@@ -38,6 +38,9 @@ export default function JobsPage() {
   const [totalJobs, setTotalJobs] = useState(0);
   const [sortBy, setSortBy] = useState<'match' | 'recent' | 'company'>('match');
   const [activeChip, setActiveChip] = useState('all');
+  const [sourcing, setSourcing] = useState(false);
+  const [sourcingResult, setSourcingResult] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const pageSize = 9;
 
   useEffect(() => {
@@ -75,7 +78,32 @@ export default function JobsPage() {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [search, page, router]);
+  }, [search, page, router, reloadKey]);
+
+  // Pull fresh jobs from every connected job board, scoped to the current
+  // search term (or the saved profile targets when the box is empty).
+  const searchJobBoards = async () => {
+    setSourcing(true);
+    setSourcingResult('');
+    setError('');
+    try {
+      const res = await fetch('/api/jobs/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(search ? { queries: [search] } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Job board search failed');
+      setSourcingResult(`Found ${data.new} new role${data.new === 1 ? '' : 's'} across ${data.sourcesUsed?.length || 'multiple'} sources.`);
+      setPage(1);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Job board search failed');
+    } finally {
+      setSourcing(false);
+    }
+  };
 
   const sortedJobs = useMemo(() => {
     let filtered = jobs.filter((job) => matchesChip(job, activeChip));
@@ -145,12 +173,14 @@ export default function JobsPage() {
             </select>
           </div>
           <div className="flex items-end">
-            <div className="premium-card-soft w-full p-4 text-sm text-slate-300">
-              <div className="text-slate-500">Live summary</div>
-              <div className="mt-1">{totalJobs} jobs surfaced for your current profile.</div>
-            </div>
+            <button onClick={searchJobBoards} disabled={sourcing} className="btn-secondary w-full disabled:opacity-50">
+              <IconSearch size={16} />
+              {sourcing ? 'Searching job boards…' : 'Pull fresh jobs'}
+            </button>
           </div>
         </div>
+
+        {sourcingResult && <div className="alert-success">{sourcingResult}</div>}
 
         {/* Filter chips */}
         <div className="flex flex-wrap gap-2">
@@ -214,20 +244,25 @@ export default function JobsPage() {
         ) : (
           <div className="empty-state">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.05] text-slate-400"><IconSearch size={26} /></div>
-            <h3 className="mt-4 text-2xl font-semibold text-white">No jobs found</h3>
+            <h3 className="mt-4 text-2xl font-semibold text-white">No jobs found{search ? ` for “${search}”` : ''}</h3>
             <p className="mt-2 text-slate-400">
               {search
-                ? 'Try broadening the search, removing a company name, or using fewer keywords.'
+                ? 'Nothing saved matches yet — search the connected job boards live to pull in fresh roles.'
                 : activeChip !== 'all'
                 ? 'No jobs match this filter. Try switching to "All" or a different filter.'
-                : 'No opportunities are currently available. Complete your profile to unlock AI-matched roles.'}
+                : 'No opportunities saved yet. Pull fresh jobs from the connected boards, or complete your profile for better matching.'}
             </p>
-            {!search && activeChip === 'all' && (
-              <div className="mt-6 flex justify-center gap-3">
-                <a href="/dashboard/profile" className="btn-primary">Complete profile</a>
-                <a href="https://www.linkedin.com/jobs" target="_blank" rel="noreferrer" className="btn-secondary">Browse LinkedIn Jobs</a>
-              </div>
-            )}
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              {activeChip === 'all' && (
+                <button onClick={searchJobBoards} disabled={sourcing} className="btn-primary disabled:opacity-50">
+                  <IconSearch size={16} />
+                  {sourcing ? 'Searching job boards…' : search ? `Search job boards for “${search}”` : 'Pull fresh jobs'}
+                </button>
+              )}
+              {!search && activeChip === 'all' && (
+                <a href="/dashboard/profile" className="btn-secondary">Complete profile</a>
+              )}
+            </div>
           </div>
         )}
       </section>

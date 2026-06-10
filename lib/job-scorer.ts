@@ -4,6 +4,8 @@
  * Returns 0-100 score + dimension breakdown
  */
 
+import { isForeignLocation, parseRelocationScope, RelocationScope } from './geo';
+
 interface ProfileData {
   skills: string[];
   roles: string[];
@@ -19,6 +21,11 @@ interface ProfileData {
   salaryMax?: number;
   remotePreference?: string;
   preferredLocations?: string[];
+  /** User's home country, e.g. "United States" (default). */
+  country?: string;
+  willingToRelocate?: boolean;
+  /** Machine-readable relocation scope (JobPreferences.relocationNote). */
+  relocationScope?: RelocationScope | string;
 }
 
 interface JobData {
@@ -78,30 +85,55 @@ function titleMatch(userTitles: string[], jobTitle: string): number {
 }
 
 function locationMatch(job: JobData, prefs: ProfileData): number {
-  if (!prefs.remotePreference) return 0.5; // no preference = neutral
+  const scope = parseRelocationScope(prefs.relocationScope as string | undefined, prefs.willingToRelocate);
 
+  // Remote roles are location-independent
   if (job.isRemote) {
-    if (prefs.remotePreference === 'remote_only' || prefs.remotePreference === 'hybrid_ok' || prefs.remotePreference === 'any') return 1;
-    return 0.4;
+    if (prefs.remotePreference === 'onsite_ok') return 0.7; // prefers an office but remote still works
+    return 1;
   }
-  if (job.isHybrid) {
-    if (prefs.remotePreference === 'hybrid_ok' || prefs.remotePreference === 'onsite_ok' || prefs.remotePreference === 'any') return 0.85;
-    if (prefs.remotePreference === 'remote_only') return 0.2;
-    return 0.6;
-  }
-  // Onsite
-  if (prefs.remotePreference === 'remote_only') return 0.1;
-  if (prefs.remotePreference === 'hybrid_ok') return 0.5;
-  if (prefs.remotePreference === 'onsite_ok' || prefs.remotePreference === 'any') return 0.9;
 
-  // Location text match
+  // Hard geography check: an on-site/hybrid job in another country is a
+  // non-starter unless the user explicitly opted into international moves.
+  const userCountry = prefs.country || 'United States';
+  if (isForeignLocation(job.location, userCountry) && scope !== 'international') {
+    return 0;
+  }
+
+  // Does the job sit in (or near) one of the user's preferred locations?
+  let nearUser = false;
   if (job.location && prefs.preferredLocations?.length) {
     const jLoc = normalize(job.location);
-    const matches = prefs.preferredLocations.some(l => jLoc.includes(normalize(l)) || normalize(l).includes(jLoc));
-    return matches ? 0.9 : 0.4;
+    nearUser = prefs.preferredLocations.some(l => {
+      const pLoc = normalize(l);
+      if (!pLoc) return false;
+      if (jLoc.includes(pLoc) || pLoc.includes(jLoc)) return true;
+      // Match on shared parts: "Newark, NJ" vs "Jersey City, NJ" share "nj"
+      return pLoc.split(/[,\s]+/).filter(p => p.length >= 2).some(p => new RegExp(`(^|[\\s,])${p}($|[\\s,)])`).test(jLoc));
+    });
   }
 
-  return 0.5;
+  // Base score from work-style preference
+  let base: number;
+  if (job.isHybrid) {
+    if (prefs.remotePreference === 'remote_only') base = 0.2;
+    else base = 0.85;
+  } else {
+    if (prefs.remotePreference === 'remote_only') base = 0.1;
+    else if (prefs.remotePreference === 'hybrid_ok') base = 0.6;
+    else base = 0.9;
+  }
+
+  if (nearUser) return Math.max(base, 0.9);
+
+  // Same country but not near the user: scale by willingness to relocate
+  if (prefs.preferredLocations?.length) {
+    if (scope === 'none') return Math.min(base, 0.25);
+    if (scope === 'regional') return Math.min(base, 0.5);
+    return Math.min(base, 0.7); // national / international
+  }
+
+  return Math.min(base, 0.5); // location unknown on the user side = mild neutral
 }
 
 function compensationMatch(job: JobData, prefs: ProfileData): number {
@@ -138,13 +170,14 @@ export function scoreJob(profile: ProfileData, job: JobData): ScoringResult {
   const roleFamilyScore = roleFamilyMatch(job, profile);
   const industryScore = overlap(profile.industries || [], jobText);
 
-  // Weighted final score
+  // Weighted final score — location weighs more than before so geography
+  // mismatches visibly drag a role down.
   const weightedScore = (
-    skillScore * 0.30 +
+    skillScore * 0.28 +
     roleScore * 0.25 +
-    techScore * 0.15 +
+    techScore * 0.12 +
     experienceScore * 0.10 +
-    locationScore * 0.10 +
+    locationScore * 0.15 +
     compensationScore * 0.05 +
     roleFamilyScore * 0.03 +
     industryScore * 0.02
@@ -156,15 +189,19 @@ export function scoreJob(profile: ProfileData, job: JobData): ScoringResult {
   const reasons: string[] = [];
   if (skillScore > 0.6) reasons.push(`Strong skill match (${Math.round(skillScore * 100)}%)`);
   if (roleScore > 0.5) reasons.push(`Title aligns with your targets`);
-  if (locationScore < 0.3) reasons.push(`⚠️ Location may not match preferences`);
-  if (compensationScore < 0.4) reasons.push(`⚠️ Salary may be below minimum`);
+  if (locationScore === 0) reasons.push(`Location is outside your country and you haven't opted into international relocation`);
+  else if (locationScore < 0.3) reasons.push(`Location may not match preferences`);
+  if (compensationScore < 0.4) reasons.push(`Salary may be below minimum`);
   if (skillScore < 0.3) reasons.push(`Low skill overlap - consider gap analysis`);
 
-  // Recommendation
+  // Recommendation — a geographically impossible role is never recommended,
+  // no matter how well the skills match.
   let recommendation: ScoringResult['recommendation'] = 'ignore';
-  if (overallScore >= 80) recommendation = 'auto_apply';
-  else if (overallScore >= 65) recommendation = 'autofill_draft';
-  else if (overallScore >= 45) recommendation = 'save_for_review';
+  if (locationScore > 0) {
+    if (overallScore >= 80) recommendation = 'auto_apply';
+    else if (overallScore >= 65) recommendation = 'autofill_draft';
+    else if (overallScore >= 45) recommendation = 'save_for_review';
+  }
 
   return {
     score: overallScore,

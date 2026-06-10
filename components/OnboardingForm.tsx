@@ -26,6 +26,20 @@ const ONBOARDING_STEPS = [
     type: 'multi-select',
   },
   {
+    id: 'location',
+    short: 'Home base',
+    label: 'Where are you based?',
+    helper: 'Careeva matches jobs near you first and filters out roles you could never reasonably take.',
+    type: 'location',
+  },
+  {
+    id: 'relocationScope',
+    short: 'Relocation',
+    label: 'How far would you move for the right role?',
+    helper: 'This controls how wide the search goes beyond your home base.',
+    type: 'relocation',
+  },
+  {
     id: 'salary',
     short: 'Salary range',
     label: 'What salary range are you targeting?',
@@ -38,13 +52,6 @@ const ONBOARDING_STEPS = [
     label: 'What work styles fit best?',
     helper: 'Mix remote, hybrid, full-time, contract, and more.',
     type: 'multi-select',
-  },
-  {
-    id: 'willingToRelocate',
-    short: 'Relocation',
-    label: 'Are you open to relocation?',
-    helper: 'This affects how aggressively jobs are surfaced outside your area.',
-    type: 'radio',
   },
   {
     id: 'careerGoals',
@@ -65,16 +72,25 @@ const ONBOARDING_STEPS = [
 const INDUSTRIES = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Manufacturing', 'Education', 'Telecommunications', 'Energy', 'Real Estate', 'Other'];
 const JOB_TYPES = ['Full-time', 'Part-time', 'Contract', 'Internship', 'Remote', 'Hybrid', 'On-site'];
 
+const RELOCATION_OPTIONS = [
+  { value: 'none', label: 'Stay near me', desc: 'Only roles around my home base (plus remote).' },
+  { value: 'regional', label: 'My region', desc: 'Open to nearby states or a few hours away.' },
+  { value: 'national', label: 'Anywhere in my country', desc: 'Would move within the country for the right role.' },
+  { value: 'international', label: 'Internationally', desc: 'Open to roles in other countries too.' },
+];
+
 export default function OnboardingForm({ onSuccess, onError }: OnboardingFormProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     jobTitle: '',
     targetIndustries: [] as string[],
+    city: '',
+    state: '',
+    relocationScope: '',
     desiredSalaryMin: '',
     desiredSalaryMax: '',
     jobType: [] as string[],
-    willingToRelocate: '',
     careerGoals: '',
     additionalInfo: '',
   });
@@ -98,13 +114,17 @@ export default function OnboardingForm({ onSuccess, onError }: OnboardingFormPro
   const handleSubmit = async () => {
     setLoading(true);
 
+    const relocationScope = (formData.relocationScope || 'none') as 'none' | 'regional' | 'national' | 'international';
     const submitData = {
       jobTitle: formData.jobTitle || undefined,
       targetIndustries: formData.targetIndustries.length > 0 ? formData.targetIndustries : undefined,
+      city: formData.city || undefined,
+      state: formData.state || undefined,
+      relocationScope,
+      willingToRelocate: relocationScope !== 'none',
       desiredSalaryMin: formData.desiredSalaryMin ? parseInt(formData.desiredSalaryMin) : undefined,
       desiredSalaryMax: formData.desiredSalaryMax ? parseInt(formData.desiredSalaryMax) : undefined,
       jobType: formData.jobType.length > 0 ? formData.jobType : undefined,
-      willingToRelocate: formData.willingToRelocate === 'yes',
       careerGoals: formData.careerGoals || undefined,
       additionalInfo: formData.additionalInfo || undefined,
     };
@@ -238,27 +258,56 @@ export default function OnboardingForm({ onSuccess, onError }: OnboardingFormPro
           </div>
         )}
 
-        {step.type === 'radio' && (
+        {step.type === 'location' && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="home-city" className="field-label">City</label>
+              <input
+                id="home-city"
+                type="text"
+                value={formData.city}
+                onChange={(e) => handleInputChange('city', e.target.value)}
+                placeholder="e.g. Hoboken"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label htmlFor="home-state" className="field-label">State / region</label>
+              <input
+                id="home-state"
+                type="text"
+                value={formData.state}
+                onChange={(e) => handleInputChange('state', e.target.value)}
+                placeholder="e.g. NJ"
+              />
+            </div>
+          </div>
+        )}
+
+        {step.type === 'relocation' && (
           <div className="grid gap-3 sm:grid-cols-2">
-            {['yes', 'no'].map((option) => {
-              const checked = formData.willingToRelocate === option;
+            {RELOCATION_OPTIONS.map((option) => {
+              const checked = formData.relocationScope === option.value;
               return (
                 <label
-                  key={option}
+                  key={option.value}
                   className={`cursor-pointer rounded-2xl border p-4 transition ${
                     checked ? 'border-blue-400/40 bg-blue-500/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-start gap-3">
                     <input
                       type="radio"
                       name="relocation"
-                      value={option}
+                      value={option.value}
                       checked={checked}
-                      onChange={(e) => handleInputChange('willingToRelocate', e.target.value)}
-                      className="h-4 w-4 accent-blue-500"
+                      onChange={(e) => handleInputChange('relocationScope', e.target.value)}
+                      className="mt-1 h-4 w-4 accent-blue-500"
                     />
-                    <span className="capitalize text-slate-200">{option}</span>
+                    <span>
+                      <span className="block font-medium text-slate-100">{option.label}</span>
+                      <span className="mt-0.5 block text-sm text-slate-400">{option.desc}</span>
+                    </span>
                   </div>
                 </label>
               );

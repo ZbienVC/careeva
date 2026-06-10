@@ -102,6 +102,12 @@ export interface OnboardingRequest {
   desiredSalaryMax?: number;
   jobType?: string[];
   willingToRelocate?: boolean;
+  /** How far the user would move: none | regional | national | international */
+  relocationScope?: 'none' | 'regional' | 'national' | 'international';
+  /** Home base, used for location-aware search and scoring */
+  city?: string;
+  state?: string;
+  country?: string;
   careerGoals?: string;
   additionalInfo?: string;
 }

@@ -22,6 +22,7 @@ import { aggregateJobSearch, getAvailableSources } from '@/lib/job-search';
 import { autoApplyToJob } from '@/lib/auto-apply';
 import { enqueueApplyTask } from '@/lib/apply-queue';
 import { scoreJob } from '@/lib/job-scorer';
+import { parseRelocationScope, canonicalCountry } from '@/lib/geo';
 
 const DEFAULT_APPLY_THRESHOLD = 50;
 const MAX_APPLIES_PER_RUN = 10;
@@ -29,8 +30,9 @@ const MAX_APPLIES_PER_RUN = 10;
 type AutomateMode = 'score_only' | 'prep_all' | 'auto_safe' | 'full_auto';
 
 async function buildScoringProfile(userId: string) {
-  const [profile, skills, jobPrefs, workHistory] = await Promise.all([
+  const [profile, personalInfo, skills, jobPrefs, workHistory] = await Promise.all([
     prisma.userProfile.findUnique({ where: { userId } }),
+    prisma.personalInfo.findUnique({ where: { userId } }),
     prisma.skill.findMany({ where: { userId } }),
     prisma.jobPreferences.findUnique({ where: { userId } }),
     prisma.workHistory.findMany({ where: { userId }, orderBy: { startDate: 'desc' } }),
@@ -63,6 +65,9 @@ async function buildScoringProfile(userId: string) {
     salaryMax: jobPrefs?.salaryMaxUSD || undefined,
     remotePreference: jobPrefs?.remotePreference || undefined,
     preferredLocations: jobPrefs?.preferredLocations || [],
+    country: canonicalCountry(personalInfo?.country),
+    willingToRelocate: jobPrefs?.willingToRelocate ?? profile?.willingToRelocate ?? false,
+    relocationScope: parseRelocationScope(jobPrefs?.relocationNote, jobPrefs?.willingToRelocate ?? profile?.willingToRelocate),
   };
 }
 
@@ -106,28 +111,40 @@ export async function POST(request: NextRequest) {
       // Glassdoor via Google for Jobs / Adzuna / Remotive / The Muse / etc.)
       // Sources auto-enable based on which API keys are configured.
       try {
-        const jobPrefs = await prisma.jobPreferences.findUnique({ where: { userId: user.id } });
+        const [jobPrefs, userProfile, personalInfo] = await Promise.all([
+          prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
+          prisma.userProfile.findUnique({ where: { userId: user.id } }),
+          prisma.personalInfo.findUnique({ where: { userId: user.id } }),
+        ]);
         const workHistory = await prisma.workHistory.findMany({
           where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 3,
         });
         let queries: string[] =
           Array.isArray(jobPrefs?.targetTitles) && jobPrefs.targetTitles.length > 0
             ? (jobPrefs.targetTitles as string[]).slice(0, 3)
-            : workHistory.map((w: { title: string }) => w.title).filter(Boolean).slice(0, 2);
+            : userProfile?.jobTitle
+              ? [userProfile.jobTitle]
+              : workHistory.map((w: { title: string }) => w.title).filter(Boolean).slice(0, 2);
         queries = [...new Set(queries)];
 
         if (queries.length === 0) {
           runLog.push('Aggregator skipped: no target titles or work history to search with. Set target titles in Job Preferences.');
         } else {
           const sources = getAvailableSources();
+          const homeBase = [personalInfo?.city, personalInfo?.state].filter(Boolean).join(', ');
           const locations: string[] =
             Array.isArray(jobPrefs?.preferredLocations) && jobPrefs.preferredLocations.length > 0
               ? (jobPrefs.preferredLocations as string[]).slice(0, 2)
-              : ['United States'];
-          runLog.push('Aggregator searching ' + sources.length + ' sources (' + sources.join(', ') + ') for: ' + queries.join(' | '));
-          const agg = await aggregateJobSearch({ userId: user.id, queries, locations, sources });
+              : homeBase ? [homeBase] : ['United States'];
+          const scope = parseRelocationScope(jobPrefs?.relocationNote, jobPrefs?.willingToRelocate ?? userProfile?.willingToRelocate);
+          runLog.push('Aggregator searching ' + sources.length + ' sources (' + sources.join(', ') + ') for: ' + queries.join(' | ') + ' near ' + locations.join(' / '));
+          const agg = await aggregateJobSearch({
+            userId: user.id, queries, locations, sources,
+            userCountry: canonicalCountry(personalInfo?.country),
+            allowInternational: scope === 'international',
+          });
           stats.searched += agg.new;
-          runLog.push('Aggregator complete: ' + agg.new + ' new jobs (' + agg.duped + ' duplicates skipped, ' + agg.total + ' total found)');
+          runLog.push('Aggregator complete: ' + agg.new + ' new jobs (' + agg.duped + ' duplicates skipped, ' + agg.filtered + ' irrelevant/out-of-area filtered, ' + agg.total + ' total found)');
         }
       } catch (aggErr) {
         runLog.push('Aggregator error: ' + (aggErr instanceof Error ? aggErr.message : String(aggErr)));

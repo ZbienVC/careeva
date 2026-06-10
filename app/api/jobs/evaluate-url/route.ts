@@ -173,8 +173,10 @@ export async function POST(request: NextRequest) {
 
     // Score the job
     const { scoreJob } = await import('@/lib/job-scorer');
-    const [profile, skills, jobPrefs, workHistory] = await Promise.all([
+    const { parseRelocationScope, canonicalCountry } = await import('@/lib/geo');
+    const [profile, personalInfo, skills, jobPrefs, workHistory] = await Promise.all([
       prisma.userProfile.findUnique({ where: { userId: user.id } }),
+      prisma.personalInfo.findUnique({ where: { userId: user.id } }),
       prisma.skill.findMany({ where: { userId: user.id } }),
       prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
       prisma.workHistory.findMany({ where: { userId: user.id }, orderBy: { startDate: 'desc' } }),
@@ -199,6 +201,9 @@ export async function POST(request: NextRequest) {
         salaryMax: jobPrefs?.salaryMaxUSD || undefined,
         remotePreference: jobPrefs?.remotePreference || undefined,
         preferredLocations: jobPrefs?.preferredLocations || [],
+        country: canonicalCountry(personalInfo?.country),
+        willingToRelocate: jobPrefs?.willingToRelocate ?? profile?.willingToRelocate ?? false,
+        relocationScope: parseRelocationScope(jobPrefs?.relocationNote, jobPrefs?.willingToRelocate ?? profile?.willingToRelocate),
       };
 
       const scoreResult = scoreJob(scoringProfile, {

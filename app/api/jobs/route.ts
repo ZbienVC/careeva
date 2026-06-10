@@ -12,9 +12,22 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const skip = parseInt(searchParams.get('skip') || '0', 10);
+    const search = (searchParams.get('search') || '').trim();
+
+    // Search the FULL job set server-side, before pagination — filtering after
+    // pagination silently searched only one page of results.
+    const where: any = { userId: user.id };
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { company: { contains: search, mode: 'insensitive' } },
+        { location: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
 
     const jobs = await prisma.job.findMany({
-      where: { userId: user.id },
+      where,
       include: {
         jobScores: {
           where: { userId: user.id },
@@ -30,7 +43,7 @@ export async function GET(request: NextRequest) {
       skip,
     });
 
-    const total = await prisma.job.count({ where: { userId: user.id } });
+    const total = await prisma.job.count({ where });
 
     return NextResponse.json({ jobs, pagination: { total, limit, skip } }, { status: 200 });
   } catch (error) {

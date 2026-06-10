@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/session';
 import { runJobSync, cleanupStaleJobs, TOP_GREENHOUSE_BOARDS, TOP_LEVER_BOARDS, TOP_ASHBY_BOARDS } from '@/lib/job-connectors';
-import { aggregateJobSearch } from '@/lib/job-search';
+import { aggregateJobSearch, getAvailableSources } from '@/lib/job-search';
+import { parseRelocationScope, canonicalCountry } from '@/lib/geo';
 import { prisma } from '@/lib/db';
 
 // POST /api/jobs/sync - full ATS board sync + general search
@@ -13,8 +14,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
 
     // Load user preferences
-    const [prefs, skills, workHistory] = await Promise.all([
+    const [prefs, profile, personalInfo, skills, workHistory] = await Promise.all([
       prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
+      prisma.userProfile.findUnique({ where: { userId: user.id } }),
+      prisma.personalInfo.findUnique({ where: { userId: user.id } }),
       prisma.skill.findMany({ where: { userId: user.id }, take: 20 }),
       prisma.workHistory.findMany({ where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 3 }),
     ]);
@@ -35,24 +38,35 @@ export async function POST(request: NextRequest) {
     const syncResult = await runJobSync(user.id, sources);
 
     // ── Step 4: General search for discovery of NEW companies ─────────────────
-    // Build queries from profile
+    // Build queries from profile: preferences > onboarding title > work history > fallback
     const profileTitles = Array.isArray(prefs?.targetTitles)
       ? prefs.targetTitles
       : String(prefs?.targetTitles || '').split(',').map((s: string) => s.trim()).filter(Boolean);
 
     const queries: string[] = profileTitles.length > 0
       ? profileTitles.slice(0, 3)
-      : workHistory.length > 0
-        ? workHistory.slice(0, 2).map((w: any) => w.title as string).filter(Boolean)
-        : ['Software Engineer', 'AI Engineer', 'Full Stack Engineer'];
+      : profile?.jobTitle
+        ? [profile.jobTitle]
+        : workHistory.length > 0
+          ? workHistory.slice(0, 2).map((w: any) => w.title as string).filter(Boolean)
+          : ['Software Engineer', 'AI Engineer', 'Full Stack Engineer'];
+
+    const homeBase = [personalInfo?.city, personalInfo?.state].filter(Boolean).join(', ');
+    const locations: string[] = prefs?.preferredLocations?.length
+      ? prefs.preferredLocations
+      : homeBase ? [homeBase] : ['United States'];
+
+    const relocationScope = parseRelocationScope(prefs?.relocationNote, prefs?.willingToRelocate ?? profile?.willingToRelocate);
 
     const searchResult = await aggregateJobSearch({
       userId: user.id,
       queries: [...new Set(queries)],
-      locations: ['United States'],
-      sources: ['remotive', 'themuse'],
+      locations,
+      sources: getAvailableSources(),
       greenhouseBoards: [],
       leverBoards: [],
+      userCountry: canonicalCountry(personalInfo?.country),
+      allowInternational: relocationScope === 'international',
     });
 
     // ── Count active jobs ─────────────────────────────────────────────────────

@@ -227,20 +227,14 @@ export const jobsAPI = {
 
     if (!result.success) return result as ApiResponse<JobsListResponse>;
 
+    // Search happens server-side (against the full job set) — no client filtering.
     const rawJobs = result.data?.jobs || [];
-    const filteredJobs = params?.search
-      ? rawJobs.filter((job: any) =>
-          [job.title, job.company, job.location, job.description]
-            .filter(Boolean)
-            .some((value: string) => value.toLowerCase().includes(params.search!.toLowerCase()))
-        )
-      : rawJobs;
 
     return {
       success: true,
       data: {
-        jobs: filteredJobs.map(normalizeJob),
-        total: result.data?.pagination?.total || filteredJobs.length,
+        jobs: rawJobs.map(normalizeJob),
+        total: result.data?.pagination?.total ?? rawJobs.length,
         page,
         pageSize,
       },

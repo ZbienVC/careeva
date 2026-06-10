@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUserFromRequest } from '@/lib/session';
-import { aggregateJobSearch, CURATED_GREENHOUSE_BOARDS, CURATED_LEVER_BOARDS } from '@/lib/job-search';
+import { aggregateJobSearch, getAvailableSources, CURATED_GREENHOUSE_BOARDS, CURATED_LEVER_BOARDS } from '@/lib/job-search';
+import { parseRelocationScope, canonicalCountry } from '@/lib/geo';
 import { prisma } from '@/lib/prisma';
 
 // Neutral default search titles. Used only when the user has not configured
@@ -27,13 +28,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
 
     // Load user preferences
-    const [prefs, skills, workHistory] = await Promise.all([
+    const [prefs, profile, personalInfo, skills, workHistory] = await Promise.all([
       prisma.jobPreferences.findUnique({ where: { userId: user.id } }),
+      prisma.userProfile.findUnique({ where: { userId: user.id } }),
+      prisma.personalInfo.findUnique({ where: { userId: user.id } }),
       prisma.skill.findMany({ where: { userId: user.id }, take: 20 }),
       prisma.workHistory.findMany({ where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 3 }),
     ]);
 
-    // Build search queries: explicit body > preferences > work history > neutral default
+    // Build search queries: explicit body > preferences > onboarding profile > work history > neutral default
     let queries: string[] = body.queries || [];
 
     if (queries.length === 0) {
@@ -43,6 +46,10 @@ export async function POST(request: NextRequest) {
           ? prefs.targetTitles
           : String(prefs.targetTitles).split(',').map((s: string) => s.trim()).filter(Boolean);
         queries = titles.slice(0, 4);
+      }
+
+      if (queries.length === 0 && profile?.jobTitle) {
+        queries = [profile.jobTitle];
       }
 
       if (queries.length === 0 && workHistory.length > 0) {
@@ -58,17 +65,16 @@ export async function POST(request: NextRequest) {
     // Deduplicate
     queries = [...new Set(queries)].slice(0, 5);
 
-    // Source selection - curated tech/startup sources only, no broad retail boards
-    type JobSource = 'google'|'remotive'|'adzuna'|'themuse'|'greenhouse'|'lever'|'indeed'|'weworkremotely'|'monster'|'remoteco'|'usajobs'|'arbeitnow'|'authenticjobs'|'jsearch'|'dice';
-    const sources: JobSource[] = (body.sources || [
-      'remotive',    // Remote tech jobs, well-filtered
-      'themuse',     // Curated companies, good quality
-      'greenhouse',  // Direct ATS boards - best quality
-      'lever',       // Direct ATS boards - best quality
-    ]) as JobSource[];
+    // Sources: every source that can run right now (free ones always; keyed
+    // ones when their env key is configured) — maximize coverage by default.
+    const sources = (body.sources || getAvailableSources()) as NonNullable<Parameters<typeof aggregateJobSearch>[0]['sources']>;
 
-    // Location - remote first for tech roles
-    const locations = body.locations || ['United States'];
+    // Locations: explicit body > saved preferences > home base > country-wide
+    const homeBase = [personalInfo?.city, personalInfo?.state].filter(Boolean).join(', ');
+    const locations: string[] = body.locations
+      || (prefs?.preferredLocations?.length ? prefs.preferredLocations : homeBase ? [homeBase] : ['United States']);
+
+    const relocationScope = parseRelocationScope(prefs?.relocationNote, prefs?.willingToRelocate ?? profile?.willingToRelocate);
 
     // Build curated Greenhouse/Lever boards based on profile.
     // Use the user's own targets when present; fall back to neutral defaults only if empty.
@@ -108,6 +114,8 @@ export async function POST(request: NextRequest) {
       sources,
       greenhouseBoards: [...new Set(greenhouseBoards)].slice(0, 20),
       leverBoards: [...new Set(leverBoards)].slice(0, 20),
+      userCountry: canonicalCountry(personalInfo?.country),
+      allowInternational: relocationScope === 'international',
     });
 
     return NextResponse.json({

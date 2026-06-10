@@ -133,7 +133,7 @@ export default function AutomatePage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<Mode>('score_only');
-  const [threshold, setThreshold] = useState(70);
+  const [threshold, setThreshold] = useState(65);
   const [maxApplies, setMaxApplies] = useState(10);
   const [doSearch, setDoSearch] = useState(true);
   const [pipeline, setPipeline] = useState<any>(null);
@@ -459,8 +459,8 @@ export default function AutomatePage() {
                 <label className="field-label !text-xs font-bold uppercase tracking-wider !text-slate-400">
                   Score threshold: <span className="normal-case font-black text-white">{threshold}</span>
                 </label>
-                <input type="range" min="50" max="95" step="5" value={threshold} onChange={e => setThreshold(+e.target.value)} className="w-full accent-emerald-500" />
-                <div className="mt-1 flex justify-between text-[10px] text-slate-500"><span>50 (more)</span><span>95 (best match)</span></div>
+                <input type="range" min="40" max="95" step="5" value={threshold} onChange={e => setThreshold(+e.target.value)} className="w-full accent-emerald-500" />
+                <div className="mt-1 flex justify-between text-[10px] text-slate-500"><span>40 (more)</span><span>95 (best match)</span></div>
               </div>
               <div>
                 <label className="field-label !text-xs font-bold uppercase tracking-wider !text-slate-400">

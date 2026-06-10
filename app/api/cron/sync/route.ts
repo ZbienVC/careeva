@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
 
         const unscoredJobs = await prisma.job.findMany({
           where: { userId: user.id, isActive: true, jobScores: { none: {} } },
-          take: 200,
+          take: 5000,
         });
 
         for (const job of unscoredJobs) {

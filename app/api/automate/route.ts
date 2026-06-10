@@ -153,13 +153,15 @@ export async function POST(request: NextRequest) {
 
     // Step 2: Score all unscored jobs ─────────────────────────────────────────
     const profileData = await buildScoringProfile(user.id);
+    // Scoring is pure local computation (no AI calls) — process the whole
+    // backlog instead of 100 at a time, which left thousands unscored.
     const unscoredJobs = await prisma.job.findMany({
       where: {
         userId: user.id,
         isActive: true,
         jobScores: { none: {} },
       },
-      take: 100,
+      take: 5000,
     });
 
     if (unscoredJobs.length > 0) {

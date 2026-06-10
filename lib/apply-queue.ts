@@ -177,13 +177,26 @@ export async function enqueueApplyTask(
   }
   const nameParts = personalInfo.fullName.trim().split(/\s+/);
 
-  // Resume file key (worker attaches the REAL file)
-  const resume = await prisma.resume.findFirst({
+  // Resume file key (worker attaches the REAL file). Prefer the newest resume
+  // whose file bytes actually exist in storage — records uploaded before
+  // DB-backed storage have keys but no blob and can't be attached.
+  const resumeCandidates = await prisma.resume.findMany({
     where: { userId, fileUrl: { startsWith: 'storage://' } },
     orderBy: [{ isBase: 'desc' }, { createdAt: 'desc' }],
+    take: 5,
+    select: { fileUrl: true },
   });
+  let resume: { fileUrl: string } | null = null;
+  for (const candidate of resumeCandidates) {
+    const key = candidate.fileUrl!.slice('storage://'.length);
+    const blob = await prisma.fileBlob.findUnique({ where: { key }, select: { key: true } });
+    if (blob) {
+      resume = { fileUrl: candidate.fileUrl! };
+      break;
+    }
+  }
   if (!resume) {
-    return { status: 'blocked_no_resume_file', blocked: 'No stored resume file. Upload your resume (file storage is now enabled).' };
+    return { status: 'blocked_no_resume_file', blocked: 'No stored resume file found — upload your resume on the Profile page, then try again.' };
   }
 
   // ── Resolve the real apply URL (LinkedIn → ATS, redirectors → final) ──

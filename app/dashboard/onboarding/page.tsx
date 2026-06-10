@@ -12,10 +12,12 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [hasResume, setHasResume] = useState(false);
 
   useEffect(() => {
     profileAPI.get().then((result) => {
       if (!result.success) router.push('/login');
+      else setHasResume(Boolean(result.data?.resumeUrl));
       setLoading(false);
     });
   }, [router]);
@@ -30,11 +32,26 @@ export default function OnboardingPage() {
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-500/15 text-emerald-300"><IconCheckCircle size={32} /></div>
             <h1 className="mt-6 text-4xl font-bold text-white">You’re dialed in.</h1>
             <p className="mt-4 text-lg text-slate-300">
-              Your preferences are saved. Careeva can now personalize job matching, ranking, and cover letter generation much more effectively.
+              {hasResume
+                ? 'Your preferences are saved. Careeva can now personalize job matching, ranking, and cover letter generation much more effectively.'
+                : 'Your preferences are saved. One step left before the matching gets sharp: upload your resume so Careeva can learn your real experience and skills.'}
             </p>
-            <button onClick={() => router.push('/dashboard/jobs')} className="btn-primary mt-8">
-              Browse matched jobs
-            </button>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              {hasResume ? (
+                <button onClick={() => router.push('/dashboard/jobs')} className="btn-primary">
+                  Browse matched jobs
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => router.push('/dashboard/profile')} className="btn-primary">
+                    Upload your resume next
+                  </button>
+                  <button onClick={() => router.push('/dashboard/jobs')} className="btn-ghost">
+                    Skip for now — browse jobs
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

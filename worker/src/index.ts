@@ -26,6 +26,7 @@
 import { PrismaClient } from '@prisma/client';
 import { chromium, Browser } from 'playwright';
 import crypto from 'crypto';
+import fs from 'fs';
 import { getAdapterFor } from './adapters';
 import { storagePathFor, saveScreenshot } from './storage';
 
@@ -100,6 +101,17 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
     const packet = (task.packet || {}) as Record<string, unknown>;
     const resumeKey = packet.resumeKey as string | undefined;
     const resumePath = resumeKey ? storagePathFor(resumeKey) : null;
+
+    // Never submit an application with a silently-missing resume: if the packet
+    // references a file the volume doesn't have (volume not mounted, stale key),
+    // stop here with an actionable error instead of filing a resume-less app.
+    if (resumePath && !fs.existsSync(resumePath)) {
+      await setStatus(task.id, 'needs_review', {
+        lastError: 'Resume file not found on the worker volume — confirm both services share the same volume/mount path, then re-upload your resume and retry.',
+      });
+      log(`resume file missing at ${resumePath}`);
+      return;
+    }
 
     // ── Resume submission for an already-approved task ──
     if (task.status === 'submitting' && task.approvedAt) {
@@ -183,7 +195,16 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[${WORKER_ID}] task ${task.id} error:`, msg);
-    await setStatus(task.id, task.attempts >= 3 ? 'failed' : 'queued', { lastError: msg, claimedBy: null });
+    const finalFailure = task.attempts >= 3;
+    await setStatus(task.id, finalFailure ? 'failed' : 'queued', { lastError: msg, claimedBy: null });
+    // Don't leave the tracker stuck in 'prepping' forever on a permanent failure —
+    // park the application back in 'saved' with the error so the user can act.
+    if (finalFailure && task.applicationId) {
+      await prisma.application.updateMany({
+        where: { id: task.applicationId, status: 'prepping' },
+        data: { status: 'saved', notes: `Auto-apply failed after 3 attempts: ${msg.slice(0, 400)}` },
+      }).catch((e: unknown) => console.error(`[${WORKER_ID}] tracker sync failed:`, e));
+    }
   } finally {
     await context.close().catch(() => {});
     // Randomized inter-application delay (Q16: human-ish pacing)
@@ -191,16 +212,27 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
   }
 }
 
-async function main() {
-  console.log(`[${WORKER_ID}] Careeva apply worker starting (poll ${POLL_MS}ms, headless=${HEADLESS})`);
-  // Recover tasks stuck in transient states from a crashed worker (>15 min old)
+/** Recover tasks stuck in transient states from a crashed worker (>15 min old). */
+async function recoverStuckTasks() {
   await prisma.applyTask.updateMany({
     where: { status: { in: ['claimed', 'filling', 'submitting'] }, claimedAt: { lt: new Date(Date.now() - 15 * 60 * 1000) } },
     data: { status: 'queued', claimedBy: null },
   }).catch(() => {});
+}
+
+async function main() {
+  console.log(`[${WORKER_ID}] Careeva apply worker starting (poll ${POLL_MS}ms, headless=${HEADLESS})`);
+  await recoverStuckTasks();
+  let lastRecovery = Date.now();
 
   for (;;) {
     try {
+      // Periodic (not just boot-time) recovery, so a crash mid-run can't
+      // strand tasks until the next deploy.
+      if (Date.now() - lastRecovery > 5 * 60 * 1000) {
+        await recoverStuckTasks();
+        lastRecovery = Date.now();
+      }
       const task = await claimTask();
       if (task) {
         await processTask(task);

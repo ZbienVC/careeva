@@ -223,7 +223,24 @@ export async function POST(request: NextRequest) {
     // BUGFIX: previously ordered by jobScores _count (meaningless); order by actual score.
     topJobs.sort((a: { jobScores: Array<{ overallScore: number | null }> }, b: { jobScores: Array<{ overallScore: number | null }> }) =>
       (b.jobScores[0]?.overallScore || 0) - (a.jobScores[0]?.overallScore || 0));
-    const selectedJobs = perRunCap > 0 ? topJobs.slice(0, perRunCap) : topJobs;
+
+    // Honor the user's blacklists/whitelist BEFORE the per-run cap, so blocked
+    // jobs don't consume application slots.
+    const companyBlacklist = (config?.companyBlacklist || []).map((c) => c.toLowerCase()).filter(Boolean);
+    const titleBlacklist = (config?.titleBlacklist || []).map((t) => t.toLowerCase()).filter(Boolean);
+    const titleWhitelist = (config?.titleWhitelist || []).map((t) => t.toLowerCase()).filter(Boolean);
+    const eligibleJobs = topJobs.filter((job) => {
+      const company = job.company.toLowerCase();
+      const title = job.title.toLowerCase();
+      if (companyBlacklist.some((c) => company.includes(c))) return false;
+      if (titleBlacklist.some((t) => title.includes(t))) return false;
+      if (titleWhitelist.length && !titleWhitelist.some((t) => title.includes(t))) return false;
+      return true;
+    });
+    const filteredOut = topJobs.length - eligibleJobs.length;
+    if (filteredOut > 0) runLog.push(filteredOut + ' jobs excluded by your blacklist/whitelist settings');
+
+    const selectedJobs = perRunCap > 0 ? eligibleJobs.slice(0, perRunCap) : eligibleJobs;
 
     if (selectedJobs.length === 0) {
       runLog.push('No jobs above ' + effectiveThreshold + ' score threshold. Try lowering the threshold in Settings or run sync first.');
@@ -254,10 +271,8 @@ export async function POST(request: NextRequest) {
 
         const enq = await enqueueApplyTask(user.id, job.id, taskMode);
         if (enq.blocked) {
-          stats.queued++;
           runLog.push('    Skipped: ' + enq.blocked);
         } else if (enq.duplicate && enq.duplicateInfo) {
-          stats.submitted += 0;
           runLog.push('    NOTE: previously applied to ' + enq.duplicateInfo.company + ' (' + enq.duplicateInfo.role + ') — enqueued anyway per settings. Task ' + enq.taskId);
           stats.queued++;
         } else {
@@ -272,7 +287,8 @@ export async function POST(request: NextRequest) {
 
     runLog.push('');
     runLog.push('Run summary: ' + stats.searched + ' new jobs, ' + stats.scored + ' scored, ' +
-      stats.packetsBuilt + ' packets built, ' + stats.submitted + ' submitted, ' + stats.queued + ' queued');
+      stats.packetsBuilt + ' packets built, ' + stats.queued + ' queued for the apply worker' +
+      (stats.queued > 0 ? ' — track them in the Review queue' : ''));
 
     return NextResponse.json({ success: true, mode, stats, log: runLog });
 

@@ -27,6 +27,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Please upload a PDF, DOCX, TXT, or image (PNG/JPG/WebP) file' }, { status: 400 });
     }
 
+    // Image resumes need AI vision to read — fail fast with a clear message
+    // instead of a 500 deep inside the parser.
+    const imageExts = ['.png', '.jpg', '.jpeg', '.webp'];
+    if (imageExts.includes(ext) && !process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: 'Image resumes need AI vision (OPENAI_API_KEY) to read. Please upload your resume as PDF or DOCX instead.' },
+        { status: 400 }
+      );
+    }
+
     const bytes = Buffer.from(await file.arrayBuffer());
 
     // Persist the REAL file (Railway Volume via lib/storage) so it can be

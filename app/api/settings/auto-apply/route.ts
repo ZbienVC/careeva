@@ -34,7 +34,7 @@ export async function PUT(request: NextRequest) {
     'autoApplyEnabled', 'submitMode', 'unknownQuestionMode', 'attachCoverLetter',
     'resumeVariant', 'minScoreToApply', 'minScoreToAutoApply', 'maxAppliesPerRun',
     'minDelaySeconds', 'maxDelaySeconds', 'allowSameCompanyRoles',
-    'companyBlacklist', 'titleBlacklist',
+    'companyBlacklist', 'titleBlacklist', 'titleWhitelist', 'maxApplicationsPerDay',
   ];
   const data: Record<string, unknown> = {};
   for (const key of allowed) if (key in body) data[key] = body[key];

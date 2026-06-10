@@ -12,9 +12,13 @@ interface Config {
   minScoreToApply: number;
   minScoreToAutoApply?: number;
   maxAppliesPerRun: number;
+  maxApplicationsPerDay?: number;
   minDelaySeconds: number;
   maxDelaySeconds: number;
   allowSameCompanyRoles: boolean;
+  companyBlacklist?: string[];
+  titleBlacklist?: string[];
+  titleWhitelist?: string[];
 }
 
 const DEFAULTS: Config = {
@@ -25,10 +29,35 @@ const DEFAULTS: Config = {
   minScoreToApply: 50,
   minScoreToAutoApply: 75,
   maxAppliesPerRun: 0,
+  maxApplicationsPerDay: 5,
   minDelaySeconds: 30,
   maxDelaySeconds: 90,
   allowSameCompanyRoles: false,
+  companyBlacklist: [],
+  titleBlacklist: [],
+  titleWhitelist: [],
 };
+
+function ListField({ id, label, help, value, onSave, placeholder }: {
+  id: string; label: string; help: string; value: string[]; onSave: (list: string[]) => void; placeholder: string;
+}) {
+  const [text, setText] = useState(value.join(', '));
+  useEffect(() => setText(value.join(', ')), [value]);
+  return (
+    <div>
+      <label className="field-label" htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type="text"
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => onSave(text.split(',').map((s) => s.trim()).filter(Boolean))}
+      />
+      <p className="field-help">{help}</p>
+    </div>
+  );
+}
 
 function Section({ title, children, hint }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -176,12 +205,18 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Volume & pacing">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="field-label" htmlFor="max-applies">Max applies per run</label>
               <input id="max-applies" type="number" min={0} value={config.maxAppliesPerRun}
                 onChange={(e) => save({ maxAppliesPerRun: Number(e.target.value) })} />
               <p className="field-help">0 = unlimited</p>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="max-daily">Max applications per day</label>
+              <input id="max-daily" type="number" min={0} value={config.maxApplicationsPerDay ?? 5}
+                onChange={(e) => save({ maxApplicationsPerDay: Number(e.target.value) })} />
+              <p className="field-help">Hard daily cap across all runs. 0 = unlimited</p>
             </div>
             <div>
               <label className="field-label" htmlFor="min-delay">Min delay between apps (sec)</label>
@@ -193,6 +228,35 @@ export default function SettingsPage() {
               <input id="max-delay" type="number" min={5} value={config.maxDelaySeconds}
                 onChange={(e) => save({ maxDelaySeconds: Number(e.target.value) })} />
             </div>
+          </div>
+        </Section>
+
+        <Section title="Filters" hint="Hard rules the engine always honors — at selection and again at enqueue.">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <ListField
+              id="company-blacklist"
+              label="Never apply to these companies"
+              help="Comma-separated. Matched anywhere in the company name."
+              value={config.companyBlacklist || []}
+              onSave={(list) => save({ companyBlacklist: list })}
+              placeholder="e.g. Acme Corp, Globex"
+            />
+            <ListField
+              id="title-blacklist"
+              label="Never apply to these titles"
+              help="Comma-separated. Matched anywhere in the job title."
+              value={config.titleBlacklist || []}
+              onSave={(list) => save({ titleBlacklist: list })}
+              placeholder="e.g. unpaid, commission only"
+            />
+            <ListField
+              id="title-whitelist"
+              label="Only apply to titles containing"
+              help="Leave empty to allow all titles."
+              value={config.titleWhitelist || []}
+              onSave={(list) => save({ titleWhitelist: list })}
+              placeholder="e.g. analyst, strategy"
+            />
           </div>
         </Section>
 

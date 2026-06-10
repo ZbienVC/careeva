@@ -62,18 +62,18 @@ export default function DashboardPage() {
     const hasMatches = recentJobs.length > 0;
     return [
       {
+        id: 'preferences',
+        href: '/dashboard/onboarding',
+        title: 'Answer a few questions',
+        desc: 'Target role, industries, home base, salary, and goals steer the search.',
+        done: hasPreferences,
+      },
+      {
         id: 'resume',
         href: '/dashboard/profile',
         title: 'Upload your resume',
         desc: 'Careeva parses your experience, skills, and education automatically.',
         done: hasResume,
-      },
-      {
-        id: 'preferences',
-        href: '/dashboard/onboarding',
-        title: 'Answer a few questions',
-        desc: 'Target role, industries, salary, and goals sharpen every match.',
-        done: hasPreferences,
       },
       {
         id: 'matches',

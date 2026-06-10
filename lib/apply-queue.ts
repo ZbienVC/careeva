@@ -59,6 +59,31 @@ export async function enqueueApplyTask(
 
   const config = await prisma.autoApplyConfig.findUnique({ where: { userId } });
 
+  // ── User-configured filters: blacklists/whitelist are hard gates ──
+  const companyLow = job.company.toLowerCase();
+  const titleLow = job.title.toLowerCase();
+  if (config?.companyBlacklist?.some((c) => c && companyLow.includes(c.toLowerCase()))) {
+    return { status: 'blocked_company_blacklist', blocked: `${job.company} is on your company blacklist (Settings → Auto-apply).` };
+  }
+  if (config?.titleBlacklist?.some((t) => t && titleLow.includes(t.toLowerCase()))) {
+    return { status: 'blocked_title_blacklist', blocked: `"${job.title}" matches your title blacklist (Settings → Auto-apply).` };
+  }
+  if (config?.titleWhitelist?.length && !config.titleWhitelist.some((t) => t && titleLow.includes(t.toLowerCase()))) {
+    return { status: 'blocked_title_whitelist', blocked: `"${job.title}" doesn't match your title whitelist (Settings → Auto-apply).` };
+  }
+
+  // ── Daily application cap ──
+  if (config?.maxApplicationsPerDay) {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const todayCount = await prisma.applyTask.count({
+      where: { userId, createdAt: { gte: dayStart }, status: { notIn: ['cancelled', 'failed'] } },
+    });
+    if (todayCount >= config.maxApplicationsPerDay) {
+      return { status: 'blocked_daily_limit', blocked: `Daily limit reached (${config.maxApplicationsPerDay} applications/day — raise it in Settings → Auto-apply).` };
+    }
+  }
+
   // ── Q15 duplicate policy ──
   const prior = await prisma.application.findFirst({
     where: { userId, company: job.company, status: { notIn: ['withdrawn', 'cancelled'] } },
@@ -111,11 +136,13 @@ export async function enqueueApplyTask(
   }
 
   // ── Application row (tracker) ──
+  // 'prepping' is the valid tracker status while the worker fills/awaits
+  // approval; the worker flips it to 'applied' on successful submission.
   const application = await prisma.application.create({
     data: {
       userId, jobId,
       company: job.company, role: job.title,
-      status: 'queued', url: job.url, applyUrl,
+      status: 'prepping', url: job.url, applyUrl,
       atsType: atsType || job.atsType, submittedVia: 'careeva-worker',
     },
   });

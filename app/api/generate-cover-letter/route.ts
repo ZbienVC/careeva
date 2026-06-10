@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
       data: {
         userId: user.id,
         type: 'cover_letter',
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4-6',
         jobId: jobId || undefined,
         jobTitle,
         company,

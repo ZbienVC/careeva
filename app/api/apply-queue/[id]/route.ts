@@ -28,30 +28,51 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const task = await prisma.applyTask.findFirst({ where: { id, userId: user.id } });
   if (!task) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // All transitions are CONDITIONAL updates (status checked inside the UPDATE)
+  // so a concurrently-running worker can't race the user's action.
   if (action === 'approve') {
-    if (task.status !== 'awaiting_approval') {
+    const result = await prisma.applyTask.updateMany({
+      where: { id, userId: user.id, status: 'awaiting_approval' },
+      data: { status: 'approved', approvedAt: new Date(), claimedBy: null },
+    });
+    if (result.count === 0) {
       return NextResponse.json({ error: `Cannot approve task in status "${task.status}"` }, { status: 409 });
     }
-    const updated = await prisma.applyTask.update({
-      where: { id }, data: { status: 'approved', approvedAt: new Date(), claimedBy: null },
-    });
-    return NextResponse.json(updated);
+    return NextResponse.json(await prisma.applyTask.findUnique({ where: { id } }));
   }
   if (action === 'cancel') {
-    if (['submitted', 'cancelled'].includes(task.status)) {
+    const result = await prisma.applyTask.updateMany({
+      where: { id, userId: user.id, status: { notIn: ['submitted', 'cancelled'] } },
+      data: { status: 'cancelled' },
+    });
+    if (result.count === 0) {
       return NextResponse.json({ error: 'Task already final' }, { status: 409 });
     }
-    const updated = await prisma.applyTask.update({ where: { id }, data: { status: 'cancelled' } });
-    return NextResponse.json(updated);
+    // Keep the tracker honest: a cancelled task means this application is withdrawn.
+    if (task.applicationId) {
+      await prisma.application.updateMany({
+        where: { id: task.applicationId, userId: user.id, status: 'prepping' },
+        data: { status: 'withdrawn' },
+      }).catch(() => {});
+    }
+    return NextResponse.json(await prisma.applyTask.findUnique({ where: { id } }));
   }
   if (action === 'retry') {
-    if (!['failed', 'needs_review', 'cancelled'].includes(task.status)) {
+    const result = await prisma.applyTask.updateMany({
+      where: { id, userId: user.id, status: { in: ['failed', 'needs_review', 'cancelled'] } },
+      data: { status: 'queued', attempts: 0, claimedBy: null, lastError: null },
+    });
+    if (result.count === 0) {
       return NextResponse.json({ error: `Cannot retry task in status "${task.status}"` }, { status: 409 });
     }
-    const updated = await prisma.applyTask.update({
-      where: { id }, data: { status: 'queued', attempts: 0, claimedBy: null, lastError: null },
-    });
-    return NextResponse.json(updated);
+    // Re-activate the tracker row if the cancel path had withdrawn it.
+    if (task.applicationId) {
+      await prisma.application.updateMany({
+        where: { id: task.applicationId, userId: user.id, status: 'withdrawn' },
+        data: { status: 'prepping' },
+      }).catch(() => {});
+    }
+    return NextResponse.json(await prisma.applyTask.findUnique({ where: { id } }));
   }
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 }

@@ -8,10 +8,10 @@ import { getCurrentUserFromRequest } from '@/lib/session';
 const DEFAULTS = {
   autoApplyEnabled: false,
   submitMode: 'approve_first',
-  unknownQuestionMode: 'pause',
+  unknownQuestionMode: 'ai_guess', // guess + flag + learn — corrections feed the answer bank
   attachCoverLetter: true,
   resumeVariant: 'uploaded',
-  minScoreToApply: 50,
+  minScoreToApply: 65,
   maxAppliesPerRun: 0,
   minDelaySeconds: 30,
   maxDelaySeconds: 90,

@@ -16,6 +16,8 @@ import { runJobSync, cleanupStaleJobs, TOP_GREENHOUSE_BOARDS, TOP_LEVER_BOARDS, 
 import { aggregateJobSearch, getAvailableSources } from '@/lib/job-search';
 import { scoreJob } from '@/lib/job-scorer';
 import { parseRelocationScope, canonicalCountry } from '@/lib/geo';
+import { enqueueApplyTask } from '@/lib/apply-queue';
+import { sendDailyDigest } from '@/lib/email';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   const startTime = Date.now();
   const log: string[] = [];
-  const allStats = { staleDeactivated: 0, newJobs: 0, scored: 0, errors: 0 };
+  const allStats = { staleDeactivated: 0, newJobs: 0, scored: 0, autoQueued: 0, errors: 0 };
 
   try {
     // Get all users with job preferences configured
@@ -69,6 +71,7 @@ export async function POST(request: NextRequest) {
         ];
 
         const syncResult = await runJobSync(user.id, boardSources);
+        let userNewJobs = syncResult.totalNew;
         allStats.newJobs += syncResult.totalNew;
         log.push('User ' + user.id + ': +' + syncResult.totalNew + ' new jobs from boards, -' + stale + ' stale');
 
@@ -91,6 +94,7 @@ export async function POST(request: NextRequest) {
               userCountry: canonicalCountry(user.personalInfo?.country),
               allowInternational: scope === 'international',
             });
+            userNewJobs += agg.new;
             allStats.newJobs += agg.new;
             log.push('User ' + user.id + ': +' + agg.new + ' new jobs from aggregator');
           } catch (aggErr) {
@@ -157,6 +161,58 @@ export async function POST(request: NextRequest) {
             allStats.scored++;
           } catch { allStats.errors++; }
         }
+
+        // ── Fully-automatic applying (user opt-in: Settings → daily runs) ──
+        // Finds the best-scoring unapplied jobs and queues them for the apply
+        // worker. enqueueApplyTask enforces every gate the user configured
+        // (blacklists, whitelist, daily cap, duplicates, fillable-form check),
+        // and the worker adds the perfect-fill + trust-ramp gates on top.
+        let queuedThisRun = 0;
+        const autoConfig = await prisma.autoApplyConfig.findUnique({ where: { userId: user.id } });
+        if (autoConfig?.autoApplyEnabled) {
+          const gate = autoConfig.minScoreToApply ?? 65;
+          const perRunCap = Math.min(autoConfig.maxAppliesPerRun || 10, 15);
+          const candidates = await prisma.job.findMany({
+            where: {
+              userId: user.id,
+              isActive: true,
+              jobScores: { some: { userId: user.id, overallScore: { gte: gate } } },
+              applications: { none: { userId: user.id } },
+            },
+            include: { jobScores: { where: { userId: user.id }, orderBy: { overallScore: 'desc' }, take: 1 } },
+            take: 100,
+          });
+          candidates.sort((a, b) => (b.jobScores[0]?.overallScore || 0) - (a.jobScores[0]?.overallScore || 0));
+
+          for (const job of candidates) {
+            if (queuedThisRun >= perRunCap) break;
+            try {
+              const enq = await enqueueApplyTask(user.id, job.id);
+              if (enq.taskId && !enq.blocked) queuedThisRun++;
+              else if (enq.status === 'blocked_daily_limit') break; // no point trying more today
+            } catch { allStats.errors++; }
+          }
+          allStats.autoQueued += queuedThisRun;
+          if (queuedThisRun > 0) log.push('User ' + user.id + ': auto-queued ' + queuedThisRun + ' applications');
+        }
+
+        // ── Daily digest (skipped silently when SMTP isn't configured) ──
+        if (user.email) {
+          const dayStart = new Date();
+          dayStart.setHours(0, 0, 0, 0);
+          const [awaitingApproval, submittedToday] = await Promise.all([
+            prisma.applyTask.count({ where: { userId: user.id, status: 'awaiting_approval' } }),
+            prisma.applyTask.count({ where: { userId: user.id, status: 'submitted', submittedAt: { gte: dayStart } } }),
+          ]);
+          if (queuedThisRun > 0 || awaitingApproval > 0 || submittedToday > 0) {
+            await sendDailyDigest(user.email, {
+              newJobs: userNewJobs,
+              queued: queuedThisRun,
+              awaitingApproval,
+              submittedToday,
+            }).catch(() => {});
+          }
+        }
       } catch (userErr) {
         allStats.errors++;
         log.push('Error for user ' + user.id + ': ' + (userErr instanceof Error ? userErr.message : String(userErr)));
@@ -164,7 +220,7 @@ export async function POST(request: NextRequest) {
     }
 
     const elapsed = Math.round((Date.now() - startTime) / 1000);
-    log.push('Done in ' + elapsed + 's: ' + allStats.newJobs + ' new jobs, ' + allStats.scored + ' scored, ' + allStats.staleDeactivated + ' deactivated');
+    log.push('Done in ' + elapsed + 's: ' + allStats.newJobs + ' new jobs, ' + allStats.scored + ' scored, ' + allStats.autoQueued + ' auto-queued, ' + allStats.staleDeactivated + ' deactivated');
 
     return NextResponse.json({ success: true, stats: allStats, log, elapsed });
 

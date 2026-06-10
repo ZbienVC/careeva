@@ -24,7 +24,7 @@ import { enqueueApplyTask } from '@/lib/apply-queue';
 import { scoreJob } from '@/lib/job-scorer';
 import { parseRelocationScope, canonicalCountry } from '@/lib/geo';
 
-const DEFAULT_APPLY_THRESHOLD = 50;
+const DEFAULT_APPLY_THRESHOLD = 65;
 const MAX_APPLIES_PER_RUN = 10;
 
 type AutomateMode = 'score_only' | 'prep_all' | 'auto_safe' | 'full_auto';

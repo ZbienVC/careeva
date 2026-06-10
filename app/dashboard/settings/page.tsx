@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { IconArrowRight, IconCheck, IconChevronRight } from '@/components/icons';
 
 interface Config {
+  autoApplyEnabled?: boolean;
   submitMode: string;
   unknownQuestionMode: string;
   attachCoverLetter: boolean;
@@ -22,11 +23,12 @@ interface Config {
 }
 
 const DEFAULTS: Config = {
+  autoApplyEnabled: false,
   submitMode: 'approve_first',
-  unknownQuestionMode: 'pause',
+  unknownQuestionMode: 'ai_guess',
   attachCoverLetter: true,
   resumeVariant: 'uploaded',
-  minScoreToApply: 50,
+  minScoreToApply: 65,
   minScoreToAutoApply: 75,
   maxAppliesPerRun: 0,
   maxApplicationsPerDay: 5,
@@ -166,6 +168,18 @@ export default function SettingsPage() {
       </section>
 
       <div className="space-y-6">
+        <Section
+          title="Fully-automatic daily runs"
+          hint="The master switch. When on, Careeva's scheduled sync also finds, scores, and queues applications for you every run — no button pressing. Your score gate, caps, blacklists, and trust ramp all still apply."
+        >
+          <Toggle
+            checked={config.autoApplyEnabled ?? false}
+            onChange={(v) => save({ autoApplyEnabled: v })}
+            label="Run the apply engine automatically on every scheduled sync"
+            help="Turn off anytime to pause all automatic applying — anything already queued can still be cancelled in Review."
+          />
+        </Section>
+
         <Section title="Submission mode" hint="What the worker does after filling an application form.">
           <Radio value="approve_first" current={config.submitMode} onChange={(v) => save({ submitMode: v })}
             label="Fill → screenshot → I approve → submit"

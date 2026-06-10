@@ -66,6 +66,59 @@ export async function sendVerificationEmail(
   }
 }
 
+export interface DigestStats {
+  newJobs: number;
+  queued: number;
+  awaitingApproval: number;
+  submittedToday: number;
+}
+
+/** Daily summary after a scheduled run — what went out, what's waiting. */
+export async function sendDailyDigest(email: string, stats: DigestStats) {
+  try {
+    if (!transporter) {
+      console.log(`[DEV MODE] Daily digest for ${email}:`, JSON.stringify(stats));
+      return { success: true };
+    }
+
+    const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+    const line = (label: string, value: number) =>
+      `<tr><td style="padding:6px 16px 6px 0;color:#74614a;">${label}</td><td style="padding:6px 0;font-weight:700;color:#261c10;">${value}</td></tr>`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM || "noreply@careeva.app",
+      to: email,
+      subject: stats.awaitingApproval > 0
+        ? `Careeva: ${stats.awaitingApproval} application${stats.awaitingApproval > 1 ? "s" : ""} waiting for your approval`
+        : `Careeva daily summary: ${stats.submittedToday} submitted, ${stats.queued} queued`,
+      html: `
+        <div style="font-family: Georgia, serif; max-width: 520px; margin: 0 auto; color: #261c10;">
+          <h2 style="font-weight: 600;">Your job search ran today.</h2>
+          <table style="font-family: Arial, sans-serif; font-size: 14px; border-collapse: collapse;">
+            ${line("New jobs found", stats.newJobs)}
+            ${line("Applications queued", stats.queued)}
+            ${line("Waiting for your approval", stats.awaitingApproval)}
+            ${line("Submitted today", stats.submittedToday)}
+          </table>
+          ${stats.awaitingApproval > 0 ? `
+          <p style="font-family: Arial, sans-serif; font-size: 14px;">
+            <a href="${appUrl}/dashboard/review" style="background:#a63d17;color:#faf5eb;padding:10px 20px;text-decoration:none;border-radius:10px;display:inline-block;">
+              Review &amp; approve
+            </a>
+          </p>` : `
+          <p style="font-family: Arial, sans-serif; font-size: 13px; color: #74614a;">
+            Nothing needs you right now. <a href="${appUrl}/dashboard" style="color:#a63d17;">Open Careeva</a>
+          </p>`}
+        </div>
+      `,
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Error sending daily digest:", error);
+    return { success: false };
+  }
+}
+
 export async function sendWelcomeEmail(email: string, userName?: string) {
   try {
     // In development without SMTP configured, just log

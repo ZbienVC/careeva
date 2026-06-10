@@ -176,7 +176,31 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
       return;
     }
 
-    // full_auto: human-ish pause, then submit
+    // full_auto: unattended submission must EARN it (product trust gates):
+    //   1) Perfect fill only — zero AI-guessed answers, zero unanswered
+    //      required questions, resume actually attached.
+    //   2) Track record — the user's first 10 submissions are always
+    //      human-approved; full-auto unlocks after that.
+    const report = fill.report as { guessed?: string[]; unanswered?: string[]; resumeAttached?: boolean } | undefined;
+    const imperfectFill =
+      (report?.guessed?.length || 0) > 0 ||
+      (report?.unanswered?.length || 0) > 0 ||
+      report?.resumeAttached === false;
+    const approvedSubmissions = await prisma.applyTask.count({
+      where: { userId: task.userId, status: 'submitted', approvedAt: { not: null } },
+    });
+    if (imperfectFill || approvedSubmissions < 10) {
+      await setStatus(task.id, 'awaiting_approval', {
+        screenshotKey: shotKey,
+        fieldReport: fill.report as object,
+      });
+      log(imperfectFill
+        ? 'full_auto downgraded to approval: fill is not perfect (guessed/unanswered/no resume)'
+        : `full_auto downgraded to approval: trust ramp (${approvedSubmissions}/10 approved submissions)`);
+      return;
+    }
+
+    // Human-ish pause, then submit
     await new Promise((r) => setTimeout(r, randDelayMs(2, 6)));
     await setStatus(task.id, 'submitting', { screenshotKey: shotKey, fieldReport: fill.report as object });
     const sub = await adapter.submit(page, task);

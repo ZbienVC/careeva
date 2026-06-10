@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import Navbar from '@/components/Navbar';
+import { IconUpload, IconTarget, IconSend, IconArrowRight } from '@/components/icons';
 
 const featureCards = [
   {
@@ -28,9 +29,9 @@ const featureCards = [
 ];
 
 const steps = [
-  { label: 'Upload Resume', desc: 'Parse your experience, skills, and education automatically', icon: '📄' },
-  { label: 'AI Scores Jobs', desc: 'Every role is scored against your profile in real-time', icon: '🎯' },
-  { label: 'Apply Smarter', desc: 'Generate cover letters and auto-apply to top matches', icon: '🚀' },
+  { label: 'Upload Resume', desc: 'Parse your experience, skills, and education automatically', icon: IconUpload },
+  { label: 'AI Scores Jobs', desc: 'Every role is scored against your profile in real-time', icon: IconTarget },
+  { label: 'Apply Smarter', desc: 'Generate cover letters and auto-apply to top matches', icon: IconSend },
 ];
 
 export default function Home() {
@@ -75,9 +76,9 @@ export default function Home() {
                 <div className="mt-8 flex flex-wrap gap-3 items-center">
                   {steps.map((step, i) => (
                     <div key={step.label} className="flex items-center gap-2">
-                      <span className="text-lg">{step.icon}</span>
+                      <span className="text-blue-300"><step.icon size={18} /></span>
                       <span className="text-sm font-semibold text-white">{step.label}</span>
-                      {i < steps.length - 1 && <span className="text-slate-500 mx-1">→</span>}
+                      {i < steps.length - 1 && <span className="mx-1 text-slate-500"><IconArrowRight size={14} /></span>}
                     </div>
                   ))}
                 </div>
@@ -145,11 +146,14 @@ export default function Home() {
               <div className="grid gap-4 md:grid-cols-1">
                 {steps.map((step, index) => (
                   <div key={step.label} className="premium-card-soft flex gap-4 p-5">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500 text-lg">
-                      {step.icon}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-500 text-white">
+                      <step.icon size={18} />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-white">{step.label}</p>
+                      <p className="text-sm font-bold text-white">
+                        <span className="mr-2 text-slate-500">0{index + 1}</span>
+                        {step.label}
+                      </p>
                       <p className="text-sm leading-6 text-slate-400 mt-0.5">{step.desc}</p>
                     </div>
                   </div>

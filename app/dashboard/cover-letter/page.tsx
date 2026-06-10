@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { profileAPI } from '@/lib/api';
+import { IconCheck, IconCheckCircle, IconChevronRight, IconCopy, IconFileText, IconAlertTriangle } from '@/components/icons';
 
 interface SavedLetter {
   id: string;
@@ -239,7 +240,7 @@ function CoverLetterInner() {
       <section className="hero-panel gradient-border p-8 md:p-10">
         <div className="relative z-10 grid gap-6 xl:grid-cols-[1.15fr_0.85fr] xl:items-end">
           <div>
-            <div className="badge mb-4">Writing workflow</div>
+            <div className="badge mb-4">AI writing studio</div>
             <h1 className="section-heading text-4xl md:text-5xl">Generate cover letters that actually feel tailored.</h1>
             <p className="section-subcopy mt-4 text-base md:text-lg">
               Turn a job description into a polished draft, then save, reuse, and refine it without breaking flow.
@@ -253,8 +254,16 @@ function CoverLetterInner() {
         </div>
       </section>
 
-      {error && <div className="premium-card border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
-      {saveMessage && <div className="premium-card border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200">{saveMessage}</div>}
+      {error && (
+        <div className="alert-error flex items-center gap-2" role="alert">
+          <IconAlertTriangle size={16} className="shrink-0" /> {error}
+        </div>
+      )}
+      {saveMessage && (
+        <div className="alert-success flex items-center gap-2" role="status">
+          <IconCheckCircle size={16} className="shrink-0" /> {saveMessage}
+        </div>
+      )}
 
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="premium-card p-6 md:p-8 space-y-5">
@@ -324,9 +333,13 @@ function CoverLetterInner() {
             </div>
             {letter && (
               <div className="flex flex-wrap gap-2">
-                <button onClick={copy} className="btn-primary !px-4 !py-2 text-sm">{copied ? '✅ Copied' : '📋 Copy'}</button>
+                <button onClick={copy} className={`btn-secondary !px-4 !py-2 text-sm ${copied ? '!border-emerald-500/30 !text-emerald-200' : ''}`}>
+                  {copied ? <><IconCheck size={14} /> Copied</> : <><IconCopy size={14} /> Copy</>}
+                </button>
                 <button onClick={regenerate} disabled={loading} className="btn-secondary !px-4 !py-2 text-sm disabled:opacity-50">Regenerate</button>
-                <button onClick={download} className="btn-secondary !px-4 !py-2 text-sm">⬇ Download .txt</button>
+                <button onClick={download} className="btn-secondary !px-4 !py-2 text-sm">
+                  <IconFileText size={14} /> Download .txt
+                </button>
                 <button onClick={save} className="btn-secondary !px-4 !py-2 text-sm">Save</button>
               </div>
             )}
@@ -336,20 +349,22 @@ function CoverLetterInner() {
           {localDrafts.length > 0 && (
             <div className="mb-4">
               <button onClick={() => setShowDrafts(v => !v)}
-                className="text-xs text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-1.5 transition-colors">
-                {showDrafts ? '▼' : '▶'} Previous drafts ({localDrafts.length})
+                aria-expanded={showDrafts}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold text-slate-400 transition-colors hover:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                <IconChevronRight size={14} className={`transition-transform ${showDrafts ? 'rotate-90' : ''}`} />
+                Previous drafts ({localDrafts.length})
               </button>
               {showDrafts && (
                 <div className="mt-2 space-y-1.5">
                   {localDrafts.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
-                      <div>
+                    <div key={i} className="premium-card-soft flex items-center justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0">
                         <span className="text-xs font-semibold text-white">{d.jobTitle}</span>
-                        <span className="text-xs text-slate-400 ml-2">@ {d.company}</span>
-                        <span className="text-[10px] text-slate-500 ml-2">{d.date}</span>
+                        <span className="ml-2 text-xs text-slate-400">@ {d.company}</span>
+                        <span className="ml-2 text-[10px] text-slate-500">{d.date}</span>
                       </div>
                       <button onClick={() => loadLetter(d)}
-                        className="text-xs px-2 py-1 rounded-lg bg-white/10 text-slate-300 hover:bg-white/20 font-semibold transition-all">
+                        className="shrink-0 rounded-xl bg-white/10 px-3 py-2.5 text-xs font-semibold text-slate-300 transition-all hover:bg-white/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40">
                         Restore
                       </button>
                     </div>

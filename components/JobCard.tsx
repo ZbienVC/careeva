@@ -2,8 +2,9 @@
 
 import { JobWithScore } from '@/lib/types';
 import Link from 'next/link';
-import { getScoreColor, getScoreQuality } from '@/lib/api';
+import { getScoreQuality } from '@/lib/api';
 import { useState, useEffect } from 'react';
+import { IconBriefcase, IconCheckCircle, IconStar, IconTrendingUp } from '@/components/icons';
 
 interface JobCardProps {
   job: JobWithScore;
@@ -25,7 +26,6 @@ function toggleSavedJob(jobId: string): boolean {
 
 export default function JobCard({ job, onQuickApply }: JobCardProps) {
   const score = job.score?.overallScore || 0;
-  const scoreColor = getScoreColor(score);
   const scoreQuality = getScoreQuality(score);
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState('');
@@ -38,7 +38,7 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
     e.preventDefault();
     const isNowSaved = toggleSavedJob(job.id);
     setSaved(isNowSaved);
-    setToast(isNowSaved ? 'Job saved \u2713' : 'Job removed');
+    setToast(isNowSaved ? 'Job saved' : 'Job removed');
     setTimeout(() => setToast(''), 2000);
   };
 
@@ -59,7 +59,7 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
           url: job.url || '',
         }),
       });
-      setToast('Application tracked \u2713');
+      setToast('Application tracked');
       setTimeout(() => setToast(''), 2500);
       onQuickApply?.(job.id);
     } catch {
@@ -68,21 +68,25 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
     }
   };
 
-  // Score bar color
-  const barColor = score >= 70 ? 'bg-emerald-400' : score >= 50 ? 'bg-amber-400' : 'bg-red-400';
-
   return (
     <div className="premium-card group overflow-hidden transition duration-200 hover:-translate-y-1 hover:border-white/15 relative">
       {/* Match score bar at top */}
       {score > 0 && (
-        <div className="h-1 w-full bg-white/5">
-          <div className={`h-full ${barColor} transition-all`} style={{ width: `${Math.min(score, 100)}%` }} />
+        <div className="h-1 w-full bg-white/10">
+          <div
+            className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-violet-500 transition-all"
+            style={{ width: `${Math.min(score, 100)}%` }}
+          />
         </div>
       )}
 
       <div className="p-6">
         {toast && (
-          <div className="absolute top-3 right-3 z-10 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+          <div
+            role="status"
+            className={`absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium text-white shadow-lg ${toast.includes('failed') ? 'border border-amber-500/40 bg-amber-600' : 'border border-emerald-500/30 bg-emerald-600'}`}
+          >
+            {!toast.includes('failed') && <IconCheckCircle size={14} />}
             {toast}
           </div>
         )}
@@ -96,9 +100,15 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
             <h3 className="text-xl font-semibold text-white transition-colors group-hover:text-blue-300">{job.title}</h3>
             <p className="mt-1 text-base text-slate-300">{job.company}</p>
             <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-400">
-              <span className="rounded-full bg-white/[0.04] px-3 py-1">\uD83D\uDCCD {job.location}</span>
-              <span className="rounded-full bg-white/[0.04] px-3 py-1 capitalize">\uD83D\uDCBC {job.jobType}</span>
-              {job.salary && <span className="rounded-full bg-white/[0.04] px-3 py-1">\uD83D\uDCB0 {job.salary}</span>}
+              <span className="rounded-full bg-white/[0.04] px-3 py-1">{job.location}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.04] px-3 py-1 capitalize">
+                <IconBriefcase size={13} className="text-slate-500" /> {job.jobType}
+              </span>
+              {job.salary && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.04] px-3 py-1">
+                  <IconTrendingUp size={13} className="text-slate-500" /> {job.salary}
+                </span>
+              )}
             </div>
           </div>
 
@@ -106,7 +116,7 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
             {score > 0 && (
               <div className="rounded-3xl border border-white/10 bg-slate-900/80 px-5 py-4 text-center shadow-inner shadow-black/20">
                 <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Match</div>
-                <div className="mt-1 text-4xl font-bold" style={{ color: scoreColor }}>
+                <div className="mt-1 text-4xl font-bold text-blue-300">
                   {Math.round(score)}
                 </div>
                 <div className="text-xs capitalize text-slate-400">{scoreQuality} fit</div>
@@ -115,9 +125,11 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
             <button
               onClick={handleSave}
               title={saved ? 'Remove from saved' : 'Save job'}
-              className={`rounded-2xl border px-3 py-2 text-lg transition ${saved ? 'border-amber-400/40 bg-amber-500/10 text-amber-300' : 'border-white/10 bg-white/[0.03] text-slate-400 hover:text-amber-300'}`}
+              aria-label={saved ? 'Remove from saved jobs' : 'Save job'}
+              aria-pressed={saved}
+              className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-2xl border transition focus:outline-none focus:ring-2 focus:ring-amber-400/40 ${saved ? 'border-amber-400/40 bg-amber-500/10 text-amber-300' : 'border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-amber-300'}`}
             >
-              {saved ? '\u2605' : '\u2606'}
+              <IconStar size={18} fill={saved ? 'currentColor' : 'none'} />
             </button>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/Loading';
+import { IconCheck } from '@/components/icons';
 
 const BENEFITS = [
   { label: 'Profile intelligence', value: 'Resume + goals + preferences in one place' },
@@ -79,7 +80,7 @@ export default function SignupPage() {
 
           {submitted ? (
             <div className="rounded-3xl border border-emerald-500/25 bg-emerald-500/10 p-6 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-2xl text-emerald-200">✓</div>
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-200"><IconCheck size={28} /></div>
               <h3 className="mt-4 text-xl font-semibold text-emerald-100">Account ready</h3>
               <p className="mt-2 text-sm text-emerald-200/90">Taking you into onboarding so your recommendations can start strong.</p>
             </div>
@@ -124,7 +125,6 @@ export default function SignupPage() {
                   minLength={6}
                   autoComplete="new-password"
                   placeholder="Choose a password (min. 6 characters)"
-                  className="field-input mt-1 w-full"
                 />
               </div>
               <button type="submit" disabled={loading || !formData.email || !formData.password || formData.password.length < 6} className="btn-primary w-full disabled:opacity-50">

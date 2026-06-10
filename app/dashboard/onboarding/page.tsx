@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import OnboardingForm from '@/components/OnboardingForm';
 import { profileAPI } from '@/lib/api';
 import { LoadingPage } from '@/components/Loading';
+import { IconCheckCircle } from '@/components/icons';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -26,7 +27,7 @@ export default function OnboardingPage() {
       <div className="page-shell">
         <div className="hero-panel gradient-border p-10 text-center">
           <div className="relative z-10 mx-auto max-w-2xl">
-            <div className="text-6xl">&#x1F680;</div>
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-500/15 text-emerald-300"><IconCheckCircle size={32} /></div>
             <h1 className="mt-6 text-4xl font-bold text-white">You’re dialed in.</h1>
             <p className="mt-4 text-lg text-slate-300">
               Your preferences are saved. Careeva can now personalize job matching, ranking, and cover letter generation much more effectively.

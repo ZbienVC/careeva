@@ -2,21 +2,21 @@
 
 export function LoadingSpinner() {
   return (
-    <div className="flex items-center justify-center">
-      <div className="relative w-8 h-8">
-        <div className="absolute inset-0 rounded-full border-2 border-[#30363d]"></div>
-        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-500 animate-spin"></div>
+    <div className="flex items-center justify-center" role="status" aria-label="Loading">
+      <div className="relative h-8 w-8">
+        <div className="absolute inset-0 rounded-full border-2 border-white/10"></div>
+        <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-blue-400"></div>
       </div>
     </div>
   );
 }
 
-export function LoadingPage() {
+export function LoadingPage({ message = 'Loading...' }: { message?: string }) {
   return (
-    <div className="min-h-screen bg-[#0d1117] flex items-center justify-center">
+    <div className="flex min-h-[60vh] items-center justify-center">
       <div className="text-center">
         <LoadingSpinner />
-        <p className="text-gray-400 mt-4">Loading...</p>
+        <p className="mt-4 text-sm text-slate-400">{message}</p>
       </div>
     </div>
   );
@@ -26,9 +26,9 @@ export function LoadingSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="space-y-4">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-[#161b22] border border-[#30363d] rounded-lg p-6 animate-pulse">
-          <div className="h-4 bg-[#30363d] rounded w-3/4 mb-4"></div>
-          <div className="h-4 bg-[#30363d] rounded w-1/2"></div>
+        <div key={i} className="premium-card-soft animate-pulse p-6">
+          <div className="mb-4 h-4 w-3/4 rounded bg-white/10"></div>
+          <div className="h-4 w-1/2 rounded bg-white/10"></div>
         </div>
       ))}
     </div>

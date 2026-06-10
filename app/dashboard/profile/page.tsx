@@ -4,6 +4,24 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { LoadingPage } from '@/components/Loading';
+import {
+  IconTrendingUp,
+  IconFileText,
+  IconUser,
+  IconBriefcase,
+  IconGraduationCap,
+  IconSparkles,
+  IconTarget,
+  IconMessageSquare,
+  IconCheck,
+  IconCheckCircle,
+  IconAlertTriangle,
+  IconX,
+  IconClipboardCheck,
+  IconLink,
+  IconUpload,
+  IconClock,
+} from '@/components/icons';
 
 // ─── Resume Score Card ────────────────────────────────────────────────────────
 
@@ -38,83 +56,80 @@ function ResumeScoreCard({ personal, workHistory, education, skills, writing }: 
   const suggestions = items.filter(i => !i.ok).map(i => i.tip);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
+    <section className="premium-card p-6 md:p-7">
+      <div className="flex items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <span className="text-xl">📈</span>
+          <div className="icon-tile"><IconTrendingUp size={18} /></div>
           <div>
-            <h3 className="font-bold text-slate-900 text-sm">Resume Score</h3>
-            <p className="text-slate-400 text-xs mt-0.5">Calculated from your profile completeness</p>
+            <h3 className="text-xl font-semibold text-white">Resume Score</h3>
+            <p className="text-sm text-slate-400 mt-0.5">Calculated from your profile completeness</p>
           </div>
         </div>
         <div className="flex flex-col items-center">
           <div className="w-14 h-14 rounded-full flex items-center justify-center"
-            style={{ background: `conic-gradient(${scoreColor} ${score}%, #e2e8f0 0)` }}>
-            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-sm font-black text-slate-700">{score}</div>
+            style={{ background: `conic-gradient(${scoreColor} ${score}%, rgba(255,255,255,0.10) 0)` }}>
+            <div className="w-10 h-10 rounded-full bg-slate-950 flex items-center justify-center text-sm font-black text-white">{score}</div>
           </div>
         </div>
       </div>
-      <div className="p-6">
-        <div className="space-y-2 mb-4">
-          {items.map((item, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs">
-              <span className={item.ok ? 'text-emerald-500' : item.warn ? 'text-amber-500' : 'text-slate-300'}>
-                {item.ok ? '✅' : item.warn ? '⚠️' : '❌'}
-              </span>
-              <span className={item.ok ? 'text-slate-700' : 'text-slate-400'}>{item.label}</span>
-            </div>
-          ))}
-        </div>
-        {suggestions.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-            <p className="text-xs font-bold text-amber-800 mb-1">Improve your resume:</p>
-            <ul className="space-y-0.5">
-              {suggestions.map((s, i) => <li key={i} className="text-xs text-amber-700">• {s}</li>)}
-            </ul>
+      <div className="space-y-2.5 mb-4">
+        {items.map((item, i) => (
+          <div key={i} className="flex items-center gap-2 text-xs">
+            <span className={item.ok ? 'text-emerald-300' : item.warn ? 'text-amber-300' : 'text-slate-500'}>
+              {item.ok ? <IconCheckCircle size={14} /> : item.warn ? <IconAlertTriangle size={14} /> : <IconX size={14} />}
+            </span>
+            <span className={item.ok ? 'text-slate-300' : 'text-slate-500'}>{item.label}</span>
           </div>
-        )}
+        ))}
       </div>
-    </div>
+      {suggestions.length > 0 && (
+        <div className="alert-warning !p-3">
+          <p className="text-xs font-semibold text-amber-200 mb-1">Improve your resume:</p>
+          <ul className="space-y-0.5">
+            {suggestions.map((s, i) => <li key={i} className="text-xs text-amber-100/80">• {s}</li>)}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
 // ─── Section components ────────────────────────────────────────────────────────
 
 function Section({ title, subtitle, icon, children, completeness, id }: {
-  title: string; subtitle: string; icon: string; children: React.ReactNode; completeness?: number; id?: string;
+  title: string; subtitle: string; icon: React.ReactNode; children: React.ReactNode; completeness?: number; id?: string;
 }) {
   return (
-    <div id={id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-50 flex items-center justify-between">
+    <section id={id} className="premium-card p-6 md:p-7">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <span className="text-xl">{icon}</span>
+          <div className="icon-tile">{icon}</div>
           <div>
-            <h3 className="font-bold text-slate-900 text-sm">{title}</h3>
-            <p className="text-slate-400 text-xs mt-0.5">{subtitle}</p>
+            <h3 className="text-xl font-semibold text-white">{title}</h3>
+            <p className="text-sm text-slate-400 mt-0.5">{subtitle}</p>
           </div>
         </div>
         {completeness !== undefined && (
           <div className="flex items-center gap-2">
-            <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${completeness}%`, background: completeness >= 80 ? '#10b981' : completeness >= 50 ? '#f59e0b' : '#ef4444' }} />
+            <div className="w-20 h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-violet-500 transition-all" style={{ width: `${completeness}%` }} />
             </div>
-            <span className="text-xs font-bold text-slate-400">{completeness}%</span>
+            <span className="text-xs font-semibold text-slate-400">{completeness}%</span>
           </div>
         )}
       </div>
-      <div className="p-6">{children}</div>
-    </div>
+      {children}
+    </section>
   );
 }
 
 function Input({ label, value, onChange, type = 'text', placeholder = '', required = false }: any) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-        {label}{required && <span className="text-red-400 ml-1">*</span>}
+      <label className="field-label">
+        {label}{required && <span className="text-red-300 ml-1">*</span>}
       </label>
-      <input type={type} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 transition-all bg-white" />
+      <input type={type} value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
     </div>
   );
 }
@@ -125,22 +140,21 @@ function MonthYearPicker({ label, value, onChange, required = false }: any) {
   const years = Array.from({ length: 45 }, (_, i) => currentYear - i);
   const parts = value ? value.substring(0,7).split('-') : ['',''];
   const [yr, mo] = [parts[0] || '', parts[1] || ''];
-  const sel = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 transition-all bg-white cursor-pointer';
   const update = (newYr: string, newMo: string) => {
     if (newYr && newMo) onChange(newYr + '-' + newMo + '-01');
     else onChange('');
   };
   return (
     <div>
-      <label className='block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5'>
-        {label}{required && <span className='text-red-400 ml-1'>*</span>}
+      <label className='field-label'>
+        {label}{required && <span className='text-red-300 ml-1'>*</span>}
       </label>
       <div className='flex gap-2'>
-        <select value={mo} onChange={e => update(yr, e.target.value)} className={sel}>
+        <select value={mo} onChange={e => update(yr, e.target.value)} className='cursor-pointer'>
           <option value=''>Month</option>
           {MONTHS.map((m, i) => <option key={m} value={String(i+1).padStart(2,'0')}>{m}</option>)}
         </select>
-        <select value={yr} onChange={e => update(e.target.value, mo)} className={sel}>
+        <select value={yr} onChange={e => update(e.target.value, mo)} className='cursor-pointer'>
           <option value=''>Year</option>
           {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
         </select>
@@ -152,18 +166,16 @@ function MonthYearPicker({ label, value, onChange, required = false }: any) {
 function TextArea({ label, value, onChange, placeholder = '', rows = 3 }: any) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">{label}</label>
+      <label className="field-label">{label}</label>
       <textarea value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={rows}
-        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 transition-all bg-white resize-none" />
+        className="resize-none" />
     </div>
   );
 }
 
 function SaveBtn({ saving, onClick }: { saving: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} disabled={saving}
-      className="px-4 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60 transition-all"
-      style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}>
+    <button onClick={onClick} disabled={saving} className="btn-primary text-sm !px-4 !py-2">
       {saving ? 'Saving...' : 'Save Changes'}
     </button>
   );
@@ -251,12 +263,12 @@ export default function ProfileBuilderPage() {
         const skillsRes = await fetch('/api/skills').then(r => r.json());
         setSkills(skillsRes.skills || []);
         const skillCount = result.skillsAdded || 0;
-        setResumeUploadMsg('✅ Resume saved! ' + savedWorkHistory.length + ' position(s), ' + savedEducation.length + ' education entry/entries, and ' + skillCount + ' skills imported. Review below.');
+        setResumeUploadMsg('Resume saved! ' + savedWorkHistory.length + ' position(s), ' + savedEducation.length + ' education entry/entries, and ' + skillCount + ' skills imported. Review below.');
       } else {
-        setResumeUploadMsg('❌ ' + (result.error || 'Upload failed. Please try again.'));
+        setResumeUploadMsg('Upload failed — ' + (result.error || 'please try again.'));
       }
     } catch {
-      setResumeUploadMsg('❌ Upload failed - check your connection and try again.');
+      setResumeUploadMsg('Upload failed — check your connection and try again.');
     } finally {
       setResumeUploading(false);
     }
@@ -291,7 +303,7 @@ export default function ProfileBuilderPage() {
         return;
       }
       if (imported > 0) {
-        setParseMsg('✅ Imported ' + savedWorkHistory.length + ' position(s) and ' + savedEducation.length + ' education entry/entries from your resume.');
+        setParseMsg('Imported ' + savedWorkHistory.length + ' position(s) and ' + savedEducation.length + ' education entry/entries from your resume.');
       } else {
         setParseMsg('All resume data is already loaded. Edit any field directly to make corrections.');
       }
@@ -378,49 +390,52 @@ export default function ProfileBuilderPage() {
   if (loading) return <LoadingPage />;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <div className="page-shell space-y-8">
       {/* Header */}
-      <div>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Your Profile</h1>
-            <p className="text-slate-400 text-sm mt-0.5">The richer your profile, the better your applications</p>
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="badge mb-4">Step 1 of 5 · Your profile</div>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="max-w-2xl">
+            <h1 className="section-heading text-4xl">Tell Careeva your story.</h1>
+            <p className="section-subcopy mt-4">Everything here powers job matching, scoring, and automated applications — the more complete, the smarter the system.</p>
           </div>
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center shrink-0">
             <div className="w-16 h-16 rounded-full flex items-center justify-center"
-              style={{ background: `conic-gradient(#10b981 ${overall}%, #e2e8f0 0)` }}>
-              <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-base font-bold text-slate-700">{overall}%</div>
+              style={{ background: `conic-gradient(#10b981 ${overall}%, rgba(255,255,255,0.10) 0)` }}>
+              <div className="w-12 h-12 rounded-full bg-slate-950 flex items-center justify-center text-base font-bold text-white">{overall}%</div>
             </div>
-            <p className="text-xs text-slate-400 mt-1">Complete</p>
+            <p className="text-xs text-slate-400 mt-1.5">Complete</p>
           </div>
         </div>
 
-        <div className="mt-3">
-          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div className="mt-6">
+          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
             <div className="h-full rounded-full transition-all" style={{ width: `${overall}%`, background: overall >= 80 ? '#10b981' : overall >= 50 ? '#f59e0b' : '#ef4444' }} />
           </div>
         </div>
 
         {missingItems.length > 0 && (
-          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <p className="text-xs font-bold text-amber-800 mb-1.5">⚠️ Complete your profile for best results:</p>
+          <div className="alert-warning mt-5">
+            <p className="text-xs font-semibold text-amber-200 mb-2 flex items-center gap-1.5">
+              <IconAlertTriangle size={14} /> Complete your profile for best results:
+            </p>
             <div className="flex flex-wrap gap-2">
               {missingItems.map((item, i) => (
                 <button key={i} onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })}
-                  className="text-xs bg-white border border-amber-200 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-all font-medium">
+                  className="text-xs rounded-full border border-amber-500/25 bg-amber-500/10 text-amber-200 px-3 py-1.5 hover:bg-amber-500/20 transition-all font-medium">
                   + {item.label}
                 </button>
               ))}
             </div>
           </div>
         )}
-      </div>
+      </section>
 
       {/* Resume Score Card */}
       <ResumeScoreCard personal={personal} workHistory={workHistory} education={education} skills={skills} writing={writing} />
 
       {/* 0. Resume Management */}
-      <Section title="Resume" subtitle="Upload your resume to auto-populate work history, education, and skills" icon="📄" completeness={resumes.length > 0 ? 100 : 0}>
+      <Section title="Resume" subtitle="Upload your resume to auto-populate work history, education, and skills" icon={<IconFileText size={18} />} completeness={resumes.length > 0 ? 100 : 0}>
         <input
           ref={resumeInputRef}
           type="file"
@@ -432,44 +447,44 @@ export default function ProfileBuilderPage() {
         {resumes.length > 0 ? (
           <div className="space-y-2 mb-4">
             {resumes.map((r: any) => (
-              <div key={r.id} className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg">📄</span>
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-800">{r.name || 'Uploaded Resume'}</p>
-                      <p className="text-xs text-emerald-600">
+              <div key={r.id} className="premium-card-soft p-4 border-emerald-500/20">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-emerald-300 shrink-0"><IconFileText size={18} /></span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{r.name || 'Uploaded Resume'}</p>
+                      <p className="text-xs text-slate-400">
                         {r.fileType?.toUpperCase()} · Uploaded {new Date(r.createdAt).toLocaleDateString()}
                         {r.fileSize ? ` · ${(r.fileSize / 1024).toFixed(1)} KB` : ''}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => resumeInputRef.current?.click()}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-700 font-semibold hover:bg-emerald-50 transition-all"
+                      className="btn-secondary text-xs !px-3 !py-2"
                     >
                       Replace
                     </button>
                     <button
                       onClick={() => removeResume(r.id)}
-                      className="text-xs px-2 py-1.5 rounded-lg text-slate-400 hover:text-red-500 transition-all"
+                      className="btn-ghost !px-2.5 !py-2 text-slate-400 hover:text-red-300"
                       title="Remove resume"
                     >
-                      ×
+                      <IconX size={14} />
                     </button>
                   </div>
                 </div>
                 {extractedKeywords.length > 0 && (
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <button onClick={() => setShowKeywords(v => !v)}
-                      className="text-xs text-emerald-600 font-semibold hover:text-emerald-800 transition-colors">
+                      className="text-xs text-blue-300 font-semibold hover:text-blue-200 transition-colors py-1">
                       {showKeywords ? '▼' : '▶'} View extracted keywords ({extractedKeywords.length})
                     </button>
                     {showKeywords && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {extractedKeywords.map((kw: string, i: number) => (
-                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">{kw}</span>
+                          <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-100">{kw}</span>
                         ))}
                       </div>
                     )}
@@ -479,16 +494,16 @@ export default function ProfileBuilderPage() {
             ))}
           </div>
         ) : (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-4 mb-4">
-            <p className="text-sm font-semibold text-amber-800 mb-1">No resume uploaded yet</p>
-            <p className="text-xs text-amber-700">Upload your resume to automatically populate your work history, education, and skills below.</p>
+          <div className="alert-warning mb-4">
+            <p className="text-sm font-semibold text-amber-200 mb-1">No resume uploaded yet</p>
+            <p className="text-xs text-amber-100/80">Upload your resume to automatically populate your work history, education, and skills below.</p>
           </div>
         )}
 
         <button
           onClick={() => resumeInputRef.current?.click()}
           disabled={resumeUploading}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-indigo-300 text-indigo-600 font-semibold text-sm hover:bg-indigo-50 transition-all disabled:opacity-60 disabled:cursor-wait"
+          className="w-full flex items-center justify-center gap-2 py-3 min-h-[44px] rounded-2xl border-2 border-dashed border-blue-400/40 text-blue-200 font-semibold text-sm hover:bg-blue-500/10 hover:border-blue-400/60 transition-all disabled:opacity-60 disabled:cursor-wait"
         >
           {resumeUploading ? (
             <>
@@ -500,27 +515,27 @@ export default function ProfileBuilderPage() {
             </>
           ) : (
             <>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <IconUpload size={16} />
               {resumes.length > 0 ? 'Replace resume' : 'Upload resume (PDF, DOCX, or TXT)'}
             </>
           )}
         </button>
 
         {resumeUploadMsg && (
-          <p className={`text-xs mt-3 px-3 py-2 rounded-lg font-medium ${resumeUploadMsg.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+          <p className={`text-xs mt-3 font-medium ${resumeUploadMsg.startsWith('Resume saved') ? 'alert-success !p-3' : 'alert-error !p-3'}`}>
             {resumeUploadMsg}
           </p>
         )}
 
         {resumes.length === 0 && (
-          <p className="text-xs text-slate-400 text-center mt-3">
+          <p className="field-help text-center mt-3">
             After upload, your work history, education, and skills are automatically extracted and pre-filled below.
           </p>
         )}
       </Section>
 
       {/* 1. Personal Info */}
-      <Section id="contact-section" title="Contact &amp; Identity" subtitle="Used on every application" icon="👤" completeness={personalComplete}>
+      <Section id="contact-section" title="Contact & Identity" subtitle="Used on every application" icon={<IconUser size={18} />} completeness={personalComplete}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input label="Full Name" value={personal.fullName} onChange={(v: string) => setPersonal((p: any) => ({ ...p, fullName: v }))} required />
           <Input label="Email" type="email" value={personal.email} onChange={(v: string) => setPersonal((p: any) => ({ ...p, email: v }))} required />
@@ -530,9 +545,8 @@ export default function ProfileBuilderPage() {
           <Input label="GitHub URL" value={personal.githubUrl} onChange={(v: string) => setPersonal((p: any) => ({ ...p, githubUrl: v }))} placeholder="https://github.com/..." />
           <Input label="Portfolio / Website" value={personal.websiteUrl} onChange={(v: string) => setPersonal((p: any) => ({ ...p, websiteUrl: v }))} />
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Work Authorization</label>
-            <select value={personal.workAuthorization || 'us_citizen'} onChange={e => setPersonal((p: any) => ({ ...p, workAuthorization: e.target.value }))}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none bg-white">
+            <label className="field-label">Work Authorization</label>
+            <select value={personal.workAuthorization || 'us_citizen'} onChange={e => setPersonal((p: any) => ({ ...p, workAuthorization: e.target.value }))}>
               <option value="us_citizen">US Citizen</option>
               <option value="green_card">Green Card</option>
               <option value="h1b">H-1B Visa</option>
@@ -541,8 +555,8 @@ export default function ProfileBuilderPage() {
             </select>
           </div>
         </div>
-        <div className="flex items-center gap-4 mt-4">
-          <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+        <div className="flex items-center gap-4 mt-5">
+          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
             <input type="checkbox" checked={personal.requiresSponsorship || false}
               onChange={e => setPersonal((p: any) => ({ ...p, requiresSponsorship: e.target.checked }))}
               className="rounded" />
@@ -555,29 +569,29 @@ export default function ProfileBuilderPage() {
       </Section>
 
       {/* 2. Work History */}
-      <Section title="Work History" subtitle="Your professional experience - be thorough" icon="💼" completeness={workComplete}>
+      <Section title="Work History" subtitle="Your professional experience - be thorough" icon={<IconBriefcase size={18} />} completeness={workComplete}>
         {workHistory.length > 0 && (
           <div className="space-y-3 mb-6">
             {workHistory.map((wh: any) => (
-              <div key={wh.id} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+              <div key={wh.id} className="premium-card-soft p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-900 text-sm">{wh.title}</p>
-                    <p className="text-slate-500 text-xs mt-0.5">{wh.company}{wh.startDate || wh.endDate ? ' · ' + (wh.startDate ? new Date(wh.startDate).getFullYear() : '') + (wh.isCurrent ? '-Present' : wh.endDate ? '-' + new Date(wh.endDate).getFullYear() : '') : ''}</p>
-                    {wh.summary && <p className="text-slate-400 text-xs mt-1 line-clamp-2">{wh.summary}</p>}
+                    <p className="font-semibold text-white text-sm">{wh.title}</p>
+                    <p className="text-slate-400 text-xs mt-0.5">{wh.company}{wh.startDate || wh.endDate ? ' · ' + (wh.startDate ? new Date(wh.startDate).getFullYear() : '') + (wh.isCurrent ? '-Present' : wh.endDate ? '-' + new Date(wh.endDate).getFullYear() : '') : ''}</p>
+                    {wh.summary && <p className="text-slate-500 text-xs mt-1 line-clamp-2">{wh.summary}</p>}
                     {(wh.skills?.length > 0 || wh.technologies?.length > 0) && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
+                      <div className="flex flex-wrap gap-1 mt-2">
                         {[...(wh.skills || []), ...(wh.technologies || [])].slice(0, 6).map((s: string) => (
-                          <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">{s}</span>
+                          <span key={s} className="text-[10px] px-2 py-0.5 rounded-full border border-white/10 bg-white/[0.06] text-slate-300">{s}</span>
                         ))}
                       </div>
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                    <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{(wh.bullets || []).length} bullets</span>
+                    <span className="badge-success !px-2 !py-0.5 !text-[10px]">{(wh.bullets || []).length} bullets</span>
                     <button
                       onClick={() => fetch('/api/work-history?id=' + wh.id, { method: 'DELETE', credentials: 'include' }).then(() => setWorkHistory((w: any[]) => w.filter(x => x.id !== wh.id)))}
-                      className="text-slate-300 hover:text-red-400 text-xs transition-colors" title="Remove">×</button>
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-300 hover:bg-white/[0.06] transition-colors" title="Remove"><IconX size={14} /></button>
                   </div>
                 </div>
               </div>
@@ -585,27 +599,27 @@ export default function ProfileBuilderPage() {
           </div>
         )}
 
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <p className="text-xs text-slate-400">Add each position you have held</p>
           <div className="flex gap-2">
             <button onClick={parseFromResume} disabled={parsing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
-              {parsing ? '⏳ Parsing...' : '📋 Import from Resume'}
+              className="btn-secondary text-xs !px-3 !py-2">
+              {parsing ? <><IconClock size={14} /> Parsing...</> : <><IconClipboardCheck size={14} /> Import from Resume</>}
             </button>
             <button
               onClick={() => window.open('https://www.linkedin.com/in/', '_blank')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all"
+              className="btn-secondary text-xs !px-3 !py-2 text-blue-200"
             >
-              🔗 Import from LinkedIn
+              <IconLink size={14} /> Import from LinkedIn
             </button>
           </div>
         </div>
         {parseMsg && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">{parseMsg}</p>
+          <p className="alert-info !p-3 text-xs mb-3">{parseMsg}</p>
         )}
 
-        <div className="border border-dashed border-slate-200 rounded-xl p-4 space-y-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase">Add Position</p>
+        <div className="rounded-2xl border border-dashed border-white/15 p-4 md:p-5 space-y-4">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Add Position</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Job Title" value={newWork.title} onChange={(v: string) => setNewWork((w: any) => ({ ...w, title: v }))} placeholder="Senior Data Analyst" required />
             <Input label="Company" value={newWork.company} onChange={(v: string) => setNewWork((w: any) => ({ ...w, company: v }))} placeholder="Company Name" required />
@@ -618,11 +632,11 @@ export default function ProfileBuilderPage() {
             <Input label="Technologies (comma-separated)" value={newWork.technologies} onChange={(v: string) => setNewWork((w: any) => ({ ...w, technologies: v }))} placeholder="Snowflake, dbt, Looker..." />
           </div>
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
               <input type="checkbox" checked={newWork.isCurrent} onChange={e => setNewWork((w: any) => ({ ...w, isCurrent: e.target.checked }))} className="rounded" />
               Current position
             </label>
-            <button onClick={addWork} className="px-4 py-2 rounded-xl text-white text-sm font-semibold" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+            <button onClick={addWork} className="btn-primary text-sm !px-4 !py-2">
               + Add Position
             </button>
           </div>
@@ -630,29 +644,29 @@ export default function ProfileBuilderPage() {
       </Section>
 
       {/* 3. Education */}
-      <Section title="Education" subtitle="Degrees, certifications, bootcamps" icon="🎓" completeness={eduComplete}>
+      <Section title="Education" subtitle="Degrees, certifications, bootcamps" icon={<IconGraduationCap size={18} />} completeness={eduComplete}>
         {education.length > 0 && (
           <div className="space-y-2 mb-4">
             {education.map((ed: any) => (
-              <div key={ed.id} className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div key={ed.id} className="flex items-center justify-between premium-card-soft p-4">
                 <div>
-                  <p className="font-semibold text-slate-900 text-sm">{ed.degree} {ed.fieldOfStudy && `in ${ed.fieldOfStudy}`}</p>
-                  <p className="text-slate-500 text-xs">{ed.institution}</p>
+                  <p className="font-semibold text-white text-sm">{ed.degree} {ed.fieldOfStudy && `in ${ed.fieldOfStudy}`}</p>
+                  <p className="text-slate-400 text-xs mt-0.5">{ed.institution}</p>
                 </div>
                 <button onClick={() => fetch(`/api/education?id=${ed.id}`, { method: 'DELETE' }).then(() => setEducation(e => e.filter(x => x.id !== ed.id)))}
-                  className="text-slate-300 hover:text-red-400 text-xs">×</button>
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-red-300 hover:bg-white/[0.06] transition-colors" title="Remove"><IconX size={14} /></button>
               </div>
             ))}
           </div>
         )}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between gap-3 mb-4">
           <p className="text-xs text-slate-400">{education.length === 0 ? 'No education entries yet' : education.length + ' ' + (education.length === 1 ? 'entry' : 'entries') + ' imported'}</p>
           <button onClick={parseFromResume} disabled={parsing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
-            {parsing ? '⏳ Importing...' : '📋 Import from Resume'}
+            className="btn-secondary text-xs !px-3 !py-2">
+            {parsing ? <><IconClock size={14} /> Importing...</> : <><IconClipboardCheck size={14} /> Import from Resume</>}
           </button>
         </div>
-        <div className="border border-dashed border-slate-200 rounded-xl p-4 space-y-3">
+        <div className="rounded-2xl border border-dashed border-white/15 p-4 md:p-5 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Institution" value={newEdu.institution} onChange={(v: string) => setNewEdu((e: any) => ({ ...e, institution: v }))} placeholder="University of..." required />
             <Input label="Degree" value={newEdu.degree} onChange={(v: string) => setNewEdu((e: any) => ({ ...e, degree: v }))} placeholder="Bachelor of Science" />
@@ -660,7 +674,7 @@ export default function ProfileBuilderPage() {
             <Input label="Graduation Year" type="number" value={newEdu.endDate ? new Date(newEdu.endDate).getFullYear().toString() : ''} onChange={(v: string) => setNewEdu((e: any) => ({ ...e, endDate: `${v}-05-01` }))} placeholder="2022" />
           </div>
           <div className="flex justify-end">
-            <button onClick={addEducation} className="px-4 py-2 rounded-xl text-white text-sm font-semibold" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+            <button onClick={addEducation} className="btn-primary text-sm !px-4 !py-2">
               + Add Education
             </button>
           </div>
@@ -668,37 +682,38 @@ export default function ProfileBuilderPage() {
       </Section>
 
       {/* 4. Skills — tag input */}
-      <Section id="skills-section" title="Skills &amp; Technologies" subtitle="Add everything - it powers your match scores" icon="✨" completeness={skillsComplete}>
+      <Section id="skills-section" title="Skills & Technologies" subtitle="Add everything - it powers your match scores" icon={<IconSparkles size={18} />} completeness={skillsComplete}>
         <div className="flex flex-wrap gap-2 mb-4 min-h-[40px]">
           {skills.map((sk: any) => (
-            <span key={sk.id} className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-lg border border-indigo-100">
+            <span key={sk.id} className="badge border-blue-500/25 bg-blue-500/10 text-blue-100">
               {sk.name}
-              <button onClick={() => removeSkill(sk.id)} className="text-indigo-300 hover:text-red-400 ml-1 font-bold">×</button>
+              <button onClick={() => removeSkill(sk.id)} className="text-blue-300/60 hover:text-red-300 -mr-0.5 transition-colors" title="Remove skill"><IconX size={12} /></button>
             </span>
           ))}
           {skills.length === 0 && <p className="text-slate-400 text-sm">No skills added yet</p>}
         </div>
-        <p className="text-xs text-slate-500 mb-2">{skills.length} skill{skills.length !== 1 ? 's' : ''} captured{skills.length < 10 ? ` · add ${10 - skills.length} more for best results` : ' ✅'}</p>
+        <p className="text-xs text-slate-400 mb-3 flex items-center gap-1.5">
+          {skills.length} skill{skills.length !== 1 ? 's' : ''} captured{skills.length < 10 ? ` · add ${10 - skills.length} more for best results` : <span className="inline-flex items-center gap-1 text-emerald-300"><IconCheck size={12} /> great coverage</span>}
+        </p>
         <div className="flex gap-2">
           <input value={skillInput} onChange={e => setSkillInput(e.target.value)}
             onKeyDown={handleSkillKeyDown}
             placeholder="Type a skill and press Enter (or comma-separate multiple)"
-            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 bg-white" />
-          <button onClick={() => addSkill(skillInput)} className="px-4 py-2 rounded-xl text-white text-sm font-semibold whitespace-nowrap" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+            className="flex-1" />
+          <button onClick={() => addSkill(skillInput)} className="btn-primary text-sm !px-4 !py-2 whitespace-nowrap">
             Add
           </button>
         </div>
-        <p className="text-xs text-slate-400 mt-2">Press Enter or Tab to add one skill. Use commas for multiple at once.</p>
+        <p className="field-help">Press Enter or Tab to add one skill. Use commas for multiple at once.</p>
       </Section>
 
       {/* 5. Job Preferences */}
-      <Section id="prefs-section" title="Job Preferences" subtitle="What you are looking for - used for scoring and auto-apply" icon="🎯" completeness={prefsComplete}>
+      <Section id="prefs-section" title="Job Preferences" subtitle="What you are looking for - used for scoring and auto-apply" icon={<IconTarget size={18} />} completeness={prefsComplete}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input label="Target Job Titles (comma-separated)" value={(prefs.targetTitles || []).join(', ')} onChange={(v: string) => setPrefs((p: any) => ({ ...p, targetTitles: v.split(',').map((s: string) => s.trim()).filter(Boolean) }))} placeholder="Data Analyst, Ops Manager, BI Analyst" />
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Remote Preference</label>
-            <select value={prefs.remotePreference || 'any'} onChange={e => setPrefs((p: any) => ({ ...p, remotePreference: e.target.value }))}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none bg-white">
+            <label className="field-label">Remote Preference</label>
+            <select value={prefs.remotePreference || 'any'} onChange={e => setPrefs((p: any) => ({ ...p, remotePreference: e.target.value }))}>
               <option value="remote_only">Remote Only</option>
               <option value="hybrid_ok">Hybrid OK</option>
               <option value="onsite_ok">Open to Onsite</option>
@@ -710,13 +725,13 @@ export default function ProfileBuilderPage() {
           <Input label="Target Locations (comma-separated)" value={(prefs.preferredLocations || []).join(', ')} onChange={(v: string) => setPrefs((p: any) => ({ ...p, preferredLocations: v.split(',').map((s: string) => s.trim()).filter(Boolean) }))} placeholder="New York, Remote, San Francisco" />
           <Input label="Target Industries (comma-separated)" value={(prefs.targetIndustries || []).join(', ')} onChange={(v: string) => setPrefs((p: any) => ({ ...p, targetIndustries: v.split(',').map((s: string) => s.trim()).filter(Boolean) }))} placeholder="Fintech, Data, Crypto, SaaS" />
         </div>
-        <div className="flex justify-end mt-4">
+        <div className="flex justify-end mt-5">
           <SaveBtn saving={saving.prefs} onClick={() => save('prefs', '/api/job-preferences', prefs)} />
         </div>
       </Section>
 
       {/* 6. Reusable Answers */}
-      <Section title="Application Answers" subtitle="Save answers to common questions - used in every application" icon="💬">
+      <Section title="Application Answers" subtitle="Save answers to common questions - used in every application" icon={<IconMessageSquare size={18} />}>
         <div className="space-y-4">
           {[
             { key: 'why_this_role', family: 'experience', label: 'Why are you interested in this type of role?', placeholder: 'I have X years of experience in... I am passionate about...' },
@@ -752,14 +767,13 @@ function AnswerField({ question, existing, onSave }: { question: any; existing?:
 
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-semibold text-slate-700">{question.label}</label>
+      <label className="field-label !mb-1">{question.label}</label>
       <div className="flex gap-2">
         <textarea value={value} onChange={e => setValue(e.target.value)} placeholder={question.placeholder} rows={2}
-          className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 bg-white resize-none" />
+          className="flex-1 resize-none" />
         <button onClick={handleSave} disabled={saving || !value.trim()}
-          className={`self-end px-3 py-2 rounded-xl text-xs font-bold transition-all ${saved ? 'bg-emerald-50 text-emerald-700' : 'text-white'} disabled:opacity-40`}
-          style={!saved ? { background: 'linear-gradient(135deg,#10b981,#059669)' } : {}}>
-          {saved ? '✅' : saving ? '...' : 'Save'}
+          className={`self-end text-xs font-bold ${saved ? 'inline-flex items-center justify-center gap-1 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5 text-emerald-200' : 'btn-secondary !px-3 !py-2.5'} disabled:opacity-40 transition-all`}>
+          {saved ? <IconCheck size={14} /> : saving ? '...' : 'Save'}
         </button>
       </div>
     </div>

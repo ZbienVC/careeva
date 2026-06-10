@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/Loading';
+import { IconCheck } from '@/components/icons';
 
 const HIGHLIGHTS = [
   'Resume parsing that turns your raw experience into structured profile intelligence.',
@@ -95,7 +96,7 @@ export default function LoginPage() {
 
           {submitted ? (
             <div className="rounded-3xl border border-emerald-500/25 bg-emerald-500/10 p-6 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-2xl text-emerald-200">✓</div>
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-200"><IconCheck size={28} /></div>
               <h3 className="mt-4 text-xl font-semibold text-emerald-100">Signed in successfully</h3>
               <p className="mt-2 text-sm text-emerald-200/90">Redirecting you to your dashboard now.</p>
             </div>
@@ -129,7 +130,6 @@ export default function LoginPage() {
                   minLength={6}
                   autoComplete="current-password"
                   placeholder="Your password"
-                  className="field-input mt-1 w-full"
                 />
               </div>
               <button type="submit" disabled={loading || !email || !password} className="btn-primary w-full disabled:opacity-50">

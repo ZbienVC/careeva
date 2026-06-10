@@ -7,6 +7,7 @@ import { UserProfile, JobWithScore } from '@/lib/types';
 import { profileAPI, jobsAPI } from '@/lib/api';
 import { LoadingPage } from '@/components/Loading';
 import ResumeUpload from '@/components/ResumeUpload';
+import { IconBriefcase, IconCheck, IconChevronRight } from '@/components/icons';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -54,14 +55,54 @@ export default function DashboardPage() {
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   }, [profile]);
 
-  const completedActions = useMemo(() => {
-    if (!profile) return new Set<string>();
-    const done = new Set<string>();
-    if (profile.jobTitle || profile.targetIndustries?.length) done.add('onboarding');
-    if (profile.careerGoals) done.add('coverletter');
-    if (profile.skills?.length && profile.skills.length > 2) done.add('profile');
-    return done;
-  }, [profile]);
+  // The chronological setup journey: each step unlocks better results from the next.
+  const journeySteps = useMemo(() => {
+    const hasResume = Boolean(profile?.resumeUrl);
+    const hasPreferences = Boolean(profile?.jobTitle) && (profile?.targetIndustries?.length || 0) > 0;
+    const hasMatches = recentJobs.length > 0;
+    return [
+      {
+        id: 'resume',
+        href: '/dashboard/profile',
+        title: 'Upload your resume',
+        desc: 'Careeva parses your experience, skills, and education automatically.',
+        done: hasResume,
+      },
+      {
+        id: 'preferences',
+        href: '/dashboard/onboarding',
+        title: 'Answer a few questions',
+        desc: 'Target role, industries, salary, and goals sharpen every match.',
+        done: hasPreferences,
+      },
+      {
+        id: 'matches',
+        href: '/dashboard/jobs',
+        title: 'Review your job matches',
+        desc: 'Every role is scored against your profile — focus on the best fits.',
+        done: hasMatches,
+      },
+      {
+        id: 'automation',
+        href: '/dashboard/automation',
+        title: 'Put applications on autopilot',
+        desc: 'Choose how much Careeva applies for you, from drafts to full auto.',
+        done: false,
+      },
+      {
+        id: 'tracking',
+        href: '/dashboard/applications',
+        title: 'Track every application',
+        desc: 'Statuses, follow-ups, and outcomes in one clean pipeline.',
+        done: false,
+      },
+    ];
+  }, [profile, recentJobs]);
+
+  const currentStepIndex = useMemo(() => {
+    const index = journeySteps.findIndex((step) => !step.done);
+    return index === -1 ? journeySteps.length - 1 : index;
+  }, [journeySteps]);
 
   const topMatches = useMemo(
     () => [...recentJobs].sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0)).slice(0, 3),
@@ -102,7 +143,7 @@ export default function DashboardPage() {
           <div>
             <div className="badge mb-4">Career command center</div>
             <h1 className="section-heading text-4xl md:text-5xl">
-              Welcome back{profile.jobTitle ? `, ${profile.jobTitle}` : ''}.
+              Welcome back.
             </h1>
             <p className="section-subcopy mt-4 max-w-2xl text-base md:text-lg">
               Keep your search momentum high with tighter profile data, sharper cover letters, and a cleaner view of the roles that deserve your time.
@@ -170,11 +211,11 @@ export default function DashboardPage() {
             <div className="mt-5 space-y-3 text-sm text-slate-300">
               <div className="flex items-center justify-between">
                 <span>Resume uploaded</span>
-                <span className={profile.resumeUrl ? 'text-emerald-400' : 'text-slate-500'}>{profile.resumeUrl ? '✓ Done' : 'Not yet'}</span>
+                <span className={`flex items-center gap-1 ${profile.resumeUrl ? 'text-emerald-400' : 'text-slate-500'}`}>{profile.resumeUrl ? <><IconCheck size={13} /> Done</> : 'Not yet'}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Career goals defined</span>
-                <span className={profile.careerGoals ? 'text-emerald-400' : 'text-slate-500'}>{profile.careerGoals ? '✓ Done' : 'Add context'}</span>
+                <span className={`flex items-center gap-1 ${profile.careerGoals ? 'text-emerald-400' : 'text-slate-500'}`}>{profile.careerGoals ? <><IconCheck size={13} /> Done</> : 'Add context'}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Preferred industries</span>
@@ -255,7 +296,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="empty-state !p-8">
-              <div className="text-4xl">&#x1F4CB;</div>
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.05] text-slate-400"><IconBriefcase size={26} /></div>
               <h3 className="mt-4 text-xl font-semibold text-white">No role recommendations yet</h3>
               <p className="mt-2 text-slate-400">Complete onboarding and upload a resume to unlock stronger job matching.</p>
               <div className="mt-6 flex justify-center gap-3">
@@ -268,40 +309,27 @@ export default function DashboardPage() {
 
         <div className="space-y-6">
           <div className="premium-card p-7">
-            <h2 className="text-2xl font-semibold text-white">Next best actions</h2>
+            <h2 className="text-2xl font-semibold text-white">Your journey</h2>
+            <p className="mt-1 text-sm text-slate-400">Follow these steps in order — each one makes the next smarter.</p>
             <div className="mt-5 space-y-3 text-sm">
-              {[
-                {
-                  id: 'onboarding',
-                  href: '/dashboard/onboarding',
-                  title: 'Refine your job preferences',
-                  desc: 'Dial in salary, industries, and job types for stronger targeting.',
-                },
-                {
-                  id: 'coverletter',
-                  href: '/dashboard/cover-letter',
-                  title: 'Generate a tailored cover letter',
-                  desc: 'Turn a job description into a polished draft in one flow.',
-                },
-                {
-                  id: 'profile',
-                  href: '/dashboard/profile',
-                  title: 'Polish profile context',
-                  desc: 'Add goals and positioning to improve application quality.',
-                },
-              ].map((action) => {
-                const done = completedActions.has(action.id);
+              {journeySteps.map((step, index) => {
+                const isCurrent = index === currentStepIndex;
                 return (
                   <Link
-                    key={action.id}
-                    href={action.href}
-                    className={`premium-card-soft flex items-start justify-between gap-3 p-4 hover:bg-white/[0.05] ${done ? 'opacity-60' : ''}`}
+                    key={step.id}
+                    href={step.href}
+                    className={`premium-card-soft flex items-center gap-4 p-4 transition hover:bg-white/[0.05] ${
+                      isCurrent ? 'border-blue-400/40 bg-blue-500/10' : step.done ? 'opacity-70' : ''
+                    }`}
                   >
-                    <div>
-                      <div className={`font-medium ${done ? 'line-through text-slate-400' : 'text-white'}`}>{action.title}</div>
-                      <div className="mt-1 text-slate-400">{action.desc}</div>
+                    <span className={step.done ? 'step-dot-done' : isCurrent ? 'step-dot-active' : 'step-dot-todo'}>
+                      {step.done ? <IconCheck size={14} /> : index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className={`font-medium ${step.done ? 'text-slate-400 line-through' : 'text-white'}`}>{step.title}</div>
+                      <div className="mt-0.5 text-slate-400">{step.desc}</div>
                     </div>
-                    <span className={done ? 'text-emerald-400' : 'text-slate-500'}>{done ? '✓' : '→'}</span>
+                    <span className={isCurrent ? 'text-blue-300' : 'text-slate-500'}><IconChevronRight size={16} /></span>
                   </Link>
                 );
               })}

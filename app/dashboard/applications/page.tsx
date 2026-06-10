@@ -1,10 +1,22 @@
-﻿'use client';
+'use client';
 
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { profileAPI } from '@/lib/api';
+import {
+  IconListChecks,
+  IconBell,
+  IconTarget,
+  IconCheck,
+  IconAlertTriangle,
+  IconChevronRight,
+  IconMail,
+  IconFileText,
+  IconCopy,
+  IconX,
+} from '@/components/icons';
 
 interface Application {
   id: string;
@@ -32,15 +44,15 @@ type StatusKey = typeof COLUMNS[number]['key'];
 function StatusBadge({ status }: { status: string }) {
   const col = COLUMNS.find(c => c.key === status);
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${
-      status === 'applied'      ? 'bg-blue-50 text-blue-700'    :
-      status === 'phone_screen' ? 'bg-amber-50 text-amber-700'  :
-      status === 'interview'    ? 'bg-violet-50 text-violet-700' :
-      status === 'offer'        ? 'bg-emerald-50 text-emerald-700' :
-      status === 'rejected'     ? 'bg-slate-100 text-slate-500' :
-      'bg-slate-100 text-slate-500'
+    <span className={`badge ${
+      status === 'applied'      ? 'border-blue-500/25 bg-blue-500/10 text-blue-200' :
+      status === 'phone_screen' ? 'badge-warning' :
+      status === 'interview'    ? 'border-violet-500/25 bg-violet-500/10 text-violet-200' :
+      status === 'offer'        ? 'badge-success' :
+      status === 'rejected'     ? 'badge-danger' :
+      ''
     }`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${col?.dot || 'bg-slate-400'}`} />
+      <span className={`h-1.5 w-1.5 rounded-full ${col?.dot || 'bg-slate-400'}`} />
       {col?.label || status}
     </span>
   );
@@ -63,8 +75,9 @@ function NotesPanel({ app, onSave }: { app: Application; onSave: (id: string, no
   return (
     <div>
       <button onClick={() => setOpen(v => !v)}
-        className="text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1">
-        {open ? '▼' : '▶'} {app.notes ? 'Notes' : 'Add notes'}
+        className="flex min-h-[32px] items-center gap-1 rounded-lg text-xs font-medium text-slate-500 transition-colors hover:text-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50">
+        <IconChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+        {app.notes ? 'Notes' : 'Add notes'}
       </button>
       {open && (
         <div className="mt-2">
@@ -74,9 +87,9 @@ function NotesPanel({ app, onSave }: { app: Application; onSave: (id: string, no
             onBlur={() => onSave(app.id, val)}
             rows={2}
             placeholder="Add notes about this application..."
-            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 resize-none focus:outline-none focus:border-indigo-300"
+            className="w-full resize-none text-xs"
           />
-          <p className="text-[10px] text-slate-400 mt-0.5">Saves automatically on blur</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">Saves automatically when you click away</p>
         </div>
       )}
     </div>
@@ -239,49 +252,64 @@ export default function Applications() {
   }), [apps]);
 
   if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    <div className="flex h-64 items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
     </div>
   );
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900">Applications</h1>
-          <p className="text-slate-400 text-sm mt-0.5">{apps.length} total • {stats.rate}% interview rate{overdueCount > 0 ? ` • ⚠️ ${overdueCount} follow-up${overdueCount > 1 ? 's' : ''} overdue` : ''}</p>
-        </div>
-        <button
-          onClick={() => { setForm(blank()); setEditing(null); setModal(true); }}
-          className="px-5 py-2.5 rounded-xl text-white font-bold text-sm"
-          style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
-          + Add Application
-        </button>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: 'Applied',        value: stats.total,      color: 'text-slate-900' },
-          { label: 'Interviews',     value: stats.interviews, color: 'text-violet-600' },
-          { label: 'Offers',         value: stats.offers,     color: 'text-emerald-600' },
-          { label: 'Response Rate',  value: `${stats.rate}%`, color: stats.rate >= 15 ? 'text-emerald-600' : 'text-slate-900' },
-        ].map(s => (
-          <div key={s.label} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{s.label}</p>
-            <p className={`text-2xl font-black tabular-nums ${s.color}`}>{s.value}</p>
+    <div className="page-shell space-y-8">
+      {/* Hero header */}
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div>
+            <div className="badge mb-4">Step 5 of 5 · Tracker</div>
+            <h1 className="section-heading text-4xl">Track every application.</h1>
+            <p className="section-subcopy mt-4">
+              {apps.length} total · {stats.rate}% interview rate
+            </p>
+            {overdueCount > 0 && (
+              <div className="badge badge-warning mt-3">
+                <IconAlertTriangle size={14} />
+                {overdueCount} follow-up{overdueCount > 1 ? 's' : ''} overdue
+              </div>
+            )}
           </div>
-        ))}
-      </div>
+          <button
+            onClick={() => { setForm(blank()); setEditing(null); setModal(true); }}
+            className="btn-primary">
+            + Add Application
+          </button>
+        </div>
 
-      {error && <div className="text-red-500 text-sm bg-red-50 rounded-xl p-3">{error}</div>}
+        {/* Summary stats */}
+        <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            { label: 'Applied',       value: stats.total,      color: 'text-white' },
+            { label: 'Interviews',    value: stats.interviews, color: 'text-violet-300' },
+            { label: 'Offers',        value: stats.offers,     color: 'text-emerald-300' },
+            { label: 'Response Rate', value: `${stats.rate}%`, color: stats.rate >= 15 ? 'text-emerald-300' : 'text-white' },
+          ].map(s => (
+            <div key={s.label} className="stat-tile">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{s.label}</p>
+              <p className={`text-2xl font-bold tabular-nums ${s.color}`}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {error && (
+        <div className="alert-error flex items-center gap-2">
+          <IconAlertTriangle size={16} />
+          {error}
+        </div>
+      )}
 
       {/* View toggle */}
       <div className="flex gap-2">
         {(['list', 'board'] as const).map(v => (
           <button key={v} onClick={() => setView(v)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-all ${view === v ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:text-slate-700'}`}>
+            className={`${view === v ? 'btn-secondary' : 'btn-ghost'} text-sm !px-4 !py-2 capitalize`}>
             {v}
           </button>
         ))}
@@ -289,73 +317,82 @@ export default function Applications() {
 
       {/* List view */}
       {view === 'list' && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {apps.length === 0 && (
-            <div className="text-center py-16 text-slate-400">
-              <p className="text-4xl mb-3">📋</p>
-              <p className="font-semibold">No applications yet</p>
-              <p className="text-sm mt-1">Run automation to start applying, or add manually above</p>
+            <div className="empty-state">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.05] text-slate-400">
+                <IconListChecks size={26} />
+              </div>
+              <p className="mt-4 font-semibold text-white">No applications yet</p>
+              <p className="mt-1 text-sm text-slate-400">Run automation to start applying, or add one manually.</p>
+              <button
+                onClick={() => { setForm(blank()); setEditing(null); setModal(true); }}
+                className="btn-primary mt-6">
+                + Add Application
+              </button>
             </div>
           )}
           {apps.map(app => (
-            <div key={app.id} className="bg-white rounded-2xl border border-slate-100 px-5 py-4 hover:border-slate-200 transition-all">
-              <div className="flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-900 text-sm">{app.role}</p>
-                  <p className="text-slate-400 text-xs">{app.company} • {new Date(app.dateApplied || app.createdAt || Date.now()).toLocaleDateString()}</p>
+            <div key={app.id} className="premium-card-soft p-5 transition-colors hover:border-white/20">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-white">{app.role}</p>
+                  <p className="text-xs text-slate-400">{app.company} · {new Date(app.dateApplied || app.createdAt || Date.now()).toLocaleDateString()}</p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
                   <StatusBadge status={app.status} />
                   {/* Status quick-update */}
                   <select
                     value={app.status}
                     onChange={e => updateStatus(app.id, e.target.value as StatusKey)}
-                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 bg-white cursor-pointer"
+                    className="cursor-pointer !w-auto text-xs"
                   >
                     {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                   </select>
                   {/* Reminder indicator */}
                   {reminders[app.id] && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${new Date(reminders[app.id]) < new Date() ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'}`}>
-                      🔔 {new Date(reminders[app.id]).toLocaleDateString()}
+                    <span className={`badge ${new Date(reminders[app.id]) < new Date() ? 'badge-danger' : ''}`}>
+                      <IconBell size={12} />
+                      {new Date(reminders[app.id]) < new Date() ? 'Overdue · ' : ''}{new Date(reminders[app.id]).toLocaleDateString()}
                     </span>
                   )}
                   {/* Set reminder */}
                   <button
                     onClick={() => { setReminderApp(app); setReminderDate(reminders[app.id] || ''); }}
                     title="Set follow-up reminder"
-                    className="text-xs px-2 py-1 rounded-lg bg-slate-50 text-slate-500 font-semibold hover:bg-slate-100 transition-all"
+                    aria-label="Set follow-up reminder"
+                    className="btn-ghost text-sm !px-3 !py-2"
                   >
-                    🔔
+                    <IconBell size={14} />
                   </button>
                   {/* Follow up button */}
                   <button
                     onClick={() => generateFollowup(app)}
                     title="Generate follow-up email"
-                    className="text-xs px-2 py-1 rounded-lg bg-purple-50 text-purple-700 font-semibold hover:bg-purple-100 transition-all"
+                    className="btn-ghost text-sm !px-3 !py-2 !text-violet-300"
                   >
-                    Follow Up
+                    <IconMail size={14} /> Follow Up
                   </button>
                   {/* Feedback button */}
                   <button
                     onClick={() => setFeedbackApp(app)}
                     title="Log outcome"
-                    className="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold hover:bg-amber-100 transition-all"
+                    className="btn-ghost text-sm !px-3 !py-2 !text-amber-300"
                   >
-                    Feedback
+                    <IconTarget size={14} /> Feedback
                   </button>
                   {app.coverLetter && (
                     <button
                       onClick={() => setCoverLetterApp(app)}
                       title="View cover letter"
-                      className="text-xs px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-semibold hover:bg-indigo-100 transition-all"
+                      className="btn-ghost text-sm !px-3 !py-2 !text-blue-300"
                     >
-                      CL
+                      <IconFileText size={14} /> Letter
                     </button>
                   )}
                   <button
                     onClick={() => { setForm({ ...app }); setEditing(app.id); setModal(true); }}
-                    className="text-xs px-2 py-1 rounded-lg bg-slate-50 text-slate-500 font-semibold hover:bg-slate-100 transition-all"
+                    className="btn-secondary text-sm !px-3 !py-2"
                   >
                     Edit
                   </button>
@@ -374,31 +411,31 @@ export default function Applications() {
       {view === 'board' && (
         <div className="grid grid-cols-5 gap-3 overflow-x-auto pb-4">
           {COLUMNS.map(col => (
-            <div key={col.key} className="bg-slate-50 rounded-2xl p-3 min-h-[300px]">
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`w-2 h-2 rounded-full ${col.dot}`} />
-                <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">{col.label}</p>
-                <span className="ml-auto text-xs text-slate-400 font-semibold">{byStatus[col.key]?.length || 0}</span>
+            <div key={col.key} className="premium-card-soft min-h-[300px] p-3">
+              <div className="mb-3 flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${col.dot}`} />
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-300">{col.label}</p>
+                <span className="ml-auto text-xs font-semibold text-slate-500">{byStatus[col.key]?.length || 0}</span>
               </div>
               <div className="space-y-2">
                 {(byStatus[col.key] || []).map(app => (
-                  <div key={app.id} className="bg-white rounded-xl border border-slate-100 p-3 shadow-sm">
-                    <p className="font-bold text-slate-900 text-xs leading-tight">{app.role}</p>
-                    <p className="text-slate-400 text-xs mt-0.5">{app.company}</p>
-                    <div className="flex gap-1 mt-2 flex-wrap">
+                  <div key={app.id} className="rounded-xl border border-white/10 bg-white/[0.04] p-3 transition-colors hover:border-white/20">
+                    <p className="text-xs font-bold leading-tight text-white">{app.role}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">{app.company}</p>
+                    <div className="mt-2 flex flex-wrap gap-1">
                       <select
                         value={app.status}
                         onChange={e => updateStatus(app.id, e.target.value as StatusKey)}
-                        className="text-[10px] border border-slate-200 rounded px-1 py-0.5 text-slate-600 bg-white cursor-pointer w-full"
+                        className="w-full cursor-pointer !px-2 !py-1 text-[11px]"
                       >
                         {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                       </select>
-                      <button onClick={() => setFeedbackApp(app)} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold">
+                      <button onClick={() => setFeedbackApp(app)} className="btn-ghost !px-2 !py-1 text-[11px] !text-amber-300">
                         Feedback
                       </button>
                       {app.coverLetter && (
-                        <button onClick={() => setCoverLetterApp(app)} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-semibold">
-                          CL
+                        <button onClick={() => setCoverLetterApp(app)} className="btn-ghost !px-2 !py-1 text-[11px] !text-blue-300">
+                          Letter
                         </button>
                       )}
                     </div>
@@ -412,27 +449,26 @@ export default function Applications() {
 
       {/* Reminder modal */}
       {reminderApp && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <h2 className="text-lg font-black text-slate-900">Set Follow-Up Reminder</h2>
-            <p className="text-slate-500 text-sm">{reminderApp.role} at {reminderApp.company}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="premium-card w-full max-w-sm space-y-4 p-6">
+            <h2 className="text-lg font-bold text-white">Set Follow-Up Reminder</h2>
+            <p className="text-sm text-slate-400">{reminderApp.role} at {reminderApp.company}</p>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Reminder Date</label>
+              <label className="field-label">Reminder Date</label>
               <input
                 type="date"
                 value={reminderDate}
                 onChange={e => setReminderDate(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400"
+                className="w-full"
               />
             </div>
             <div className="flex gap-3">
               <button onClick={() => { setReminderApp(null); setReminderDate(''); }}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                className="btn-secondary flex-1">
                 Cancel
               </button>
               <button onClick={() => saveReminder(reminderApp.id, reminderDate)} disabled={!reminderDate}
-                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                className="btn-primary flex-1 disabled:opacity-50">
                 Save Reminder
               </button>
             </div>
@@ -442,9 +478,9 @@ export default function Applications() {
 
       {/* Add/Edit modal */}
       {modal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-lg font-black text-slate-900">{editing ? 'Edit Application' : 'Add Application'}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="premium-card w-full max-w-lg space-y-4 p-6">
+            <h2 className="text-lg font-bold text-white">{editing ? 'Edit Application' : 'Add Application'}</h2>
             {[
               { label: 'Company', field: 'company' as const, type: 'text' },
               { label: 'Role / Title', field: 'role' as const, type: 'text' },
@@ -452,42 +488,41 @@ export default function Applications() {
               { label: 'Job URL', field: 'url' as const, type: 'url' },
             ].map(({ label, field, type }) => (
               <div key={field}>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">{label}</label>
+                <label className="field-label">{label}</label>
                 <input
                   type={type}
                   value={(form as any)[field] || ''}
                   onChange={e => setForm(p => ({ ...p, [field]: e.target.value }))}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400"
+                  className="w-full"
                 />
               </div>
             ))}
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Status</label>
+              <label className="field-label">Status</label>
               <select
                 value={form.status}
                 onChange={e => setForm(p => ({ ...p, status: e.target.value as StatusKey }))}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400"
+                className="w-full"
               >
                 {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Notes</label>
+              <label className="field-label">Notes</label>
               <textarea
                 value={form.notes || ''}
                 onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
                 rows={2}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400 resize-none"
+                className="w-full resize-none"
               />
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={() => { setModal(false); setForm(blank()); setEditing(null); }}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                className="btn-secondary flex-1">
                 Cancel
               </button>
               <button onClick={saveApp} disabled={saving || !form.company || !form.role}
-                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                className="btn-primary flex-1 disabled:opacity-50">
                 {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
@@ -497,34 +532,34 @@ export default function Applications() {
 
       {/* Feedback modal */}
       {feedbackApp && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <h2 className="text-lg font-black text-slate-900">Log Outcome</h2>
-            <p className="text-slate-500 text-sm">{feedbackApp.role} at {feedbackApp.company}</p>
-            <p className="text-xs text-slate-400">This helps Careeva learn what is working and improve future cover letters.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="premium-card w-full max-w-sm space-y-4 p-6">
+            <h2 className="text-lg font-bold text-white">Log Outcome</h2>
+            <p className="text-sm text-slate-400">{feedbackApp.role} at {feedbackApp.company}</p>
+            <p className="text-xs text-slate-500">This helps Careeva learn what is working and improve future cover letters.</p>
             <textarea
               value={feedbackNote}
               onChange={e => setFeedbackNote(e.target.value)}
               placeholder="Optional notes (e.g. interviewer name, feedback received...)"
               rows={2}
-              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-indigo-400 resize-none"
+              className="w-full resize-none"
             />
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => submitFeedback('interview')}
-                className="py-2.5 rounded-xl text-sm font-bold text-violet-700 bg-violet-50 hover:bg-violet-100">
-                🎯 Interview
+                className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-500/10 text-sm font-bold text-violet-300 transition-colors hover:bg-violet-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50">
+                <IconTarget size={14} /> Interview
               </button>
               <button onClick={() => submitFeedback('offer')}
-                className="py-2.5 rounded-xl text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
-                ✅ Offer
+                className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-sm font-bold text-emerald-300 transition-colors hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50">
+                <IconCheck size={14} /> Offer
               </button>
               <button onClick={() => submitFeedback('rejection')}
-                className="py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 hover:bg-slate-100">
-                Rejected
+                className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl border border-red-500/25 bg-red-500/10 text-sm font-bold text-red-300 transition-colors hover:bg-red-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50">
+                <IconX size={14} /> Rejected
               </button>
             </div>
             <button onClick={() => { setFeedbackApp(null); setFeedbackNote(''); }}
-              className="w-full py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+              className="btn-secondary w-full">
               Cancel
             </button>
           </div>
@@ -533,62 +568,60 @@ export default function Applications() {
 
       {/* Follow-up draft modal */}
       {followupApp && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black text-slate-900">Follow-Up Draft</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="premium-card w-full max-w-lg space-y-4 p-6">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-lg font-bold text-white">Follow-Up Draft</h2>
               <p className="text-sm text-slate-400">{followupApp.role} at {followupApp.company}</p>
             </div>
             {generatingFollowup ? (
-              <div className="flex items-center gap-3 py-6 justify-center text-slate-400">
-                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/></svg>
+              <div className="flex items-center justify-center gap-3 py-6 text-slate-400">
+                <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" strokeOpacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/></svg>
                 <span className="text-sm">Generating draft...</span>
               </div>
             ) : followupDraft ? (
               <>
-                <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                <div className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-white/[0.04] p-4 text-sm leading-relaxed text-slate-300">
                   {followupDraft}
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => navigator.clipboard.writeText(followupDraft)}
-                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
-                    Copy
+                    className="btn-secondary flex-1">
+                    <IconCopy size={14} /> Copy
                   </button>
                   <button onClick={() => { setFollowupApp(null); setFollowupDraft(''); }}
-                    className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
-                    style={{ background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' }}>
+                    className="btn-primary flex-1">
                     Done
                   </button>
                 </div>
               </>
             ) : (
-              <p className="text-slate-400 text-sm text-center py-4">Could not generate draft. Try again.</p>
+              <p className="py-4 text-center text-sm text-slate-400">Could not generate draft. Try again.</p>
             )}
-            <button onClick={() => { setFollowupApp(null); setFollowupDraft(''); }} className="w-full py-2 text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+            <button onClick={() => { setFollowupApp(null); setFollowupDraft(''); }} className="w-full py-2 text-xs text-slate-500 transition-colors hover:text-slate-300">Cancel</button>
           </div>
         </div>
       )}
 
       {/* Cover letter modal */}
       {coverLetterApp && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black text-slate-900">Cover Letter</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="premium-card flex max-h-[80vh] w-full max-w-2xl flex-col space-y-4 p-6">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-lg font-bold text-white">Cover Letter</h2>
               <p className="text-sm text-slate-400">{coverLetterApp.role} at {coverLetterApp.company}</p>
             </div>
-            <div className="flex-1 overflow-y-auto bg-slate-50 rounded-xl p-4 text-sm text-slate-700 whitespace-pre-wrap font-mono leading-relaxed">
+            <div className="flex-1 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-white/[0.04] p-4 font-mono text-sm leading-relaxed text-slate-300">
               {coverLetterApp.coverLetter || 'No cover letter stored for this application.'}
             </div>
             <div className="flex gap-3">
               <button
                 onClick={() => navigator.clipboard.writeText(coverLetterApp.coverLetter || '')}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
-                Copy
+                className="btn-secondary flex-1">
+                <IconCopy size={14} /> Copy
               </button>
               <button onClick={() => setCoverLetterApp(null)}
-                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
-                style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                className="btn-primary flex-1">
                 Close
               </button>
             </div>

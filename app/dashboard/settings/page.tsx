@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { IconArrowRight, IconCheck, IconChevronRight } from '@/components/icons';
 
 interface Config {
   submitMode: string;
@@ -31,24 +32,58 @@ const DEFAULTS: Config = {
 
 function Section({ title, children, hint }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-5">
-      <h2 className="font-black text-slate-900 mb-1">{title}</h2>
-      {hint && <p className="text-xs text-slate-400 mb-3">{hint}</p>}
-      {children}
+    <div className="premium-card p-7">
+      <h2 className="text-lg font-bold text-white">{title}</h2>
+      {hint && <p className="mt-1 text-sm text-slate-400">{hint}</p>}
+      <div className="mt-4">{children}</div>
     </div>
   );
 }
 
 function Radio({ value, current, onChange, label, desc }: { value: string; current: string; onChange: (v: string) => void; label: string; desc: string }) {
+  const active = current === value;
   return (
     <button
+      type="button"
+      role="radio"
+      aria-checked={active}
       onClick={() => onChange(value)}
-      className={`w-full text-left p-3 rounded-xl border transition mb-2 ${
-        current === value ? 'border-indigo-400 bg-indigo-50' : 'border-slate-100 hover:border-slate-200'
+      className={`mb-2 w-full rounded-2xl border p-4 text-left transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/40 ${
+        active
+          ? 'border-blue-400/40 bg-blue-500/10'
+          : 'border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
       }`}
     >
-      <p className="text-sm font-bold text-slate-800">{label}</p>
-      <p className="text-xs text-slate-500">{desc}</p>
+      <span className="flex items-center gap-2 text-sm font-semibold text-white">
+        {active && <IconCheck size={14} className="text-blue-300" />}
+        {label}
+      </span>
+      <span className="mt-1 block text-xs text-slate-400">{desc}</span>
+    </button>
+  );
+}
+
+function Toggle({ checked, onChange, label, help }: { checked: boolean; onChange: (v: boolean) => void; label: string; help?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center gap-4 rounded-2xl px-2 py-3 text-left transition-colors hover:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+    >
+      <span
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? 'bg-blue-500' : 'bg-white/10'}`}
+        aria-hidden="true"
+      >
+        <span
+          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${checked ? 'left-[1.375rem]' : 'left-0.5'}`}
+        />
+      </span>
+      <span>
+        <span className="block text-sm font-semibold text-slate-200">{label}</span>
+        {help && <span className="mt-0.5 block text-xs text-slate-500">{help}</span>}
+      </span>
     </button>
   );
 }
@@ -79,18 +114,29 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900">Automation Settings</h1>
-          <p className="text-sm text-slate-500">Your defaults for how Careeva applies. Change anytime — applies to the next run.</p>
+    <div className="page-shell space-y-8">
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="badge mb-4">Settings</div>
+            <h1 className="section-heading">Automation settings</h1>
+            <p className="section-subcopy mt-3 max-w-2xl">
+              Your defaults for how Careeva applies. Change anytime — updates take effect on the next run.
+            </p>
+          </div>
+          <div aria-live="polite">
+            {saving ? (
+              <span className="badge">Saving…</span>
+            ) : savedAt ? (
+              <span className="badge-success">
+                <IconCheck size={14} /> Saved
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="text-xs font-semibold text-slate-400">
-          {saving ? 'Saving…' : savedAt ? 'Saved ✓' : ''}
-        </div>
-      </div>
+      </section>
 
-      <div className="space-y-4">
+      <div className="space-y-6">
         <Section title="Submission mode" hint="What the worker does after filling an application form.">
           <Radio value="approve_first" current={config.submitMode} onChange={(v) => save({ submitMode: v })}
             label="Fill → screenshot → I approve → submit"
@@ -113,52 +159,51 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Match score gates" hint="Jobs below the apply gate are never processed. Tunable per run too.">
-          <div className="flex items-center gap-6">
-            <label className="text-sm font-semibold text-slate-700">
-              Apply gate
-              <input type="number" min={0} max={100} value={config.minScoreToApply}
+          <div className="flex flex-wrap items-end gap-6">
+            <div>
+              <label className="field-label" htmlFor="apply-gate">Apply gate</label>
+              <input id="apply-gate" type="number" min={0} max={100} value={config.minScoreToApply}
                 onChange={(e) => save({ minScoreToApply: Number(e.target.value) })}
-                className="ml-2 w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
-            </label>
-            <label className="text-sm font-semibold text-slate-700">
-              Auto-submit gate (Safe mode)
-              <input type="number" min={0} max={100} value={config.minScoreToAutoApply ?? 75}
+                className="!w-24" />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="auto-gate">Auto-submit gate (Safe mode)</label>
+              <input id="auto-gate" type="number" min={0} max={100} value={config.minScoreToAutoApply ?? 75}
                 onChange={(e) => save({ minScoreToAutoApply: Number(e.target.value) })}
-                className="ml-2 w-20 px-2 py-1 rounded-lg border border-slate-200 text-sm" />
-            </label>
+                className="!w-24" />
+            </div>
           </div>
         </Section>
 
         <Section title="Volume & pacing">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <label className="text-sm font-semibold text-slate-700">
-              Max applies per run
-              <input type="number" min={0} value={config.maxAppliesPerRun}
-                onChange={(e) => save({ maxAppliesPerRun: Number(e.target.value) })}
-                className="mt-1 block w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm" />
-              <span className="text-[10px] font-normal text-slate-400">0 = unlimited</span>
-            </label>
-            <label className="text-sm font-semibold text-slate-700">
-              Min delay between apps (sec)
-              <input type="number" min={5} value={config.minDelaySeconds}
-                onChange={(e) => save({ minDelaySeconds: Number(e.target.value) })}
-                className="mt-1 block w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm" />
-            </label>
-            <label className="text-sm font-semibold text-slate-700">
-              Max delay (sec)
-              <input type="number" min={5} value={config.maxDelaySeconds}
-                onChange={(e) => save({ maxDelaySeconds: Number(e.target.value) })}
-                className="mt-1 block w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm" />
-            </label>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <label className="field-label" htmlFor="max-applies">Max applies per run</label>
+              <input id="max-applies" type="number" min={0} value={config.maxAppliesPerRun}
+                onChange={(e) => save({ maxAppliesPerRun: Number(e.target.value) })} />
+              <p className="field-help">0 = unlimited</p>
+            </div>
+            <div>
+              <label className="field-label" htmlFor="min-delay">Min delay between apps (sec)</label>
+              <input id="min-delay" type="number" min={5} value={config.minDelaySeconds}
+                onChange={(e) => save({ minDelaySeconds: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className="field-label" htmlFor="max-delay">Max delay (sec)</label>
+              <input id="max-delay" type="number" min={5} value={config.maxDelaySeconds}
+                onChange={(e) => save({ maxDelaySeconds: Number(e.target.value) })} />
+            </div>
           </div>
         </Section>
 
         <Section title="Documents">
-          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700 mb-3">
-            <input type="checkbox" checked={config.attachCoverLetter}
-              onChange={(e) => save({ attachCoverLetter: e.target.checked })} className="w-4 h-4" />
-            Attach generated cover letter when the form accepts one
-          </label>
+          <div className="mb-3">
+            <Toggle
+              checked={config.attachCoverLetter}
+              onChange={(v) => save({ attachCoverLetter: v })}
+              label="Attach generated cover letter when the form accepts one"
+            />
+          </div>
           <Radio value="uploaded" current={config.resumeVariant} onChange={(v) => save({ resumeVariant: v })}
             label="Send my uploaded resume file"
             desc="The exact PDF/DOCX you uploaded, every time. Recommended." />
@@ -168,18 +213,22 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Duplicate protection" hint="By default Careeva never applies twice to the same company.">
-          <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={config.allowSameCompanyRoles}
-              onChange={(e) => save({ allowSameCompanyRoles: e.target.checked })} className="w-4 h-4" />
-            Allow different roles at a company I've already applied to
-            <span className="text-[10px] font-normal text-slate-400">(you'll be notified which application already exists)</span>
-          </label>
+          <Toggle
+            checked={config.allowSameCompanyRoles}
+            onChange={(v) => save({ allowSameCompanyRoles: v })}
+            label="Allow different roles at a company I've already applied to"
+            help="You'll be notified which application already exists."
+          />
         </Section>
       </div>
 
-      <div className="mt-6 flex gap-3">
-        <Link href="/dashboard/automation" className="text-sm font-bold text-indigo-600 hover:underline">← Back to Automation</Link>
-        <Link href="/dashboard/review" className="text-sm font-bold text-indigo-600 hover:underline">Review Queue →</Link>
+      <div className="flex flex-wrap gap-3">
+        <Link href="/dashboard/automation" className="btn-ghost text-sm">
+          <IconChevronRight size={14} className="rotate-180" /> Back to Automation
+        </Link>
+        <Link href="/dashboard/review" className="btn-ghost text-sm">
+          Review Queue <IconArrowRight size={14} />
+        </Link>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { JobWithScore } from '@/lib/types';
 import { jobsAPI, profileAPI } from '@/lib/api';
 import JobCard from '@/components/JobCard';
 import { LoadingPage, LoadingSkeleton } from '@/components/Loading';
+import { IconSearch } from '@/components/icons';
 
 const FILTER_CHIPS = [
   { key: 'all', label: 'All' },
@@ -212,7 +213,7 @@ export default function JobsPage() {
           </>
         ) : (
           <div className="empty-state">
-            <div className="text-5xl">&#x1F4CB;</div>
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.05] text-slate-400"><IconSearch size={26} /></div>
             <h3 className="mt-4 text-2xl font-semibold text-white">No jobs found</h3>
             <p className="mt-2 text-slate-400">
               {search

@@ -1,17 +1,30 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { profileAPI } from '@/lib/api';
+import {
+  IconBarChart,
+  IconClipboardCheck,
+  IconCheck,
+  IconCheckCircle,
+  IconBot,
+  IconAlertTriangle,
+  IconTarget,
+  IconStar,
+  IconCopy,
+  IconChevronRight,
+  IconArrowRight,
+} from '@/components/icons';
 
 type Mode = 'score_only' | 'prep_all' | 'auto_safe' | 'full_auto';
 
-const MODES: { id: Mode; label: string; tagline: string; icon: string; risk: 'low' | 'medium' | 'high'; recommended?: boolean }[] = [
-  { id: 'score_only',  label: 'Find & Score',     tagline: 'Discover jobs, score them. No applications yet.',           icon: '📊', risk: 'low'    },
-  { id: 'prep_all',   label: 'Prepare Packets',   tagline: 'Generate cover letters + answers. Review before sending.',  icon: '📋', risk: 'low',   recommended: true },
-  { id: 'auto_safe',  label: 'Auto-Apply (Safe)', tagline: 'Submit where confident (score \u2265 80 + quality gate). Queue rest.', icon: '✅', risk: 'medium' },
-  { id: 'full_auto',  label: 'Full Auto',          tagline: 'Submit everything above threshold automatically.',           icon: '🤖', risk: 'high'   },
+const MODES: { id: Mode; label: string; tagline: string; icon: typeof IconBarChart; risk: 'low' | 'medium' | 'high'; recommended?: boolean }[] = [
+  { id: 'score_only',  label: 'Find & Score',     tagline: 'Discover jobs, score them. No applications yet.',           icon: IconBarChart, risk: 'low'    },
+  { id: 'prep_all',   label: 'Prepare Packets',   tagline: 'Generate cover letters + answers. Review before sending.',  icon: IconClipboardCheck, risk: 'low',   recommended: true },
+  { id: 'auto_safe',  label: 'Auto-Apply (Safe)', tagline: 'Submit where confident (score ≥ 80 + quality gate). Queue rest.', icon: IconCheckCircle, risk: 'medium' },
+  { id: 'full_auto',  label: 'Full Auto',          tagline: 'Submit everything above threshold automatically.',           icon: IconBot, risk: 'high'   },
 ];
 
 interface RunHistoryEntry {
@@ -22,14 +35,16 @@ interface RunHistoryEntry {
   errors: number;
 }
 
-function PipelineCard({ label, value, sub, color, icon, href }: { label: string; value: number | string; sub?: string; color?: string; icon: string; href?: string }) {
+function PipelineCard({ label, value, sub, color, icon: Icon, href }: { label: string; value: number | string; sub?: string; color?: string; icon: typeof IconBarChart; href?: string }) {
   const inner = (
-    <div className={`bg-white rounded-2xl border border-slate-100 p-4 flex items-center gap-4 transition-all ${href ? 'cursor-pointer hover:border-indigo-200 hover:shadow-sm' : ''}`}>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl bg-slate-50 flex-shrink-0">{icon}</div>
+    <div className={`stat-tile flex items-center gap-4 transition-all ${href ? 'cursor-pointer hover:border-blue-400/30 hover:bg-white/[0.05]' : ''}`}>
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-slate-300">
+        <Icon size={18} />
+      </div>
       <div>
-        <p className={`text-2xl font-black tabular-nums leading-none ${color || 'text-slate-900'}`}>{value}</p>
-        <p className="text-xs font-semibold text-slate-500 mt-0.5">{label}</p>
-        {sub && <p className="text-[10px] text-slate-400">{sub}</p>}
+        <p className={`text-3xl font-bold tabular-nums leading-none ${color || 'text-white'}`}>{value}</p>
+        <p className="mt-1 text-xs font-semibold text-slate-400">{label}</p>
+        {sub && <p className="text-[10px] text-slate-500">{sub}</p>}
       </div>
     </div>
   );
@@ -56,22 +71,30 @@ function CompletenessBanner() {
   if (!data) return null;
   if (data.readyToAutoApply) {
     return (
-      <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center justify-between">
-        <span>✓ Profile complete ({data.percentComplete}%) — ready to auto-apply</span>
-        <span className="flex gap-3">
-          <Link href="/dashboard/review" className="underline">Review Queue</Link>
-          <Link href="/dashboard/settings" className="underline">Settings</Link>
+      <div className="alert-success flex items-center justify-between gap-4">
+        <span className="inline-flex items-center gap-2 font-semibold">
+          <IconCheckCircle size={16} className="flex-shrink-0 text-emerald-300" />
+          Profile complete ({data.percentComplete}%) — ready to auto-apply
+        </span>
+        <span className="flex flex-shrink-0 gap-3">
+          <Link href="/dashboard/review" className="font-semibold text-emerald-200 underline underline-offset-2 hover:text-emerald-100">Review Queue</Link>
+          <Link href="/dashboard/settings" className="font-semibold text-emerald-200 underline underline-offset-2 hover:text-emerald-100">Settings</Link>
         </span>
       </div>
     );
   }
   return (
-    <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-      <p className="font-bold">Profile {data.percentComplete}% complete — auto-apply is blocked until these are set:</p>
-      <p className="mt-1">{data.missingRequired.join(' · ')}</p>
-      <div className="mt-2 flex gap-3">
-        <Link href="/dashboard/profile" className="font-bold underline">Complete profile →</Link>
-        <button onClick={seed} disabled={seeding} className="font-bold underline disabled:opacity-50">
+    <div className="alert-warning">
+      <p className="flex items-center gap-2 font-bold">
+        <IconAlertTriangle size={16} className="flex-shrink-0 text-amber-300" />
+        Profile {data.percentComplete}% complete — auto-apply is blocked until these are set:
+      </p>
+      <p className="mt-1 text-amber-200/80">{data.missingRequired.join(' · ')}</p>
+      <div className="mt-3 flex gap-4">
+        <Link href="/dashboard/profile" className="inline-flex items-center gap-1 font-bold text-amber-200 underline underline-offset-2 hover:text-amber-100">
+          Complete profile <IconArrowRight size={14} />
+        </Link>
+        <button onClick={seed} disabled={seeding} className="font-bold text-amber-200 underline underline-offset-2 hover:text-amber-100 disabled:opacity-50">
           {seeding ? 'Seeding…' : 'Seed starter job preferences'}
         </button>
       </div>
@@ -94,7 +117,7 @@ const LOG_COLORS: Record<LogLine['type'], string> = {
   success: 'text-emerald-400',
   error: 'text-red-400',
   warn: 'text-amber-300',
-  header: 'text-indigo-300 font-bold',
+  header: 'text-blue-300 font-bold',
   info: 'text-slate-300',
 };
 
@@ -203,7 +226,7 @@ export default function AutomatePage() {
         return updated;
       });
     } catch {
-      setLogLines([{ text: '❌ Failed to run automation', type: 'error' }]);
+      setLogLines([{ text: 'Failed to run automation', type: 'error' }]);
     }
     setRunning(false);
   };
@@ -218,31 +241,35 @@ export default function AutomatePage() {
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading pipeline…</div>;
 
   const selectedMode = MODES.find(m => m.id === mode)!;
-  const runBtnBg = running ? '#94a3b8'
+  const SelectedIcon = selectedMode.icon;
+  const runBtnBg = running ? 'rgba(51,65,85,0.8)'
     : selectedMode.risk === 'high' ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)'
     : selectedMode.risk === 'medium' ? 'linear-gradient(135deg,#f59e0b,#d97706)'
-    : 'linear-gradient(135deg,#6366f1,#4f46e5)';
+    : 'linear-gradient(135deg,#3b82f6,#2563eb)';
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+    <div className="page-shell space-y-8">
+      <div className="mx-auto max-w-3xl space-y-8">
       <CompletenessBanner />
 
       {/* Full Auto Warning Modal */}
       {showFullAutoWarning && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="premium-card w-full max-w-sm space-y-4 p-6">
             <div className="flex items-center gap-3">
-              <span className="text-3xl">⚠️</span>
-              <h2 className="text-lg font-black text-slate-900">Full Automation Warning</h2>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300">
+                <IconAlertTriangle size={20} />
+              </div>
+              <h2 className="text-lg font-bold text-white">Full Automation Warning</h2>
             </div>
-            <p className="text-sm text-slate-600">This will <strong>automatically submit applications</strong> without manual review. Make sure your profile and preferences are fully set up before proceeding.</p>
+            <p className="text-sm text-slate-300">This will <strong className="text-white">automatically submit applications</strong> without manual review. Make sure your profile and preferences are fully set up before proceeding.</p>
             <div className="flex gap-3">
               <button onClick={() => { setShowFullAutoWarning(false); setPendingMode(null); }}
-                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                className="btn-secondary flex-1 text-sm !px-4 !py-2.5">
                 Cancel
               </button>
               <button onClick={confirmFullAuto}
-                className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold"
+                className="flex-1 rounded-2xl py-2.5 text-sm font-bold text-white transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
                 style={{ background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' }}>
                 Yes, enable Full Auto
               </button>
@@ -252,79 +279,83 @@ export default function AutomatePage() {
       )}
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Job Application Engine</h1>
-          <p className="text-slate-400 text-sm mt-0.5">AI-powered • quality-gated • automated</p>
+      <section className="hero-panel gradient-border p-8 md:p-10">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="badge mb-4">Step 3 of 5 · Automation</div>
+            <h1 className="section-heading text-4xl">Put your applications on autopilot.</h1>
+            <p className="section-subcopy mt-4">AI-powered, quality-gated automation — from job discovery to submitted application.</p>
+          </div>
+          <div className="flex flex-shrink-0 gap-2">
+            <a href="/api/applications/patterns" target="_blank" rel="noopener noreferrer"
+              className="btn-ghost text-sm !px-4 !py-2">
+              <IconBarChart size={14} /> Patterns
+            </a>
+            <Link href="/dashboard/profile" className="btn-secondary text-sm !px-4 !py-2">
+              Edit Profile <IconArrowRight size={14} />
+            </Link>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <a href="/api/applications/patterns" target="_blank" rel="noopener noreferrer"
-            className="text-xs font-semibold text-purple-600 hover:text-purple-800 px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 transition-all">
-            📊 Patterns
-          </a>
-          <Link href="/dashboard/profile"
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition-all">
-            Edit Profile →
-          </Link>
-        </div>
-      </div>
+      </section>
 
       {/* Pipeline stats */}
       {pipeline && (
         <div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <PipelineCard label="Jobs Found" value={pipeline.totalJobs} sub="in pipeline" icon="📊" href="/dashboard/jobs" />
-            <PipelineCard label="High Match" value={pipeline.highMatchJobs} sub={`score \u2265 ${threshold}`} color="text-emerald-600" icon="🎯" href="/dashboard/jobs" />
-            <PipelineCard label="Applied" value={pipeline.applications} sub="total sent" color="text-indigo-600" icon="✅" href="/dashboard/applications" />
-            <PipelineCard label="Scored" value={pipeline.scoredJobs} sub={`of ${pipeline.totalJobs}`} icon="⭐" />
+            <PipelineCard label="Jobs Found" value={pipeline.totalJobs} sub="in pipeline" icon={IconBarChart} href="/dashboard/jobs" />
+            <PipelineCard label="High Match" value={pipeline.highMatchJobs} sub={`score ≥ ${threshold}`} color="text-emerald-300" icon={IconTarget} href="/dashboard/jobs" />
+            <PipelineCard label="Applied" value={pipeline.applications} sub="total sent" color="text-blue-300" icon={IconCheckCircle} href="/dashboard/applications" />
+            <PipelineCard label="Scored" value={pipeline.scoredJobs} sub={`of ${pipeline.totalJobs}`} icon={IconStar} />
           </div>
           {lastSynced && (
-            <p className="text-[10px] text-slate-400 mt-2 text-right">Last synced: {lastSynced}</p>
+            <p className="mt-2 text-right text-[10px] text-slate-500">Last synced: {lastSynced}</p>
           )}
         </div>
       )}
 
       {/* No jobs yet nudge */}
       {pipeline && pipeline.totalJobs === 0 && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 flex items-start gap-3">
-          <span className="text-2xl mt-0.5">📋</span>
+        <div className="alert-info flex items-start gap-3 !p-5">
+          <IconClipboardCheck size={20} className="mt-0.5 flex-shrink-0 text-blue-300" />
           <div>
-            <p className="text-sm font-semibold text-indigo-800">No jobs in pipeline yet</p>
-            <p className="text-xs text-indigo-600 mt-0.5">Run <strong>Find & Score</strong> to pull jobs from 8+ job boards based on your target titles.</p>
-            <p className="text-xs text-indigo-500 mt-1">Make sure your target job titles are set in <Link href="/dashboard/profile" className="underline">Profile → Job Preferences</Link>.</p>
+            <p className="text-sm font-semibold text-blue-100">No jobs in pipeline yet</p>
+            <p className="mt-0.5 text-xs text-blue-200/80">Run <strong className="text-blue-100">Find &amp; Score</strong> to pull jobs from 8+ job boards based on your target titles.</p>
+            <p className="mt-1 text-xs text-blue-200/60">Make sure your target job titles are set in <Link href="/dashboard/profile" className="underline underline-offset-2 hover:text-blue-100">Profile → Job Preferences</Link>.</p>
           </div>
         </div>
       )}
 
       {/* Mode selector */}
       <div>
-        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">What do you want to do?</p>
+        <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">What do you want to do?</p>
         <div className="grid grid-cols-2 gap-2.5">
           {MODES.map(m => (
             <button key={m.id} onClick={() => selectMode(m.id)}
-              className={`text-left p-4 rounded-2xl border-2 transition-all ${
+              className={`rounded-2xl border p-4 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${
                 mode === m.id
-                  ? m.risk === 'high' ? 'border-purple-400 bg-purple-50' : m.risk === 'medium' ? 'border-amber-400 bg-amber-50' : 'border-indigo-400 bg-indigo-50'
-                  : 'border-slate-100 bg-white hover:border-slate-200'
+                  ? m.risk === 'high' ? 'border-violet-400/40 bg-violet-500/10' : m.risk === 'medium' ? 'border-amber-400/40 bg-amber-500/10' : 'border-blue-400/40 bg-blue-500/10'
+                  : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
               }`}>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">{m.icon}</span>
-                <span className="font-bold text-slate-900 text-sm">{m.label}</span>
+              <div className="mb-1 flex items-center gap-2">
+                <span className={mode === m.id ? (m.risk === 'high' ? 'text-violet-300' : m.risk === 'medium' ? 'text-amber-300' : 'text-blue-300') : 'text-slate-400'}>
+                  <m.icon size={18} />
+                </span>
+                <span className="text-sm font-bold text-white">{m.label}</span>
                 <div className="ml-auto flex items-center gap-1">
                   {m.recommended && (
-                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500 text-white">RECOMMENDED</span>
+                    <span className="badge-success !px-2 !py-0.5 !text-[9px] font-black">RECOMMENDED</span>
                   )}
                   {mode === m.id && (
-                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-slate-900 text-white">SELECTED</span>
+                    <span className="badge bg-white !px-2 !py-0.5 !text-[9px] font-black text-slate-950">SELECTED</span>
                   )}
                 </div>
               </div>
-              <p className="text-slate-500 text-xs leading-relaxed">{m.tagline}</p>
+              <p className="text-xs leading-relaxed text-slate-400">{m.tagline}</p>
               {m.risk !== 'low' && (
-                <div className={`mt-2 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  m.risk === 'high' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'
+                <div className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  m.risk === 'high' ? 'bg-violet-500/15 text-violet-300' : 'bg-amber-500/15 text-amber-300'
                 }`}>
-                  {m.risk === 'high' ? '🤖 Full automation' : '⚠️ Quality-gated'}
+                  {m.risk === 'high' ? <><IconBot size={11} /> Full automation</> : <><IconAlertTriangle size={11} /> Quality-gated</>}
                 </div>
               )}
             </button>
@@ -334,11 +365,11 @@ export default function AutomatePage() {
 
       {/* Quality note */}
       {(mode === 'auto_safe' || mode === 'full_auto') && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-start gap-3">
-          <span className="text-base mt-0.5">🤖</span>
+        <div className="premium-card-soft flex items-start gap-3 px-4 py-3">
+          <IconBot size={16} className="mt-0.5 flex-shrink-0 text-slate-400" />
           <div>
-            <p className="text-xs font-bold text-slate-700">Quality gate active</p>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs font-bold text-slate-300">Quality gate active</p>
+            <p className="mt-0.5 text-xs text-slate-400">
               Every cover letter is scored 0-100 before submission. Anything below 65 is queued for your review instead of auto-submitted. Cover letters are archetype-aware and keyword-injected from the actual JD.
             </p>
           </div>
@@ -348,37 +379,38 @@ export default function AutomatePage() {
       {/* Advanced settings toggle */}
       <div>
         <button onClick={() => setShowSettings(v => !v)}
-          className="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">
-          <span className={`transition-transform ${showSettings ? 'rotate-90' : ''}`}>▶</span>
+          className="flex min-h-[44px] items-center gap-2 text-xs font-semibold text-slate-400 transition-colors hover:text-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 rounded-lg">
+          <IconChevronRight size={14} className={`transition-transform ${showSettings ? 'rotate-90' : ''}`} />
           Advanced settings
         </button>
         {showSettings && (
-          <div className="mt-3 bg-white rounded-2xl border border-slate-100 p-5 space-y-5">
-            <div className="flex items-center justify-between py-2 border-b border-slate-50">
+          <div className="premium-card-soft mt-3 space-y-5 p-5">
+            <div className="flex items-center justify-between border-b border-white/10 py-2 pb-4">
               <div>
-                <p className="text-sm font-semibold text-slate-900">Search for new jobs first</p>
-                <p className="text-xs text-slate-400 mt-0.5">Pulls from Remotive, The Muse, Adzuna, Wellfound + more</p>
+                <p className="text-sm font-semibold text-white">Search for new jobs first</p>
+                <p className="mt-0.5 text-xs text-slate-500">Pulls from Remotive, The Muse, Adzuna, Wellfound + more</p>
               </div>
               <button onClick={() => setDoSearch(v => !v)}
-                className={`w-11 h-6 rounded-full transition-all relative ${doSearch ? '' : 'bg-slate-200'}`}
+                aria-pressed={doSearch}
+                className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 ${doSearch ? '' : 'bg-white/10'}`}
                 style={doSearch ? { background: 'linear-gradient(135deg,#10b981,#059669)' } : {}}>
-                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${doSearch ? 'translate-x-6' : 'translate-x-1'}`} />
+                <div className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${doSearch ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                  Score threshold: <span className="text-slate-900 normal-case font-black">{threshold}</span>
+                <label className="field-label !text-xs font-bold uppercase tracking-wider !text-slate-400">
+                  Score threshold: <span className="normal-case font-black text-white">{threshold}</span>
                 </label>
                 <input type="range" min="50" max="95" step="5" value={threshold} onChange={e => setThreshold(+e.target.value)} className="w-full accent-emerald-500" />
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>50 (more)</span><span>95 (best match)</span></div>
+                <div className="mt-1 flex justify-between text-[10px] text-slate-500"><span>50 (more)</span><span>95 (best match)</span></div>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                  Max applications: <span className="text-slate-900 normal-case font-black">{maxApplies}</span>
+                <label className="field-label !text-xs font-bold uppercase tracking-wider !text-slate-400">
+                  Max applications: <span className="normal-case font-black text-white">{maxApplies}</span>
                 </label>
-                <input type="range" min="1" max="20" step="1" value={maxApplies} onChange={e => setMaxApplies(+e.target.value)} className="w-full accent-indigo-500" />
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>1</span><span>20/run</span></div>
+                <input type="range" min="1" max="20" step="1" value={maxApplies} onChange={e => setMaxApplies(+e.target.value)} className="w-full accent-blue-500" />
+                <div className="mt-1 flex justify-between text-[10px] text-slate-500"><span>1</span><span>20/run</span></div>
               </div>
             </div>
           </div>
@@ -388,38 +420,38 @@ export default function AutomatePage() {
       {/* Run button */}
       <div className="flex items-center gap-4">
         <button onClick={runAutomation} disabled={running}
-          className="flex items-center gap-2.5 px-7 py-3.5 rounded-2xl text-white font-bold text-sm disabled:opacity-60 transition-all active:scale-[0.98]"
+          className="flex min-h-[48px] items-center gap-2.5 rounded-2xl px-7 py-3.5 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
           style={{
             background: runBtnBg,
-            boxShadow: running ? 'none' : '0 4px 20px rgba(99,102,241,0.3)',
+            boxShadow: running ? 'none' : '0 4px 20px rgba(59,130,246,0.3)',
           }}>
           {running ? (
-            <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Running…</>
+            <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Running…</>
           ) : (
-            <><span>{selectedMode.icon}</span> {selectedMode.label}</>
+            <><SelectedIcon size={16} /> {selectedMode.label}</>
           )}
         </button>
         {lastRan && !running && (
-          <p className="text-xs text-slate-400">Last ran at {lastRan}</p>
+          <p className="text-xs text-slate-500">Last ran at {lastRan}</p>
         )}
       </div>
 
       {/* Run history */}
       {runHistory.length > 0 && (
         <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Run History</p>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Run History</p>
           <div className="space-y-1.5">
             {runHistory.map((h, i) => (
-              <div key={i} className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-2.5 text-xs">
-                <span className="text-slate-400 tabular-nums flex-shrink-0">{h.date}</span>
-                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] flex-shrink-0 ${
-                  h.mode === 'full_auto' ? 'bg-purple-100 text-purple-700' :
-                  h.mode === 'auto_safe' ? 'bg-amber-100 text-amber-700' :
-                  'bg-indigo-100 text-indigo-700'
+              <div key={i} className="premium-card-soft flex items-center gap-3 px-4 py-2.5 text-xs">
+                <span className="flex-shrink-0 tabular-nums text-slate-500">{h.date}</span>
+                <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                  h.mode === 'full_auto' ? 'bg-violet-500/15 text-violet-300' :
+                  h.mode === 'auto_safe' ? 'bg-amber-500/15 text-amber-300' :
+                  'bg-blue-500/15 text-blue-300'
                 }`}>{MODE_LABELS[h.mode]}</span>
-                <span className="text-slate-500">{h.scored} scored</span>
-                {h.submitted > 0 && <span className="text-emerald-600 font-semibold">{h.submitted} submitted</span>}
-                {h.errors > 0 && <span className="text-red-500">{h.errors} errors</span>}
+                <span className="text-slate-400">{h.scored} scored</span>
+                {h.submitted > 0 && <span className="font-semibold text-emerald-300">{h.submitted} submitted</span>}
+                {h.errors > 0 && <span className="text-red-300">{h.errors} errors</span>}
               </div>
             ))}
           </div>
@@ -428,26 +460,26 @@ export default function AutomatePage() {
 
       {/* Run log */}
       {logLines.length > 0 && (
-        <div className="bg-slate-950 rounded-2xl p-5 font-mono text-xs space-y-1 max-h-80 overflow-y-auto border border-slate-800">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-slate-500 text-[10px] uppercase tracking-wider">Run log</p>
+        <div className="max-h-80 space-y-1 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/80 p-4 font-mono text-xs">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Run log</p>
             <button onClick={copyLog}
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all">
-              {logCopied ? '✅ Copied' : '📋 Copy log'}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[10px] font-semibold text-slate-300 transition-all hover:bg-white/[0.1] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50">
+              {logCopied ? <><IconCheck size={14} /> Copied</> : <><IconCopy size={14} /> Copy log</>}
             </button>
           </div>
           {/* Log legend */}
-          <div className="flex gap-3 pb-2 border-b border-slate-800 mb-2">
-            <span className="text-emerald-400 text-[10px]">✅ Success</span>
-            <span className="text-amber-300 text-[10px]">⚠️ Warning</span>
-            <span className="text-red-400 text-[10px]">❌ Error</span>
+          <div className="mb-2 flex gap-3 border-b border-white/10 pb-2">
+            <span className="text-[10px] text-emerald-400">Success</span>
+            <span className="text-[10px] text-amber-300">Warning</span>
+            <span className="text-[10px] text-red-400">Error</span>
           </div>
           {runStats && (
-            <div className="flex gap-3 text-[10px] pb-2 border-b border-slate-800 mb-2">
-              {runStats.submitted > 0 && <span className="text-emerald-400 font-bold">✅ {runStats.submitted} submitted</span>}
-              {runStats.queued > 0 && <span className="text-amber-400">⚠️ {runStats.queued} queued</span>}
-              {runStats.scored > 0 && <span className="text-indigo-300">📊 {runStats.scored} scored</span>}
-              {runStats.errors > 0 && <span className="text-red-400">❌ {runStats.errors} errors</span>}
+            <div className="mb-2 flex gap-3 border-b border-white/10 pb-2 text-[10px]">
+              {runStats.submitted > 0 && <span className="font-bold text-emerald-400">{runStats.submitted} submitted</span>}
+              {runStats.queued > 0 && <span className="text-amber-300">{runStats.queued} queued</span>}
+              {runStats.scored > 0 && <span className="text-blue-300">{runStats.scored} scored</span>}
+              {runStats.errors > 0 && <span className="text-red-400">{runStats.errors} errors</span>}
             </div>
           )}
           {logLines.map((line, i) => (
@@ -460,35 +492,38 @@ export default function AutomatePage() {
       {/* Recent applications */}
       {recentApps.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recent Applications</p>
-            <Link href="/dashboard/applications" className="text-xs text-indigo-600 font-semibold hover:text-indigo-800">View all →</Link>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Recent Applications</p>
+            <Link href="/dashboard/applications" className="inline-flex items-center gap-1 text-xs font-semibold text-blue-300 hover:text-blue-200">
+              View all <IconArrowRight size={12} />
+            </Link>
           </div>
-          <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden divide-y divide-slate-50">
+          <div className="premium-card-soft divide-y divide-white/5 overflow-hidden">
             {recentApps.map((app, i) => (
               <div key={i} className="flex items-center gap-4 px-5 py-3.5">
-                <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-sm font-bold text-slate-500 flex-shrink-0">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-sm font-bold text-slate-300">
                   {app.company.charAt(0)}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 text-sm truncate">{app.role}</p>
-                  <p className="text-slate-400 text-xs">{app.company}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-white">{app.role}</p>
+                  <p className="text-xs text-slate-500">{app.company}</p>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${
-                    app.status === 'applied' ? 'bg-emerald-50 text-emerald-700' :
-                    app.status === 'prepping' ? 'bg-indigo-50 text-indigo-700' :
-                    'bg-slate-100 text-slate-500'
+                <div className="flex-shrink-0 text-right">
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${
+                    app.status === 'applied' ? 'bg-emerald-500/15 text-emerald-300' :
+                    app.status === 'prepping' ? 'bg-blue-500/15 text-blue-300' :
+                    'bg-white/[0.06] text-slate-400'
                   }`}>
                     {app.status}
                   </span>
-                  <p className="text-slate-400 text-[10px] mt-1">{new Date(app.createdAt).toLocaleDateString()}</p>
+                  <p className="mt-1 text-[10px] text-slate-500">{new Date(app.createdAt).toLocaleDateString()}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

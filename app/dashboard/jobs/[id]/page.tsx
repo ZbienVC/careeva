@@ -7,6 +7,18 @@ import { JobWithScore } from '@/lib/types';
 import { jobsAPI, scoreAPI, profileAPI } from '@/lib/api';
 import JobScorer from '@/components/JobScorer';
 import { LoadingPage } from '@/components/Loading';
+import {
+  IconArrowRight,
+  IconBot,
+  IconBriefcase,
+  IconClipboardCheck,
+  IconClock,
+  IconFileText,
+  IconLink,
+  IconTarget,
+  IconTrendingUp,
+  IconZap,
+} from '@/components/icons';
 
 function getNotes(jobId: string): string {
   if (typeof window === 'undefined') return '';
@@ -86,7 +98,7 @@ export default function JobDetailPage() {
       } else if (data.duplicate && data.duplicateInfo) {
         setToast(`Queued — note: you previously applied to ${data.duplicateInfo.company} (${data.duplicateInfo.role})`);
       } else if (data.taskId) {
-        setToast('Queued for auto-apply \u2713 — track it in Review Queue');
+        setToast('Queued for auto-apply — track it in Review Queue');
       } else {
         setToast(data.error || 'Could not queue');
       }
@@ -116,7 +128,7 @@ export default function JobDetailPage() {
           url: job.url || '',
         }),
       });
-      setToast('Application tracked \u2713');
+      setToast('Application tracked');
     } catch {
       setToast('Applied \u2014 tracking failed');
     } finally {
@@ -142,7 +154,9 @@ export default function JobDetailPage() {
       <div className="page-shell">
         <div className="premium-card p-8 text-center">
           <p className="text-red-300 mb-4">{error || 'Job not found'}</p>
-          <Link href="/dashboard/jobs" className="text-blue-300 hover:text-blue-200">Back to Jobs</Link>
+          <Link href="/dashboard/jobs" className="btn-secondary inline-flex items-center gap-2">
+            <IconArrowRight className="rotate-180" size={16} /> Back to Jobs
+          </Link>
         </div>
       </div>
     );
@@ -151,7 +165,7 @@ export default function JobDetailPage() {
   return (
     <div className="page-shell space-y-8">
       {toast && (
-        <div className="fixed top-6 right-6 z-50 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white shadow-xl">
+        <div className="fixed top-6 right-6 z-50 rounded-2xl border border-white/10 bg-slate-900/90 px-5 py-3 text-sm font-medium text-slate-200 shadow-xl backdrop-blur">
           {toast}
         </div>
       )}
@@ -159,7 +173,7 @@ export default function JobDetailPage() {
       {/* Back */}
       <div>
         <Link href="/dashboard/jobs" className="btn-ghost inline-flex items-center gap-2">
-          \u2190 Back to Jobs
+          <IconArrowRight className="rotate-180" size={16} /> Back to jobs
         </Link>
       </div>
 
@@ -171,33 +185,47 @@ export default function JobDetailPage() {
           <p className="mt-2 text-xl text-slate-300">{job.company}</p>
 
           <div className="mt-6 flex flex-wrap gap-3 text-sm text-slate-400">
-            <span className="rounded-full bg-white/[0.05] px-4 py-1.5">\uD83D\uDCCD {job.location}</span>
-            <span className="rounded-full bg-white/[0.05] px-4 py-1.5 capitalize">\uD83D\uDCBC {job.jobType}</span>
-            {job.salary && <span className="rounded-full bg-white/[0.05] px-4 py-1.5">\uD83D\uDCB0 {job.salary}</span>}
-            <span className="rounded-full bg-white/[0.05] px-4 py-1.5">\uD83D\uDCC5 Posted {new Date(job.createdAt).toLocaleDateString()}</span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-4 py-1.5"><IconTarget size={14} className="text-blue-300" /> {job.location}</span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-4 py-1.5 capitalize"><IconBriefcase size={14} className="text-violet-300" /> {job.jobType}</span>
+            {job.salary && <span className="inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-4 py-1.5"><IconTrendingUp size={14} className="text-emerald-300" /> {job.salary}</span>}
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-4 py-1.5"><IconClock size={14} className="text-slate-400" /> Posted {new Date(job.createdAt).toLocaleDateString()}</span>
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3">
             <button
               onClick={handleAutoApply}
               disabled={applying}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition"
+              className="btn-primary disabled:opacity-50"
             >
-              {applying ? 'Queuing…' : '🤖 Auto-Apply'}
+              {applying ? (
+                'Queuing…'
+              ) : (
+                <>
+                  <IconBot size={16} /> Auto-Apply
+                </>
+              )}
             </button>
             <button
               onClick={handleQuickApply}
               disabled={applying}
-              className="btn-primary disabled:opacity-50"
+              className="btn-secondary disabled:opacity-50"
             >
-              {applying ? 'Tracking...' : job.url ? '\u26A1 Quick Apply + Track' : 'Mark as Applied'}
+              {applying ? (
+                'Tracking...'
+              ) : job.url ? (
+                <>
+                  <IconZap size={16} /> Quick Apply + Track
+                </>
+              ) : (
+                'Mark as Applied'
+              )}
             </button>
             <button onClick={handleGenerateCoverLetter} className="btn-secondary">
-              \u270F\uFE0F Generate Cover Letter
+              <IconFileText size={16} /> Generate Cover Letter
             </button>
             {job.url && (
-              <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn-secondary">
-                Open Original Listing \u2197
+              <a href={job.url} target="_blank" rel="noopener noreferrer" className="btn-ghost">
+                <IconLink size={16} /> Open Original Listing
               </a>
             )}
           </div>
@@ -282,11 +310,11 @@ export default function JobDetailPage() {
           <div className="premium-card p-6">
             <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
             <div className="space-y-3">
-              <button onClick={handleGenerateCoverLetter} className="btn-secondary w-full text-left">
-                \u270F\uFE0F Write Cover Letter
+              <button onClick={handleGenerateCoverLetter} className="btn-secondary w-full justify-start">
+                <IconFileText size={16} /> Write Cover Letter
               </button>
-              <Link href="/dashboard/applications" className="btn-secondary w-full block text-left">
-                \uD83D\uDCC4 View Applications
+              <Link href="/dashboard/applications" className="btn-secondary w-full justify-start">
+                <IconClipboardCheck size={16} /> View Applications
               </Link>
             </div>
           </div>

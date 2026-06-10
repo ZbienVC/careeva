@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { uploadAPI } from '@/lib/api';
 import { LoadingSpinner } from './Loading';
+import { IconUpload } from './icons';
 
 interface ResumeUploadProps {
   onSuccess?: () => void;
@@ -101,8 +102,8 @@ export default function ResumeUpload({ onSuccess, onError }: ResumeUploadProps) 
             </div>
           ) : (
             <>
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500/20 via-cyan-400/15 to-violet-500/20 text-3xl text-white">
-                ↑
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500/20 via-cyan-400/15 to-violet-500/20 text-white">
+                <IconUpload size={28} />
               </div>
               <h3 className="mt-5 text-xl font-semibold text-white">Drop your resume here</h3>
               <p className="mt-2 text-sm text-slate-400">or click to browse from your device</p>

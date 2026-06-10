@@ -8,6 +8,7 @@
  */
 import { prisma } from '@/lib/prisma';
 import { buildApplicationPacket } from '@/lib/auto-apply';
+import { isAggregatorUrl } from '@/lib/job-search';
 
 // ── LinkedIn redirect resolution (Q5: zero-bot LinkedIn strategy) ─────────────
 // Many LinkedIn postings are "Apply on company website" — follow the redirect
@@ -26,9 +27,28 @@ export async function resolveApplyUrl(rawUrl: string): Promise<{ url: string; at
       const m = html.match(/"applyUrl"\s*:\s*"([^"]+)"/) || html.match(/externalApply[^"]*"url":"([^"]+)"/);
       if (m?.[1]) url = decodeURIComponent(m[1].replace(/\\u002[fF]/g, '/'));
     } else {
-      // Generic shorteners/redirectors (Adzuna redirect_url, etc.)
-      const res = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(8000) }).catch(() => null);
+      // Generic shorteners/redirectors (Adzuna redirect_url, etc.). Some hosts
+      // reject HEAD — fall back to GET and just follow the redirect chain.
+      let res = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(8000) }).catch(() => null);
+      if (!res?.ok) {
+        res = await fetch(url, {
+          method: 'GET',
+          redirect: 'follow',
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Careeva/1.0)' },
+          signal: AbortSignal.timeout(10000),
+        }).catch(() => null);
+      }
       if (res?.url) url = res.url;
+
+      // If we still landed on an aggregator listing, scan its HTML for a
+      // direct ATS link — many listings embed the real application URL.
+      if (res && isAggregatorUrl(url)) {
+        const html = await res.text().catch(() => '');
+        const atsLink = html.match(
+          /https?:\/\/[^"'\s<>]*(?:greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|smartrecruiters\.com|icims\.com|jobvite\.com|workable\.com|recruitee\.com|breezy\.hr|bamboohr\.com|teamtailor\.com)[^"'\s<>]*/i
+        );
+        if (atsLink?.[0]) url = atsLink[0].replace(/&amp;/g, '&');
+      }
     }
   } catch { /* keep original */ }
 
@@ -37,6 +57,10 @@ export async function resolveApplyUrl(rawUrl: string): Promise<{ url: string; at
     /lever\.co/.test(url) ? 'lever' :
     /ashbyhq\.com/.test(url) ? 'ashby' :
     /myworkdayjobs|workday\.com/.test(url) ? 'workday' :
+    /smartrecruiters\.com/.test(url) ? 'smartrecruiters' :
+    /icims\.com/.test(url) ? 'icims' :
+    /taleo\.net/.test(url) ? 'taleo' :
+    /successfactors|sapsf/.test(url) ? 'successfactors' :
     undefined;
   return { url, atsType };
 }
@@ -84,9 +108,33 @@ export async function enqueueApplyTask(
     }
   }
 
-  // ── Q15 duplicate policy ──
+  // Re-clicking the same job returns the in-flight task instead of tripping
+  // the company-duplicate gate on its own application row.
+  const existingTask = await prisma.applyTask.findFirst({
+    where: { userId, jobId, status: { in: ['queued', 'claimed', 'filling', 'awaiting_approval', 'approved', 'submitting'] } },
+  });
+  if (existingTask) {
+    return { taskId: existingTask.id, status: existingTask.status, duplicate: true };
+  }
+
+  // Same EXACT job already applied to (e.g. via Quick Apply)? Submitting a
+  // second application to the identical posting is never useful.
+  const sameJobApplied = await prisma.application.findFirst({
+    where: { userId, jobId, status: { in: ['applied', 'phone_screen', 'interview', 'offer', 'rejected'] } },
+    select: { status: true, appliedAt: true },
+  });
+  if (sameJobApplied) {
+    return {
+      status: 'blocked_already_applied',
+      duplicate: true,
+      blocked: `You already applied to this exact role${sameJobApplied.appliedAt ? ` on ${sameJobApplied.appliedAt.toLocaleDateString()}` : ''} — it's in your Tracker.`,
+    };
+  }
+
+  // ── Q15 duplicate policy (same COMPANY, different role — this job's own
+  // prior rows don't count, they're handled above/with retry) ──
   const prior = await prisma.application.findFirst({
-    where: { userId, company: job.company, status: { notIn: ['withdrawn', 'cancelled'] } },
+    where: { userId, company: job.company, status: { notIn: ['withdrawn', 'cancelled'] }, NOT: { jobId } },
     orderBy: { createdAt: 'desc' },
     select: { company: true, role: true, appliedAt: true },
   });
@@ -100,14 +148,6 @@ export async function enqueueApplyTask(
       };
     }
     // Allowed, but the duplicate notice is surfaced to the caller (Q15-B)
-  }
-
-  // Don't double-enqueue the same job
-  const existingTask = await prisma.applyTask.findFirst({
-    where: { userId, jobId, status: { in: ['queued', 'claimed', 'filling', 'awaiting_approval', 'approved', 'submitting'] } },
-  });
-  if (existingTask) {
-    return { taskId: existingTask.id, status: existingTask.status, duplicate: true };
   }
 
   // ── Build the packet (cover letter + answers, real data only) ──
@@ -130,7 +170,26 @@ export async function enqueueApplyTask(
   }
 
   // ── Resolve the real apply URL (LinkedIn → ATS, redirectors → final) ──
-  const { url: applyUrl, atsType } = await resolveApplyUrl(job.applyUrl || job.url || '');
+  // Try applyUrl first; if that resolves to an aggregator listing, also try
+  // the job's source url — whichever lands on a fillable page wins.
+  let { url: applyUrl, atsType } = await resolveApplyUrl(job.applyUrl || job.url || '');
+  if (isAggregatorUrl(applyUrl) && job.url && job.url !== job.applyUrl) {
+    const alt = await resolveApplyUrl(job.url);
+    if (!isAggregatorUrl(alt.url)) {
+      applyUrl = alt.url;
+      atsType = alt.atsType;
+    }
+  }
+
+  // An aggregator listing page (Google/LinkedIn/Indeed/...) has no form the
+  // worker can fill — be honest about it instead of queuing a doomed task.
+  if (!applyUrl || isAggregatorUrl(applyUrl)) {
+    return {
+      status: 'blocked_no_direct_form',
+      blocked: `This listing only links to a job board page, not a fillable application form. Open the posting and use its "Apply on company site" link — or use Quick Apply to track it after applying manually.`,
+    };
+  }
+
   if (atsType && atsType !== job.atsType) {
     await prisma.job.update({ where: { id: job.id }, data: { applyUrl, atsType } }).catch(() => {});
   }
@@ -138,14 +197,20 @@ export async function enqueueApplyTask(
   // ── Application row (tracker) ──
   // 'prepping' is the valid tracker status while the worker fills/awaits
   // approval; the worker flips it to 'applied' on successful submission.
-  const application = await prisma.application.create({
-    data: {
-      userId, jobId,
-      company: job.company, role: job.title,
-      status: 'prepping', url: job.url, applyUrl,
-      atsType: atsType || job.atsType, submittedVia: 'careeva-worker',
-    },
+  // Reuse a parked row for this job (failed/withdrawn retry) instead of
+  // stacking duplicates in the tracker.
+  const parked = await prisma.application.findFirst({
+    where: { userId, jobId, status: { in: ['saved', 'prepping', 'withdrawn'] } },
+    select: { id: true },
   });
+  const applicationData = {
+    company: job.company, role: job.title,
+    status: 'prepping', url: job.url, applyUrl,
+    atsType: atsType || job.atsType, submittedVia: 'careeva-worker',
+  };
+  const application = parked
+    ? await prisma.application.update({ where: { id: parked.id }, data: applicationData })
+    : await prisma.application.create({ data: { userId, jobId, ...applicationData } });
 
   const mode = modeOverride || config?.submitMode || 'approve_first';
 

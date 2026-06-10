@@ -82,6 +82,54 @@ export function isRelevantToQueries(job: Pick<SearchJob, 'title' | 'description'
   });
 }
 
+// Aggregator/listing domains — pages that DESCRIBE a job but host no
+// application form. The apply worker cannot fill these; never store them as
+// an applyUrl when a direct option exists.
+const AGGREGATOR_HOSTS = [
+  'google.com', 'linkedin.com', 'indeed.com', 'ziprecruiter.com', 'glassdoor.com',
+  'monster.com', 'simplyhired.com', 'talent.com', 'joinhandshake.com', 'snagajob.com',
+  'bebee.com', 'jooble.org', 'lensa.com', 'adzuna.com', 'themuse.com', 'salary.com',
+  'careerbuilder.com', 'jobrapido.com', 'whatjobs.com', 'jobgether.com',
+];
+
+// Direct ATS hosts the worker fills best (dedicated or generic adapter).
+const ATS_HOST_PATTERNS = [
+  'greenhouse.io', 'lever.co', 'ashbyhq.com', 'myworkdayjobs', 'workday.com',
+  'smartrecruiters.com', 'icims.com', 'taleo.net', 'successfactors', 'jobvite.com',
+  'workable.com', 'breezy.hr', 'recruitee.com', 'bamboohr.com', 'teamtailor.com',
+  'jazzhr.com', 'applytojob.com', 'paylocity.com', 'paycomonline', 'ultipro.com',
+  'dayforcehcm.com', 'eightfold.ai', 'avature.net', 'phenom.com', 'oraclecloud.com',
+];
+
+export function isAggregatorUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return AGGREGATOR_HOSTS.some((agg) => host === agg || host.endsWith(`.${agg}`));
+  } catch {
+    return false;
+  }
+}
+
+function isAtsUrl(url: string): boolean {
+  return ATS_HOST_PATTERNS.some((p) => url.toLowerCase().includes(p));
+}
+
+/**
+ * Pick the most fillable link from a list of "apply options" (SerpAPI Google
+ * Jobs returns several providers per job). Preference: dedicated ATS link >
+ * any non-aggregator link (usually the company's own careers site) >
+ * first option as a last resort.
+ */
+export function pickBestApplyUrl(options: Array<{ link?: string }>): string {
+  const links = options.map((o) => o.link || '').filter(Boolean);
+  return (
+    links.find((l) => isAtsUrl(l)) ||
+    links.find((l) => !isAggregatorUrl(l)) ||
+    links[0] ||
+    ''
+  );
+}
+
 function detectATS(url: string): string | undefined {
   if (!url) return undefined;
   if (url.includes('greenhouse.io')) return 'greenhouse';
@@ -118,7 +166,9 @@ async function searchGoogleJobs(query: string, location = 'United States', count
     const data = await res.json();
 
     return (data.jobs_results || []).map((job: any): SearchJob => {
-      const applyUrl = job.apply_options?.[0]?.link || job.share_link || '';
+      // Choose the most fillable provider link — the Google share_link is a
+      // listing page (no form) and must never be the applyUrl.
+      const applyUrl = pickBestApplyUrl(job.apply_options || []);
       return {
         title: job.title || '',
         company: job.company_name || '',

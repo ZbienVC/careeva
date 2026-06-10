@@ -1,0 +1,269 @@
+/**
+ * worker/src/adapters/index.ts — ATS adapter framework + shared toolkit.
+ *
+ * Each adapter knows how to fill() and submit() one ATS family. The generic
+ * adapter is the fallback for unknown forms. All adapters share the toolkit
+ * below: label-based field matching against the packet's answers, file upload
+ * for the resume, and a field report describing exactly what happened.
+ */
+import type { Page } from 'playwright';
+
+export interface FillContext {
+  resumePath: string | null;
+  config: {
+    unknownQuestionMode?: string | null;
+    attachCoverLetter?: boolean | null;
+  } | null;
+}
+
+export interface FieldReport {
+  filled: Array<{ label: string; value: string; via: string }>;
+  skippedOptional: string[];
+  unanswered: string[];      // required fields we could not answer
+  guessed: string[];         // ai_guess mode: fields filled with flagged guesses
+  resumeAttached: boolean;
+  coverLetterAttached: boolean;
+}
+
+export interface FillResult { ok: boolean; error?: string; report: FieldReport }
+export interface SubmitResult { ok: boolean; error?: string; externalId?: string }
+
+export interface TaskLike {
+  id: string;
+  applyUrl: string | null;
+  packet: unknown;
+  mode: string;
+}
+
+export interface AtsAdapter {
+  name: string;
+  matches(atsType: string, url: string): boolean;
+  fill(page: Page, task: TaskLike, ctx: FillContext): Promise<FillResult>;
+  submit(page: Page, task: TaskLike): Promise<SubmitResult>;
+}
+
+// ─── Packet helpers ────────────────────────────────────────────────────────────
+
+export interface Packet {
+  answers: Record<string, string>;
+  coverLetter?: string;
+  resumeKey?: string;
+  identity: { firstName: string; lastName: string; fullName: string; email: string; phone?: string; linkedinUrl?: string; githubUrl?: string; portfolioUrl?: string; location?: string };
+}
+
+export function getPacket(task: TaskLike): Packet {
+  const p = (task.packet || {}) as Partial<Packet>;
+  return {
+    answers: p.answers || {},
+    coverLetter: p.coverLetter,
+    resumeKey: p.resumeKey,
+    identity: p.identity || ({} as Packet['identity']),
+  };
+}
+
+// ─── Label → answer matching ───────────────────────────────────────────────────
+// Order matters: identity first (exact intent), then canonical answer keys.
+
+type Matcher = { test: RegExp; value: (p: Packet) => string | undefined; key: string };
+
+export function buildMatchers(p: Packet): Matcher[] {
+  const a = p.answers;
+  const id = p.identity;
+  return [
+    { key: 'first_name', test: /first\s*name/i, value: () => id.firstName },
+    { key: 'last_name', test: /last\s*name|surname|family\s*name/i, value: () => id.lastName },
+    { key: 'full_name', test: /^(full\s*)?name$|your\s*name/i, value: () => id.fullName },
+    { key: 'email', test: /e-?mail/i, value: () => id.email },
+    { key: 'phone', test: /phone|mobile|cell/i, value: () => id.phone || a['phone'] },
+    { key: 'location', test: /location|city|current\s+address|where.*based/i, value: () => id.location || a['address'] },
+    { key: 'linkedin_url', test: /linked\s*in/i, value: () => id.linkedinUrl || a['linkedin_url'] },
+    { key: 'github_url', test: /github/i, value: () => id.githubUrl || a['github_url'] },
+    { key: 'portfolio_url', test: /portfolio|personal\s+(web)?site|website/i, value: () => id.portfolioUrl || a['portfolio_url'] },
+    { key: 'work_authorization_us', test: /authorized\s+to\s+work|work\s+authorization|legally\s+(able|authorized)|right\s+to\s+work/i, value: () => a['work_authorization_us'] },
+    { key: 'requires_sponsorship', test: /sponsorship|require.*visa|now\s+or\s+in\s+the\s+future/i, value: () => a['requires_sponsorship'] },
+    { key: 'salary_expectation', test: /salary|compensation|pay\s+expectation/i, value: () => a['salary_expectation'] },
+    { key: 'start_date', test: /start\s*date|when\s+can\s+you\s+start|notice\s+period|available/i, value: () => a['start_date'] },
+    { key: 'willing_to_relocate', test: /relocat/i, value: () => a['willing_to_relocate'] },
+    { key: 'remote_preference', test: /remote|work\s+arrangement|hybrid/i, value: () => a['remote_preference'] },
+    { key: 'years_experience', test: /years\s+of\s+(relevant\s+)?experience|how\s+many\s+years/i, value: () => a['years_experience'] },
+    { key: 'why_company', test: /why\s+(do\s+you\s+want|are\s+you\s+interested|us|join)/i, value: () => a['why_this_company'] },
+    { key: 'why_role', test: /why\s+this\s+(role|position)|interest\s+in\s+this\s+(role|position)/i, value: () => a['why_this_role'] },
+    { key: 'cover_letter', test: /cover\s*letter|additional\s+information|anything\s+else/i, value: () => p.coverLetter },
+    { key: 'how_heard', test: /how\s+did\s+you\s+hear/i, value: () => a['how_heard'] || 'Company careers page' },
+    { key: 'pronouns', test: /pronoun/i, value: () => a['pronouns'] },
+  ];
+}
+
+const EEO_PATTERN = /gender|race|ethnic|veteran|disabilit|sexual\s+orientation|transgender/i;
+
+// ─── Shared form filler ────────────────────────────────────────────────────────
+// Walks every visible input/textarea/select on the page, resolves its label,
+// matches an answer, and fills it. EEO fields use stored answers only, else
+// "Decline to self-identify" when offered, else left alone.
+
+export async function fillVisibleForm(
+  page: Page,
+  task: TaskLike,
+  ctx: FillContext,
+  opts: { formSelector?: string } = {}
+): Promise<FillResult> {
+  const packet = getPacket(task);
+  const matchers = buildMatchers(packet);
+  const report: FieldReport = {
+    filled: [], skippedOptional: [], unanswered: [], guessed: [],
+    resumeAttached: false, coverLetterAttached: false,
+  };
+  const scope = opts.formSelector || 'body';
+
+  // 1) Resume file input(s)
+  if (ctx.resumePath) {
+    const fileInputs = page.locator(`${scope} input[type="file"]`);
+    const n = await fileInputs.count();
+    for (let i = 0; i < n; i++) {
+      const input = fileInputs.nth(i);
+      const label = (await labelFor(page, input)) || '';
+      if (i === 0 || /resume|cv/i.test(label)) {
+        try {
+          await input.setInputFiles(ctx.resumePath);
+          report.resumeAttached = true;
+          report.filled.push({ label: label || 'Resume', value: '[file]', via: 'file' });
+          await page.waitForTimeout(1500); // many ATSes parse the file client-side
+          break;
+        } catch { /* keep trying others */ }
+      }
+    }
+  }
+
+  // 2) Text inputs + textareas
+  const textInputs = page.locator(
+    `${scope} input[type="text"], ${scope} input[type="email"], ${scope} input[type="tel"], ${scope} input[type="url"], ${scope} input:not([type]), ${scope} textarea`
+  );
+  const count = await textInputs.count();
+  for (let i = 0; i < count; i++) {
+    const el = textInputs.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const existing = await el.inputValue().catch(() => '');
+    if (existing) continue; // never clobber prefilled values
+    const label = (await labelFor(page, el)) || (await el.getAttribute('placeholder')) || (await el.getAttribute('name')) || '';
+    if (!label) continue;
+    const required = (await el.getAttribute('required')) !== null || (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
+
+    if (EEO_PATTERN.test(label)) {
+      // Only fill EEO from explicit stored answers (never guess)
+      const eeoVal = packet.answers['gender'] && /gender/i.test(label) ? packet.answers['gender']
+        : packet.answers['ethnicity'] && /race|ethnic/i.test(label) ? packet.answers['ethnicity']
+        : packet.answers['veteran_status'] && /veteran/i.test(label) ? packet.answers['veteran_status']
+        : packet.answers['disability_status'] && /disabilit/i.test(label) ? packet.answers['disability_status']
+        : undefined;
+      if (eeoVal) {
+        await el.fill(eeoVal).catch(() => {});
+        report.filled.push({ label, value: eeoVal, via: 'eeo_stored' });
+      } else {
+        report.skippedOptional.push(label + ' (EEO — not auto-answered)');
+      }
+      continue;
+    }
+
+    const m = matchers.find((mm) => mm.test.test(label));
+    const value = m?.value(packet);
+    if (value) {
+      await el.fill(value).catch(() => {});
+      report.filled.push({ label, value: value.slice(0, 60), via: m!.key });
+      if (m!.key === 'cover_letter') report.coverLetterAttached = true;
+    } else if (required) {
+      if (ctx.config?.unknownQuestionMode === 'ai_guess' && packet.answers['__ai_fallback_' + slug(label)]) {
+        const guess = packet.answers['__ai_fallback_' + slug(label)];
+        await el.fill(guess).catch(() => {});
+        report.guessed.push(label);
+        report.filled.push({ label, value: guess.slice(0, 60), via: 'ai_guess' });
+      } else {
+        report.unanswered.push(label);
+      }
+    } else {
+      report.skippedOptional.push(label);
+    }
+  }
+
+  // 3) Selects: match by label, choose option whose text matches the answer;
+  //    EEO selects pick a "decline" option when present and no stored answer.
+  const selects = page.locator(`${scope} select`);
+  const sCount = await selects.count();
+  for (let i = 0; i < sCount; i++) {
+    const el = selects.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const label = (await labelFor(page, el)) || (await el.getAttribute('name')) || '';
+    const m = matchers.find((mm) => mm.test.test(label));
+    const value = m?.value(packet);
+    const optionTexts: string[] = await el.locator('option').allTextContents();
+    if (EEO_PATTERN.test(label) && !value) {
+      const decline = optionTexts.find((o) => /decline|prefer not|don.t wish/i.test(o));
+      if (decline) {
+        await el.selectOption({ label: decline }).catch(() => {});
+        report.filled.push({ label, value: decline, via: 'eeo_decline' });
+      }
+      continue;
+    }
+    if (value) {
+      const target = optionTexts.find((o) => o.toLowerCase().includes(value.toLowerCase().slice(0, 20)))
+        || (/^yes$/i.test(value) ? optionTexts.find((o) => /^yes/i.test(o)) : undefined)
+        || (/^no$/i.test(value) ? optionTexts.find((o) => /^no/i.test(o)) : undefined);
+      if (target) {
+        await el.selectOption({ label: target }).catch(() => {});
+        report.filled.push({ label, value: target, via: m!.key });
+      } else {
+        report.unanswered.push(label + ` (no option matched "${value.slice(0, 30)}")`);
+      }
+    }
+  }
+
+  const ok = report.unanswered.length === 0;
+  return {
+    ok,
+    error: ok ? undefined : `Required questions without answers: ${report.unanswered.slice(0, 5).join(' | ')}`,
+    report,
+  };
+}
+
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 50);
+}
+
+async function labelFor(page: Page, el: ReturnType<Page['locator']>): Promise<string | null> {
+  // aria-label → <label for=id> → closest label wrapper → aria-labelledby
+  const aria = await el.getAttribute('aria-label');
+  if (aria) return aria.trim();
+  const id = await el.getAttribute('id');
+  if (id) {
+    const lbl = page.locator(`label[for="${id}"]`).first();
+    if (await lbl.count()) {
+      const t = (await lbl.textContent()) || '';
+      if (t.trim()) return t.trim();
+    }
+  }
+  const wrapped = await el.evaluate((node: Element) => {
+    const l = node.closest('label');
+    if (l) return l.textContent || '';
+    // common ATS pattern: label sibling above the input's container
+    const container = node.closest('div, li, fieldset');
+    const prev = container?.querySelector('label, legend, .label, [class*="label"]');
+    return prev?.textContent || '';
+  }).catch(() => '');
+  return wrapped ? wrapped.trim().slice(0, 200) : null;
+}
+
+// ─── Registry ──────────────────────────────────────────────────────────────────
+
+import { greenhouseAdapter } from './greenhouse';
+import { leverAdapter } from './lever';
+import { ashbyAdapter } from './ashby';
+import { workdayAdapter } from './workday';
+import { genericAdapter } from './generic';
+
+const ADAPTERS: AtsAdapter[] = [greenhouseAdapter, leverAdapter, ashbyAdapter, workdayAdapter];
+
+export function getAdapterFor(atsType: string, url: string): AtsAdapter | null {
+  const exact = ADAPTERS.find((a) => a.matches(atsType, url));
+  if (exact) return exact;
+  if (url) return genericAdapter; // best-effort fallback for any form
+  return null;
+}

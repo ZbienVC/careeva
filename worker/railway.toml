@@ -1,0 +1,9 @@
+# Deploy this directory as a SECOND Railway service in the same project.
+# Service settings -> Root Directory: /worker
+# Attach the SAME volume as the web service (same mount path) so the worker
+# can read resume files and write screenshots.
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm run start"

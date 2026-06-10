@@ -43,15 +43,15 @@ export async function findRelevantStories(userId: string, requirement: string) {
   const keywords = requirement.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
 
   return allStories
-    .map((story) => {
+    .map((story: any) => {
       const text = [story.requirement, story.tags.join(' '), story.situation, story.task]
         .join(' ')
         .toLowerCase();
       const score = keywords.filter((kw) => text.includes(kw)).length;
       return { story, score };
     })
-    .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter(({ score }: { score: number }) => score > 0)
+    .sort((a: any, b: any) => b.score - a.score)
     .slice(0, 5)
-    .map(({ story }) => story);
+    .map(({ story }: { story: any }) => story);
 }

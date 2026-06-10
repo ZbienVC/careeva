@@ -12,6 +12,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { generate, generateCoverLetter, generateBehavioralAnswer, generateShortAnswer, isAIConfigured } from '@/lib/ai-client';
+import { resolveAnswerFromProfile } from '@/lib/answer-engine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,17 +92,21 @@ async function buildProfileContext(userId: string): Promise<string> {
 
   const parts: string[] = [];
 
+  // Real data only. Never inject a placeholder identity — if a field is absent,
+  // it is omitted here and surfaced as a missing field by buildApplicationPacket.
   if (personalInfo) {
-    parts.push(`NAME: ${personalInfo.fullName || 'Zach Bienstock'}`);
-    parts.push(`EMAIL: ${personalInfo.email || 'zbienstock@gmail.com'}`);
+    if (personalInfo.fullName) parts.push(`NAME: ${personalInfo.fullName}`);
+    if (personalInfo.email) parts.push(`EMAIL: ${personalInfo.email}`);
     if (personalInfo.phone) parts.push(`PHONE: ${personalInfo.phone}`);
     const loc = [personalInfo.city, personalInfo.state].filter(Boolean).join(', ');
     if (loc) parts.push(`LOCATION: ${loc}`);
     if (personalInfo.linkedinUrl) parts.push(`LINKEDIN: ${personalInfo.linkedinUrl}`);
     if (personalInfo.githubUrl) parts.push(`GITHUB: ${personalInfo.githubUrl}`);
     if (personalInfo.websiteUrl) parts.push(`WEBSITE: ${personalInfo.websiteUrl}`);
-    parts.push(`WORK_AUTH: ${personalInfo.workAuthorization || 'us_citizen'}`);
-    parts.push(`SPONSORSHIP_NEEDED: ${personalInfo.requiresSponsorship ? 'Yes' : 'No'}`);
+    if (personalInfo.workAuthorization) parts.push(`WORK_AUTH: ${personalInfo.workAuthorization}`);
+    if (personalInfo.requiresSponsorship !== null && personalInfo.requiresSponsorship !== undefined) {
+      parts.push(`SPONSORSHIP_NEEDED: ${personalInfo.requiresSponsorship ? 'Yes' : 'No'}`);
+    }
   }
 
   // Writing style
@@ -133,11 +138,11 @@ async function buildProfileContext(userId: string): Promise<string> {
   }
 
   if (skills.length > 0) {
-    parts.push(`\nSKILLS: ${skills.slice(0, 25).map(s => s.name).join(', ')}`);
+    parts.push(`\nSKILLS: ${skills.slice(0, 25).map((s: any) => s.name).join(', ')}`);
   }
 
   if (certs.length > 0) {
-    parts.push(`CERTIFICATIONS: ${certs.map(c => c.name + (c.issuer ? ` (${c.issuer})` : '')).join(', ')}`);
+    parts.push(`CERTIFICATIONS: ${certs.map((c: any) => c.name + (c.issuer ? ` (${c.issuer})` : '')).join(', ')}`);
   }
 
   if (projects.length > 0) {
@@ -192,11 +197,11 @@ async function generateQualityCoverLetter(
 
   // Build professional header
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const name = personalInfo?.fullName || 'Zach Bienstock';
+  const name = personalInfo?.fullName || '';
   const cityState = [personalInfo?.city, personalInfo?.state ? personalInfo.state + (personalInfo.zipCode ? ' ' + personalInfo.zipCode : '') : ''].filter(Boolean).join(', ');
 
   const header = [
-    name,
+    ...(name ? [name] : []),
     ...(personalInfo?.addressLine1 ? [personalInfo.addressLine1] : []),
     ...(cityState ? [cityState] : []),
     ...(personalInfo?.phone ? [personalInfo.phone] : []),
@@ -293,46 +298,29 @@ async function generateAnswers(
 ): Promise<Record<string, string>> {
   const answers: Record<string, string> = {};
 
-  // Stored verified answers are ground truth
+  // 1) Stored verified answers are ground truth (user-approved text wins).
   const stored = await prisma.reusableAnswer.findMany({ where: { userId, isVerified: true } });
   for (const ans of stored) {
     answers[ans.questionKey] = ans.answerShort || ans.answer;
   }
 
-  // Profile field answers
-  const [personalInfo, jobPrefs] = await Promise.all([
-    prisma.personalInfo.findUnique({ where: { userId } }),
-    prisma.jobPreferences.findUnique({ where: { userId } }),
-  ]);
-
-  if (personalInfo) {
-    if (!answers['work_authorization_us']) {
-      const auth = personalInfo.workAuthorization;
-      answers['work_authorization_us'] = (auth === 'us_citizen' || auth === 'green_card') ? 'Yes' : 'No';
-    }
-    answers['requires_sponsorship'] = answers['requires_sponsorship'] ?? (personalInfo.requiresSponsorship ? 'Yes' : 'No');
-    if (personalInfo.linkedinUrl) answers['linkedin_url'] = answers['linkedin_url'] ?? personalInfo.linkedinUrl;
-    if (personalInfo.githubUrl) answers['github_url'] = answers['github_url'] ?? personalInfo.githubUrl;
-    if (personalInfo.phone) answers['phone'] = answers['phone'] ?? personalInfo.phone;
-    if (personalInfo.portfolioUrl) answers['portfolio_url'] = answers['portfolio_url'] ?? personalInfo.portfolioUrl;
-    if (personalInfo.availableStartDate) {
-      answers['start_date'] = answers['start_date'] ?? new Date(personalInfo.availableStartDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    } else if (personalInfo.noticePeriodDays !== undefined) {
-      answers['start_date'] = answers['start_date'] ?? (personalInfo.noticePeriodDays === 0 ? 'Immediately' : `${personalInfo.noticePeriodDays} days notice`);
-    }
-  }
-
-  if (jobPrefs?.salaryMinUSD && !answers['salary_expectation']) {
-    answers['salary_expectation'] = jobPrefs.salaryMaxUSD
-      ? `$${jobPrefs.salaryMinUSD.toLocaleString()}–$${jobPrefs.salaryMaxUSD.toLocaleString()}`
-      : `$${jobPrefs.salaryMinUSD.toLocaleString()}+`;
-  }
-  if (jobPrefs?.remotePreference && !answers['remote_preference']) {
-    const map: Record<string, string> = { remote_only: 'Remote', hybrid_ok: 'Open to hybrid or remote', onsite_ok: 'Open to onsite', any: 'Flexible' };
-    answers['remote_preference'] = map[jobPrefs.remotePreference] ?? jobPrefs.remotePreference;
-  }
-  if (jobPrefs?.willingToRelocate !== undefined && !answers['willing_to_relocate']) {
-    answers['willing_to_relocate'] = jobPrefs.willingToRelocate ? 'Yes' : 'No';
+  // 2) Canonical profile-derived answers via the shared answer engine
+  //    (lib/answer-engine) — single source of truth for question → answer
+  //    logic, same pipeline the /api/answers/resolve endpoint uses.
+  //    EEO questions are intentionally never auto-answered by the engine.
+  const STANDARD_KEYS = [
+    'work_authorization_us', 'requires_sponsorship', 'salary_expectation',
+    'remote_preference', 'willing_to_relocate', 'years_experience',
+    'start_date', 'linkedin_url', 'github_url', 'portfolio_url', 'phone',
+  ];
+  for (const key of STANDARD_KEYS) {
+    if (answers[key]) continue; // stored answer already covers it
+    try {
+      const resolved = await resolveAnswerFromProfile(userId, key);
+      if (resolved?.answer && resolved.confidence >= 0.8) {
+        answers[key] = resolved.answer;
+      }
+    } catch { /* missing profile data → leave unanswered, surfaces in review */ }
   }
 
   // AI-generated answers for per-job questions
@@ -436,7 +424,7 @@ export async function buildApplicationPacket(
     data: {
       userId,
       type: 'cover_letter',
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       jobId,
       jobTitle: job.title,
       company: job.company,
@@ -472,7 +460,8 @@ export async function submitToGreenhouse(
   }
 ): Promise<{ success: boolean; applicationId?: string; error?: string }> {
   try {
-    const match = job.applyUrl.match(/boards\.greenhouse\.io\/([^/]+)\/jobs\/(\d+)/);
+    // Supports boards.greenhouse.io/<token>/jobs/<id> AND job-boards.greenhouse.io/<token>/jobs/<id>
+    const match = job.applyUrl.match(/(?:job-)?boards\.greenhouse\.io\/([^/]+)\/jobs\/(\d+)/);
     if (!match) throw new Error('Cannot parse Greenhouse URL');
     const [, boardToken, ghJobId] = match;
     const payload = {
@@ -641,13 +630,23 @@ export async function autoApplyToJob(
   }
 
   const personalInfo = await prisma.personalInfo.findUnique({ where: { userId } });
-  const nameParts = (personalInfo?.fullName || 'Zach Bienstock').split(' ');
+  // Real data only. Never fabricate an applicant identity. If required fields are
+  // missing we refuse to submit and queue for review instead of guessing.
+  if (!personalInfo?.fullName || !personalInfo?.email) {
+    await prisma.application.update({ where: { id: application.id }, data: { status: 'prepping' } });
+    return {
+      status: 'queued_for_review',
+      packet,
+      error: 'Missing required identity fields (name and/or email). Complete your profile before auto-submitting.',
+    };
+  }
+  const nameParts = personalInfo.fullName.trim().split(/\s+/);
   const applicantInfo = {
-    firstName: nameParts[0] || 'Zach',
-    lastName: nameParts.slice(1).join(' ') || 'Bienstock',
-    email: personalInfo?.email || 'zbienstock@gmail.com',
-    phone: personalInfo?.phone || '',
-    linkedinUrl: personalInfo?.linkedinUrl || '',
+    firstName: nameParts[0] || personalInfo.fullName,
+    lastName: nameParts.slice(1).join(' '),
+    email: personalInfo.email,
+    phone: personalInfo.phone || '',
+    linkedinUrl: personalInfo.linkedinUrl || '',
     coverLetterContent: packet.coverLetter,
     resumeText: packet.resumeText,
   };

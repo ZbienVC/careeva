@@ -195,6 +195,149 @@ async function searchTheMuse(query: string): Promise<SearchJob[]> {
 }
 
 
+
+
+// ─── Source: RemoteOK (free public API, remote tech jobs) ─────────────────────
+
+async function searchRemoteOK(query: string): Promise<SearchJob[]> {
+  try {
+    const res = await fetch('https://remoteok.com/api', {
+      headers: { 'User-Agent': 'Careeva/1.0 job-aggregator' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const qWords = query.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
+    return (Array.isArray(data) ? data : [])
+      .filter((j: any) => j && j.position)
+      .filter((j: any) => {
+        const text = `${j.position} ${(j.tags || []).join(' ')} ${j.description || ''}`.toLowerCase();
+        return qWords.some((w: string) => text.includes(w));
+      })
+      .slice(0, 25)
+      .map((j: any): SearchJob => ({
+        title: j.position || '',
+        company: j.company || '',
+        location: j.location || 'Remote',
+        description: (j.description || '').replace(/<[^>]+>/g, ' ').slice(0, 3000),
+        url: j.url || `https://remoteok.com/l/${j.id}`,
+        applyUrl: j.apply_url || j.url || '',
+        salaryMin: j.salary_min || undefined,
+        salaryMax: j.salary_max || undefined,
+        isRemote: true,
+        isHybrid: false,
+        source: 'remoteok',
+        atsType: detectATS(j.apply_url || j.url || ''),
+        postedAt: j.date ? new Date(j.date) : undefined,
+      }));
+  } catch { return []; }
+}
+
+// ─── Source: Jobicy (free API, remote jobs) ───────────────────────────────────
+
+async function searchJobicy(query: string): Promise<SearchJob[]> {
+  try {
+    const url = `https://jobicy.com/api/v2/remote-jobs?count=30&tag=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Careeva/1.0' }, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.jobs || []).map((j: any): SearchJob => ({
+      title: j.jobTitle || '',
+      company: j.companyName || '',
+      location: j.jobGeo || 'Remote',
+      description: (j.jobExcerpt || j.jobDescription || '').replace(/<[^>]+>/g, ' ').slice(0, 3000),
+      url: j.url || '',
+      applyUrl: j.url || '',
+      salary: j.annualSalaryMin && j.annualSalaryMax ? `$${j.annualSalaryMin}–$${j.annualSalaryMax}` : undefined,
+      salaryMin: j.annualSalaryMin || undefined,
+      salaryMax: j.annualSalaryMax || undefined,
+      isRemote: true,
+      isHybrid: false,
+      source: 'jobicy',
+      atsType: detectATS(j.url || ''),
+      postedAt: j.pubDate ? new Date(j.pubDate) : undefined,
+    }));
+  } catch { return []; }
+}
+
+// ─── Source: Himalayas (free API, remote jobs) ────────────────────────────────
+
+async function searchHimalayas(query: string): Promise<SearchJob[]> {
+  try {
+    const url = `https://himalayas.app/jobs/api?limit=30`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Careeva/1.0' }, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const qWords = query.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
+    return (data.jobs || [])
+      .filter((j: any) => {
+        const text = `${j.title || ''} ${(j.categories || []).join(' ')}`.toLowerCase();
+        return qWords.some((w: string) => text.includes(w));
+      })
+      .slice(0, 20)
+      .map((j: any): SearchJob => ({
+        title: j.title || '',
+        company: j.companyName || '',
+        location: (j.locationRestrictions || []).join(', ') || 'Remote',
+        description: (j.description || '').replace(/<[^>]+>/g, ' ').slice(0, 3000),
+        url: j.applicationLink || `https://himalayas.app/jobs/${j.slug || ''}`,
+        applyUrl: j.applicationLink || '',
+        salaryMin: j.minSalary || undefined,
+        salaryMax: j.maxSalary || undefined,
+        isRemote: true,
+        isHybrid: false,
+        source: 'himalayas',
+        atsType: detectATS(j.applicationLink || ''),
+        postedAt: j.pubDate ? new Date(j.pubDate * 1000) : undefined,
+      }));
+  } catch { return []; }
+}
+
+// ─── Source: Hacker News "Who is hiring?" via Algolia (free, startup jobs) ───
+
+async function searchHNWhoIsHiring(query: string): Promise<SearchJob[]> {
+  try {
+    // Find the latest monthly thread
+    const threadRes = await fetch(
+      'https://hn.algolia.com/api/v1/search_by_date?query=%22who%20is%20hiring%22&tags=story,author_whoishiring&hitsPerPage=1',
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!threadRes.ok) return [];
+    const threadData = await threadRes.json();
+    const threadId = threadData.hits?.[0]?.objectID;
+    if (!threadId) return [];
+
+    const res = await fetch(
+      `https://hn.algolia.com/api/v1/search?tags=comment,story_${threadId}&query=${encodeURIComponent(query)}&hitsPerPage=25`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.hits || [])
+      .filter((h: any) => h.comment_text && h.comment_text.length > 100)
+      .map((h: any): SearchJob => {
+        const text = h.comment_text.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/&amp;/g, '&');
+        // First line is conventionally "Company | Role | Location | ..."
+        const firstLine = text.split(/\n|\. /)[0] || '';
+        const parts = firstLine.split('|').map((x: string) => x.trim());
+        const urlMatch = text.match(/https?:\/\/[^\s"<]+/);
+        return {
+          title: parts[1] || query,
+          company: parts[0]?.slice(0, 80) || 'HN Startup',
+          location: parts.find((p: string) => /remote|onsite|hybrid|ny|sf|usa/i.test(p)) || 'See posting',
+          description: text.slice(0, 3000),
+          url: `https://news.ycombinator.com/item?id=${h.objectID}`,
+          applyUrl: urlMatch?.[0] || `https://news.ycombinator.com/item?id=${h.objectID}`,
+          isRemote: /remote/i.test(text),
+          isHybrid: /hybrid/i.test(text),
+          source: 'hn_hiring',
+          atsType: detectATS(urlMatch?.[0] || ''),
+        };
+      })
+      .filter((j: SearchJob) => j.company && j.company !== 'HN Startup' || true);
+  } catch { return []; }
+}
+
 // ─── Curated company boards by role family ────────────────────────────────────
 
 export const CURATED_GREENHOUSE_BOARDS: Record<string, string[]> = {
@@ -425,6 +568,7 @@ async function searchJSearch(query: string, location = 'United States'): Promise
 // ─── Source: Dice (free API, tech-focused) ───────────────────────────────────
 
 async function searchDice(query: string, location = ''): Promise<SearchJob[]> {
+  if (!process.env.DICE_API_KEY) return [];
   try {
     // Dice has a public search endpoint
     const params = new URLSearchParams({
@@ -439,7 +583,7 @@ async function searchDice(query: string, location = ''): Promise<SearchJob[]> {
       headers: {
         'User-Agent': 'Careeva/1.0',
         'Accept': 'application/json',
-        'x-api-key': 'sstbnhh59h9hnhh9hnhh9hnhh9hnhh9',
+        'x-api-key': process.env.DICE_API_KEY || '',
       },
       signal: AbortSignal.timeout(8000),
     });
@@ -569,7 +713,7 @@ export interface JobSearchParams {
   userId: string;
   queries: string[];          // e.g. ["data analyst", "operations manager"]
   locations?: string[];       // e.g. ["New York, NY", "Remote"]
-  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever' | 'indeed' | 'usajobs' | 'arbeitnow' | 'weworkremotely' | 'authenticjobs' | 'jsearch' | 'dice' | 'monster' | 'remoteco')[];
+  sources?: ('google' | 'remotive' | 'adzuna' | 'themuse' | 'greenhouse' | 'lever' | 'indeed' | 'usajobs' | 'arbeitnow' | 'weworkremotely' | 'authenticjobs' | 'jsearch' | 'dice' | 'monster' | 'remoteco' | 'remoteok' | 'jobicy' | 'himalayas' | 'hn_hiring')[];
   greenhouseBoards?: string[];
   leverBoards?: string[];
   companyCareerUrls?: string[];  // Direct company career page URLs
@@ -648,6 +792,18 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     if (sources.includes('remoteco')) {
       const rc = await searchRemoteCo(query);
       allJobs = allJobs.concat(rc);
+    }
+    if (sources.includes('remoteok')) {
+      allJobs = allJobs.concat(await searchRemoteOK(query));
+    }
+    if (sources.includes('jobicy')) {
+      allJobs = allJobs.concat(await searchJobicy(query));
+    }
+    if (sources.includes('himalayas')) {
+      allJobs = allJobs.concat(await searchHimalayas(query));
+    }
+    if (sources.includes('hn_hiring')) {
+      allJobs = allJobs.concat(await searchHNWhoIsHiring(query));
     }
   }
 
@@ -734,4 +890,22 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
   });
 
   return { total: allJobs.length, new: newCount, duped: dupedCount };
+}
+
+// ─── Source availability ──────────────────────────────────────────────────────
+// Which sources can actually run right now, given configured env keys.
+// Free/no-key sources are always on. Keyed sources turn on when their key exists.
+// Note: Indeed RSS and Monster RSS were discontinued upstream; they fail soft
+// (return []) and are excluded from defaults.
+
+export type JobSource = NonNullable<JobSearchParams['sources']>[number];
+
+export function getAvailableSources(): JobSource[] {
+  const sources: JobSource[] = ['remotive', 'themuse', 'arbeitnow', 'weworkremotely', 'remoteco', 'remoteok', 'jobicy', 'himalayas', 'hn_hiring'];
+  if (process.env.SERP_API_KEY) sources.push('google');                       // Google Jobs via SerpAPI
+  if (process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY) sources.push('adzuna');
+  if (process.env.RAPIDAPI_KEY) sources.push('jsearch');                      // LinkedIn/Indeed/ZipRecruiter/Glassdoor via Google for Jobs
+  if (process.env.DICE_API_KEY) sources.push('dice');
+  if (process.env.USAJOBS_HOST && process.env.USAJOBS_KEY) sources.push('usajobs');
+  return sources;
 }

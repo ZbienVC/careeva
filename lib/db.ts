@@ -1,11 +1,8 @@
-import { PrismaClient } from "@prisma/client";
-
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
-
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    log: ["error"],
-  });
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+/**
+ * lib/db.ts
+ *
+ * Back-compat re-export. The canonical Prisma client lives in lib/prisma.ts.
+ * Kept so existing `import { prisma } from '@/lib/db'` sites keep working while
+ * we converge on a single client instance.
+ */
+export { prisma } from './prisma';

@@ -66,19 +66,19 @@ export async function GET(request: NextRequest) {
 
   // ── Company success patterns ──────────────────────────────────────────────
   const topInterviewCompanies = applications
-    .filter(a => ['phone_screen', 'interview', 'offer'].includes(a.status))
-    .map(a => ({ company: a.company, role: a.role, status: a.status }))
+    .filter((a: any) => ['phone_screen', 'interview', 'offer'].includes(a.status))
+    .map((a: any) => ({ company: a.company, role: a.role, status: a.status }))
     .slice(0, 10);
 
   const rejectedCompanies = applications
-    .filter(a => a.status === 'rejected')
-    .map(a => ({ company: a.company, role: a.role }))
+    .filter((a: any) => a.status === 'rejected')
+    .map((a: any) => ({ company: a.company, role: a.role }))
     .slice(0, 10);
 
   // ── Response rate ─────────────────────────────────────────────────────────
-  const responded = applications.filter(a => a.status !== 'applied' && a.status !== 'saved' && a.status !== 'prepping').length;
+  const responded = applications.filter((a: any) => a.status !== 'applied' && a.status !== 'saved' && a.status !== 'prepping').length;
   const responseRate = Math.round((responded / applications.length) * 100);
-  const interviewCount = applications.filter(a => ['phone_screen', 'interview', 'offer'].includes(a.status)).length;
+  const interviewCount = applications.filter((a: any) => ['phone_screen', 'interview', 'offer'].includes(a.status)).length;
   const interviewRate = Math.round((interviewCount / applications.length) * 100);
 
   // ── AI-generated recommendations ─────────────────────────────────────────
@@ -90,8 +90,8 @@ export async function GET(request: NextRequest) {
         'Interview rate: ' + interviewRate + '%\n' +
         'Response rate: ' + responseRate + '%\n' +
         'Score ranges that got interviews: ' + JSON.stringify(scoreRanges) + '\n' +
-        'Companies that responded: ' + topInterviewCompanies.map(c => c.company).join(', ') + '\n' +
-        'Companies that rejected: ' + rejectedCompanies.map(c => c.company).join(', ');
+        'Companies that responded: ' + topInterviewCompanies.map((c: any) => c.company).join(', ') + '\n' +
+        'Companies that rejected: ' + rejectedCompanies.map((c: any) => c.company).join(', ');
 
       aiInsights = await generate({
         task: 'scoring_rationale',
@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
     totalApplications: applications.length,
     responseRate,
     interviewRate,
-    offerCount: applications.filter(a => a.status === 'offer').length,
+    offerCount: applications.filter((a: any) => a.status === 'offer').length,
     scoreRangeAnalysis: scoreRanges,
     atsPerformance: atsCounts,
     topInterviewCompanies,

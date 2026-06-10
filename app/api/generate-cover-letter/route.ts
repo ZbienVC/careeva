@@ -60,15 +60,15 @@ export async function POST(req: NextRequest) {
 
     if (education.length > 0) {
       profileContext += '\nEDUCATION: ';
-      profileContext += education.map(e => `${e.degree || ''} ${e.fieldOfStudy || ''} at ${e.institution}`).join(' | ') + '\n';
+      profileContext += education.map((e: any) => `${e.degree || ''} ${e.fieldOfStudy || ''} at ${e.institution}`).join(' | ') + '\n';
     }
 
     if (skills.length > 0) {
-      profileContext += `\nKEY SKILLS: ${skills.map(s => s.name).join(', ')}\n`;
+      profileContext += `\nKEY SKILLS: ${skills.map((s: any) => s.name).join(', ')}\n`;
     }
 
     if (certs.length > 0) {
-      profileContext += `CERTIFICATIONS: ${certs.map(c => c.name).join(', ')}\n`;
+      profileContext += `CERTIFICATIONS: ${certs.map((c: any) => c.name).join(', ')}\n`;
     }
 
     if (projects.length > 0) {
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const pitch = storedAnswers.find(a => a.questionKey === 'describe_yourself');
+    const pitch = storedAnswers.find((a: any) => a.questionKey === 'describe_yourself');
     if (posStatement) profileContext += `\nPOSITIONING: ${posStatement}\n`;
     else if (pitch) profileContext += `\nELEVATOR PITCH: ${pitch.answer}\n`;
 

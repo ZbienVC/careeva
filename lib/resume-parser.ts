@@ -220,6 +220,41 @@ function normalizeDateStr(dateStr: string): string {
   return yearMatch ? yearMatch[0] + '-01' : '';
 }
 
+// ─── Image (photo/screenshot) resumes via OpenAI vision OCR ──────────────────
+
+const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp'];
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+};
+
+async function extractTextFromImage(filePath: string): Promise<string> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('Image resumes need AI vision to read. Add OPENAI_API_KEY, or upload a PDF/DOCX/TXT instead.');
+  }
+  const ext = path.extname(filePath).toLowerCase();
+  const base64 = fs.readFileSync(filePath).toString('base64');
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Transcribe ALL text from this resume image exactly as written, preserving the line structure. Output only the transcribed text, nothing else.' },
+          { type: 'image_url', image_url: { url: `data:${IMAGE_MIME[ext] || 'image/png'};base64,${base64}` } },
+        ],
+      },
+    ],
+    temperature: 0,
+    max_tokens: 4000,
+  });
+  const text = response.choices[0]?.message?.content || '';
+  if (text.trim().length < 50) {
+    throw new Error('Could not read enough text from the image. Try a clearer photo, or upload a PDF/DOCX.');
+  }
+  return text;
+}
+
 // ─── Main parse function ──────────────────────────────────────────────────────
 
 export async function parseResume(filePath: string): Promise<ParsedResume> {
@@ -232,8 +267,10 @@ export async function parseResume(filePath: string): Promise<ParsedResume> {
     resumeText = await extractTextFromDOCX(filePath);
   } else if (ext === '.txt') {
     resumeText = extractTextFromTXT(filePath);
+  } else if (IMAGE_EXTS.includes(ext)) {
+    resumeText = await extractTextFromImage(filePath);
   } else {
-    throw new Error('Unsupported format. Upload PDF, DOCX, or TXT.');
+    throw new Error('Unsupported format. Upload PDF, DOCX, TXT, or an image (PNG/JPG/WebP).');
   }
 
   if (!process.env.OPENAI_API_KEY) {

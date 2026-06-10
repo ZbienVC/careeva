@@ -22,12 +22,12 @@ async function buildProfileForScoring(userId: string) {
   // Merge all skill sources
   const allSkills = [
     ...(profile?.skills || []),
-    ...skills.map(s => s.name),
-    ...workHistory.flatMap(w => w.skills || []),
+    ...skills.map((s: any) => s.name),
+    ...workHistory.flatMap((w: any) => w.skills || []),
   ];
   const allTech = [
     ...(profile?.technologies || []),
-    ...workHistory.flatMap(w => w.technologies || []),
+    ...workHistory.flatMap((w: any) => w.technologies || []),
   ];
 
   return {

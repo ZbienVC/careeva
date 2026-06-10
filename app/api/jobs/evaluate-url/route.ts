@@ -186,12 +186,12 @@ export async function POST(request: NextRequest) {
       if (earliest) yearsExp = Math.floor((Date.now() - new Date(earliest).getTime()) / (1000 * 60 * 60 * 24 * 365));
 
       const scoringProfile = {
-        skills: [...new Set([...(profile?.skills || []), ...skills.map(s => s.name)])],
+        skills: [...new Set([...(profile?.skills || []), ...skills.map((s: any) => s.name)])],
         roles: [...new Set([...(profile?.roles || []), ...(jobPrefs?.targetTitles || [])])],
         industries: [...new Set([...(profile?.industries || []), ...(jobPrefs?.targetIndustries || [])])],
         yearsExperience: yearsExp || profile?.yearsExperience || 0,
         education: profile?.education || [],
-        technologies: [...new Set([...(profile?.technologies || []), ...workHistory.flatMap(w => w.technologies || [])])],
+        technologies: [...new Set([...(profile?.technologies || []), ...workHistory.flatMap((w: any) => w.technologies || [])])],
         targetTitles: [...(jobPrefs?.targetTitles || []), ...(profile?.jobTitle ? [profile.jobTitle] : [])],
         targetIndustries: jobPrefs?.targetIndustries || [],
         roleFamilies: jobPrefs?.roleFamilies || [],

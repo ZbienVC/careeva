@@ -51,10 +51,10 @@ export async function GET(request: NextRequest) {
   });
 
   const now = Date.now();
-  const entries = applications.map(app => {
+  const entries = applications.map((app: any) => {
     const appliedAt = app.appliedAt?.getTime() || app.createdAt.getTime();
     const daysSince = Math.floor((now - appliedAt) / (1000 * 60 * 60 * 24));
-    const followups = app.events.filter(e => e.eventType === 'followup_sent');
+    const followups = app.events.filter((e: any) => e.eventType === 'followup_sent');
     const lastFollowup = followups[0]?.createdAt;
     const daysSinceFollowup = lastFollowup
       ? Math.floor((now - lastFollowup.getTime()) / (1000 * 60 * 60 * 24))
@@ -82,14 +82,14 @@ export async function GET(request: NextRequest) {
   });
 
   // Sort: urgent > overdue > waiting > cold > done
-  const urgencyOrder = { urgent: 0, overdue: 1, waiting: 2, cold: 3, done: 4 };
-  entries.sort((a, b) => (urgencyOrder[a.urgency] || 4) - (urgencyOrder[b.urgency] || 4));
+  const urgencyOrder: Record<string, number> = { urgent: 0, overdue: 1, waiting: 2, cold: 3, done: 4 };
+  entries.sort((a: any, b: any) => (urgencyOrder[a.urgency] ?? 4) - (urgencyOrder[b.urgency] ?? 4));
 
   const stats = {
-    urgent: entries.filter(e => e.urgency === 'urgent').length,
-    overdue: entries.filter(e => e.urgency === 'overdue').length,
-    waiting: entries.filter(e => e.urgency === 'waiting').length,
-    cold: entries.filter(e => e.urgency === 'cold').length,
+    urgent: entries.filter((e: any) => e.urgency === 'urgent').length,
+    overdue: entries.filter((e: any) => e.urgency === 'overdue').length,
+    waiting: entries.filter((e: any) => e.urgency === 'waiting').length,
+    cold: entries.filter((e: any) => e.urgency === 'cold').length,
     total: entries.length,
   };
 
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
 
     const daysSince = Math.floor((Date.now() - (app.appliedAt?.getTime() || app.createdAt.getTime())) / (1000 * 60 * 60 * 24));
     const candidateName = personalInfo?.fullName || 'the candidate';
-    const topSkills = skills.slice(0, 5).map(s => s.name).join(', ');
+    const topSkills = skills.slice(0, 5).map((s: any) => s.name).join(', ');
     const currentRole = workHistory[0] ? workHistory[0].title + ' at ' + workHistory[0].company : 'professional';
 
     draft = await generate({

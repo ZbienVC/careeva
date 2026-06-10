@@ -70,6 +70,34 @@ export default function JobDetailPage() {
     saveNotes(jobId, val);
   };
 
+  const handleAutoApply = async () => {
+    if (!job) return;
+    setApplying(true);
+    try {
+      const res = await fetch('/api/apply-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ jobId }),
+      });
+      const data = await res.json();
+      if (data.blocked) {
+        setToast(data.blocked);
+      } else if (data.duplicate && data.duplicateInfo) {
+        setToast(`Queued — note: you previously applied to ${data.duplicateInfo.company} (${data.duplicateInfo.role})`);
+      } else if (data.taskId) {
+        setToast('Queued for auto-apply \u2713 — track it in Review Queue');
+      } else {
+        setToast(data.error || 'Could not queue');
+      }
+    } catch {
+      setToast('Queue failed');
+    } finally {
+      setApplying(false);
+      setTimeout(() => setToast(''), 6000);
+    }
+  };
+
   const handleQuickApply = async () => {
     if (!job) return;
     setApplying(true);
@@ -150,6 +178,13 @@ export default function JobDetailPage() {
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3">
+            <button
+              onClick={handleAutoApply}
+              disabled={applying}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition"
+            >
+              {applying ? 'Queuing…' : '🤖 Auto-Apply'}
+            </button>
             <button
               onClick={handleQuickApply}
               disabled={applying}

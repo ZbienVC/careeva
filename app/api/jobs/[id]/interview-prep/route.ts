@@ -34,10 +34,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const candidateName = personalInfo?.fullName || 'the candidate';
   const currentRole = workHistory[0] ? workHistory[0].title + ' at ' + workHistory[0].company : 'professional';
-  const topSkills = skills.slice(0, 8).map(s => s.name).join(', ');
-  const workSummary = workHistory.slice(0, 3).map(w =>
+  const topSkills = skills.slice(0, 8).map((s: any) => s.name).join(', ');
+  const workSummary = workHistory.slice(0, 3).map((w: any) =>
     w.title + ' at ' + w.company + ': ' + (w.summary || '') +
-    (w.bullets.length > 0 ? '\nKey achievements: ' + w.bullets.slice(0, 2).map(b => b.content).join('; ') : '')
+    (w.bullets.length > 0 ? '\nKey achievements: ' + w.bullets.slice(0, 2).map((b: any) => b.content).join('; ') : '')
   ).join('\n\n');
 
   const jdContext = [job.title, job.company, job.description?.slice(0, 1500)].filter(Boolean).join('\n');

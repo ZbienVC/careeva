@@ -92,7 +92,7 @@ export default function SignupPage() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => handleChange('name', e.target.value)}
-                  placeholder="Zachary Bienstock"
+                  placeholder="Your full name"
                   required
                   disabled={loading}
                 />

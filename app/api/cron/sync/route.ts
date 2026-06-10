@@ -13,15 +13,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { runJobSync, cleanupStaleJobs, TOP_GREENHOUSE_BOARDS, TOP_LEVER_BOARDS, TOP_ASHBY_BOARDS } from '@/lib/job-connectors';
+import { aggregateJobSearch, getAvailableSources } from '@/lib/job-search';
 import { scoreJob } from '@/lib/job-scorer';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
 export async function POST(request: NextRequest) {
-  // Verify cron secret
+  // Verify cron secret — REQUIRED. Previously this endpoint ran open when
+  // CRON_SECRET was unset; now it refuses instead.
+  if (!CRON_SECRET) {
+    return NextResponse.json({ error: 'CRON_SECRET not configured on the server — set it before enabling scheduled sync.' }, { status: 503 });
+  }
   const authHeader = request.headers.get('authorization');
   const token = authHeader?.replace('Bearer ', '');
-  if (CRON_SECRET && token !== CRON_SECRET) {
+  if (token !== CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -61,7 +66,26 @@ export async function POST(request: NextRequest) {
 
         const syncResult = await runJobSync(user.id, boardSources);
         allStats.newJobs += syncResult.totalNew;
-        log.push('User ' + user.id + ': +' + syncResult.totalNew + ' new jobs, -' + stale + ' stale');
+        log.push('User ' + user.id + ': +' + syncResult.totalNew + ' new jobs from boards, -' + stale + ' stale');
+
+        // Multi-source aggregator (env-driven sources), keyed off the user's target titles
+        const titles: string[] = Array.isArray(user.jobPreferences?.targetTitles)
+          ? (user.jobPreferences.targetTitles as string[]).slice(0, 3)
+          : [];
+        if (titles.length > 0) {
+          try {
+            const agg = await aggregateJobSearch({
+              userId: user.id,
+              queries: [...new Set(titles)],
+              locations: ['United States'],
+              sources: getAvailableSources(),
+            });
+            allStats.newJobs += agg.new;
+            log.push('User ' + user.id + ': +' + agg.new + ' new jobs from aggregator');
+          } catch (aggErr) {
+            log.push('User ' + user.id + ' aggregator error: ' + (aggErr instanceof Error ? aggErr.message : String(aggErr)));
+          }
+        }
 
         // Auto-score new jobs
         const [profile, skills, jobPrefs, workHistory] = await Promise.all([
@@ -78,12 +102,12 @@ export async function POST(request: NextRequest) {
         }
 
         const scoringProfile = {
-          skills: [...new Set([...(profile?.skills || []), ...skills.map(s => s.name), ...workHistory.flatMap(w => w.skills || [])])],
+          skills: [...new Set([...(profile?.skills || []), ...skills.map((s: any) => s.name), ...workHistory.flatMap((w: any) => w.skills || [])])],
           roles: [...new Set([...(profile?.roles || []), ...(jobPrefs?.targetTitles || [])])],
           industries: [...new Set([...(profile?.industries || []), ...(jobPrefs?.targetIndustries || [])])],
           yearsExperience: yearsExp || profile?.yearsExperience || 0,
           education: profile?.education || [],
-          technologies: [...new Set([...(profile?.technologies || []), ...workHistory.flatMap(w => w.technologies || [])])],
+          technologies: [...new Set([...(profile?.technologies || []), ...workHistory.flatMap((w: any) => w.technologies || [])])],
           targetTitles: jobPrefs?.targetTitles || [],
           targetIndustries: jobPrefs?.targetIndustries || [],
           roleFamilies: jobPrefs?.roleFamilies || [],

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { attachSession } from "@/lib/session";
 import bcrypt from "bcryptjs";
 
 export async function POST(request: NextRequest) {
@@ -21,6 +22,22 @@ export async function POST(request: NextRequest) {
 
     const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (existingUser) {
+      // Legacy passwordless account: allow claiming it HERE (explicit signup
+      // intent) rather than at signin. Accounts that already have a password
+      // are still rejected.
+      if (!existingUser.passwordHash) {
+        const passwordHash = await bcrypt.hash(password, 12);
+        const upgraded = await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { passwordHash, name: name && typeof name === "string" ? name.trim() : existingUser.name },
+        });
+        const response = NextResponse.json(
+          { success: true, message: "Password set for existing account.", userId: upgraded.id },
+          { status: 200 }
+        );
+        attachSession(response, { userId: upgraded.id, email: upgraded.email });
+        return response;
+      }
       return NextResponse.json({ error: "An account with this email already exists. Please sign in." }, { status: 409 });
     }
 
@@ -40,13 +57,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
 
-    response.cookies.set('careeva-session', JSON.stringify({ userId: user.id, email: user.email }), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 30 * 24 * 60 * 60,
-      path: '/',
-    });
+    attachSession(response, { userId: user.id, email: user.email });
 
     return response;
   } catch (error) {

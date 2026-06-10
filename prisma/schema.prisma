@@ -370,9 +370,63 @@ model AutoApplyConfig {
   titleWhitelist   String[]
   titleBlacklist   String[]
 
+  // Submission engine settings (user-tunable in dashboard)
+  submitMode             String   @default("approve_first")
+  // approve_first: worker fills + screenshots, user approves, worker submits
+  // fill_and_leave: worker fills, user finishes manually
+  // full_auto: worker fills and submits unattended
+  unknownQuestionMode    String   @default("pause")
+  // pause: queue for review on unanswerable required question
+  // ai_guess: best-guess with AI and flag for visibility
+  attachCoverLetter      Boolean  @default(true)
+  resumeVariant          String   @default("uploaded") // uploaded | tailored
+  maxAppliesPerRun       Int      @default(0)          // 0 = unlimited
+  minDelaySeconds        Int      @default(30)
+  maxDelaySeconds        Int      @default(90)
+  allowSameCompanyRoles  Boolean  @default(false)      // Q15: B with notification
+
   updatedAt DateTime @updatedAt
 
   @@map("auto_apply_config")
+}
+
+// ─── APPLY QUEUE (Postgres-backed job queue for the Playwright worker) ────────
+
+model ApplyTask {
+  id            String    @id @default(cuid())
+  userId        String
+  jobId         String
+  applicationId String?
+
+  status        String    @default("queued")
+  // queued | claimed | filling | awaiting_approval | approved |
+  // submitting | submitted | needs_review | failed | cancelled
+  mode          String    @default("approve_first") // approve_first | fill_and_leave | full_auto
+  atsType       String?
+  applyUrl      String?
+
+  // Packet snapshot the worker uses (answers, cover letter ref, resume key)
+  packet        Json?
+
+  // Worker bookkeeping
+  claimedBy     String?   // worker instance id
+  claimedAt     DateTime?
+  attempts      Int       @default(0)
+  lastError     String?   @db.Text
+
+  // Approval flow
+  screenshotKey String?   // storage key of the filled-form screenshot
+  fieldReport   Json?     // what was filled, what was skipped/guessed
+  approvedAt    DateTime?
+  submittedAt   DateTime?
+  externalId    String?   // ATS confirmation id if available
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@index([userId, status])
+  @@map("apply_tasks")
 }
 
 // â”€â”€â”€ MATERIALS LIBRARY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -70,12 +70,12 @@ export async function POST(request: NextRequest) {
     prisma.skill.findMany({ where: { userId: user.id }, take: 20 }),
   ]);
 
-  const userSkills = new Set(skills.map(s => s.name.toLowerCase()));
+  const userSkills = new Set(skills.map((s: any) => s.name.toLowerCase()));
   const targetTitles = jobPrefs?.targetTitles || [];
   const salaryMin = jobPrefs?.salaryMinUSD || 0;
 
   // Score each job on all 10 dimensions
-  const scoredJobs: JobScore[] = jobs.map(job => {
+  const scoredJobs: JobScore[] = jobs.map((job: any) => {
     const text = (job.title + ' ' + job.description + ' ' + job.requirements).toLowerCase();
     const jdScore = job.jobScores[0]?.overallScore || 50;
 
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     const scores: Record<string, number> = {};
 
     // North star: title match to targets
-    scores.north_star = targetTitles.some(t => job.title.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(job.title.toLowerCase().split(' ')[0]))
+    scores.north_star = targetTitles.some((t: any) => job.title.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(job.title.toLowerCase().split(' ')[0]))
       ? 5 : targetTitles.length === 0 ? 3 : Math.max(1, Math.round(jdScore / 25));
 
     // CV match: based on existing job score

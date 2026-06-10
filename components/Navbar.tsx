@@ -13,7 +13,9 @@ const DASHBOARD_LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/jobs', label: 'Jobs' },
   { href: '/dashboard/automation', label: '⚡ Automate' },
+  { href: '/dashboard/review', label: 'Review Queue' },
   { href: '/dashboard/applications', label: 'Tracker' },
+  { href: '/dashboard/settings', label: 'Settings' },
   { href: '/dashboard/profile', label: 'Profile' },
 ];
 

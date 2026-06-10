@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
+import os from 'os';
+import crypto from 'crypto';
 import { parseResume } from '@/lib/resume-parser';
 import { prisma } from '@/lib/db';
 import { getCurrentUserFromRequest } from '@/lib/session';
+import { saveFile, getFile, deleteFile, contentTypeFor, isPersistent } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,19 +22,32 @@ export async function POST(request: NextRequest) {
 
     // Accept by extension when MIME type is blank
     const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '');
-    const allowedExts = ['.pdf', '.docx', '.doc', '.txt'];
+    const allowedExts = ['.pdf', '.docx', '.doc', '.txt', '.png', '.jpg', '.jpeg', '.webp'];
     if (!allowedExts.includes(ext)) {
-      return NextResponse.json({ error: 'Please upload a PDF, DOCX, or TXT file' }, { status: 400 });
+      return NextResponse.json({ error: 'Please upload a PDF, DOCX, TXT, or image (PNG/JPG/WebP) file' }, { status: 400 });
     }
 
-    const uploadsDir = join(process.cwd(), 'public', 'uploads');
-    mkdirSync(uploadsDir, { recursive: true });
-    const filename = 'resume-' + Date.now() + '-' + file.name;
-    const filepath = join(uploadsDir, filename);
-    const bytes = await file.arrayBuffer();
-    writeFileSync(filepath, Buffer.from(bytes));
+    const bytes = Buffer.from(await file.arrayBuffer());
 
-    const parsed = await parseResume(filepath);
+    // Persist the REAL file (Railway Volume via lib/storage) so it can be
+    // attached to applications later. public/uploads was ephemeral on Railway.
+    let storageKey: string | null = null;
+    if (user?.id) {
+      const saved = await saveFile(`resumes/${user.id}`, file.name, bytes);
+      storageKey = saved.key;
+    }
+
+    // Parser needs a path: write to OS tmp, parse, clean up.
+    const tmpDir = join(os.tmpdir(), 'careeva-parse');
+    mkdirSync(tmpDir, { recursive: true });
+    const tmpPath = join(tmpDir, crypto.randomBytes(8).toString('hex') + ext);
+    writeFileSync(tmpPath, bytes);
+    let parsed;
+    try {
+      parsed = await parseResume(tmpPath);
+    } finally {
+      try { rmSync(tmpPath, { force: true }); } catch { /* ignore */ }
+    }
 
     // Save to DB only when authenticated
     if (user?.id) {
@@ -46,7 +62,7 @@ export async function POST(request: NextRequest) {
           yearsExperience: parsed.yearsExperience,
           education: parsed.education,
           technologies: parsed.technologies,
-          resumeUrl: '/uploads/' + filename,
+          resumeUrl: storageKey ? 'storage://' + storageKey : null,
         },
         update: {
           skills: parsed.skills,
@@ -55,7 +71,7 @@ export async function POST(request: NextRequest) {
           yearsExperience: parsed.yearsExperience,
           education: parsed.education,
           technologies: parsed.technologies,
-          resumeUrl: '/uploads/' + filename,
+          resumeUrl: storageKey ? 'storage://' + storageKey : null,
         },
       });
 
@@ -64,8 +80,8 @@ export async function POST(request: NextRequest) {
         data: {
           userId: user.id,
           name: 'Uploaded ' + new Date().toLocaleDateString(),
-          fileUrl: '/uploads/' + filename,
-          fileType: ext === '.pdf' ? 'pdf' : ext === '.txt' ? 'txt' : 'docx',
+          fileUrl: storageKey ? 'storage://' + storageKey : null,
+          fileType: ext === '.pdf' ? 'pdf' : ext === '.txt' ? 'txt' : ['.png', '.jpg', '.jpeg', '.webp'].includes(ext) ? 'image' : 'docx',
           isBase: true,
           rawText: parsed.rawText || '',
         },
@@ -126,7 +142,7 @@ export async function POST(request: NextRequest) {
           where: { userId: user.id },
           select: { name: true },
         });
-        const existingNames = new Set(existing.map(s => s.name.toLowerCase()));
+        const existingNames = new Set(existing.map((s: any) => s.name.toLowerCase()));
         const toAdd = allSkills.filter(s => !existingNames.has(s.toLowerCase())).slice(0, 60);
         if (toAdd.length > 0) {
           await prisma.skill.createMany({
@@ -165,4 +181,74 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// GET /api/upload            -> list current user's resumes
+// GET /api/upload?id=X       -> download the stored resume file
+export async function GET(request: NextRequest) {
+  const user = await getCurrentUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const id = request.nextUrl.searchParams.get('id');
+
+  if (!id) {
+    const resumes = await prisma.resume.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, fileType: true, isBase: true, createdAt: true, fileUrl: true },
+    });
+    return NextResponse.json({
+      resumes: resumes.map((r: { id: string; name: string; fileType: string | null; isBase: boolean; createdAt: Date; fileUrl: string | null }) => ({
+        id: r.id,
+        name: r.name,
+        fileType: r.fileType,
+        isBase: r.isBase,
+        createdAt: r.createdAt,
+        hasFile: !!r.fileUrl?.startsWith('storage://'),
+      })),
+      persistentStorage: isPersistent(),
+    });
+  }
+
+  const resume = await prisma.resume.findFirst({ where: { id, userId: user.id } });
+  if (!resume) return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+  if (!resume.fileUrl?.startsWith('storage://')) {
+    return NextResponse.json({ error: 'No stored file for this resume (uploaded before file storage was enabled). Re-upload to attach the file.' }, { status: 404 });
+  }
+
+  const key = resume.fileUrl.slice('storage://'.length);
+  try {
+    const data = await getFile(key);
+    const filename = key.split('/').pop() || 'resume';
+    return new NextResponse(new Uint8Array(data), {
+      status: 200,
+      headers: {
+        'Content-Type': contentTypeFor(filename),
+        'Content-Disposition': `attachment; filename="${filename.replace(/"/g, '')}"`,
+        'Content-Length': String(data.length),
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: 'Stored file missing on disk. Re-upload the resume.' }, { status: 410 });
+  }
+}
+
+// DELETE /api/upload?id=X  -> delete resume record + stored file
+// (The profile page already calls this; the handler previously did not exist.)
+export async function DELETE(request: NextRequest) {
+  const user = await getCurrentUserFromRequest(request);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const id = request.nextUrl.searchParams.get('id');
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+
+  const resume = await prisma.resume.findFirst({ where: { id, userId: user.id } });
+  if (!resume) return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+
+  if (resume.fileUrl?.startsWith('storage://')) {
+    await deleteFile(resume.fileUrl.slice('storage://'.length));
+  }
+  await prisma.resume.delete({ where: { id: resume.id } });
+
+  return NextResponse.json({ success: true });
 }

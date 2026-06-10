@@ -1,14 +1,8 @@
 import { NextResponse } from 'next/server';
+import { clearSession } from '@/lib/session';
 
 export async function POST() {
   const response = NextResponse.json({ success: true });
-  response.cookies.set('careeva-session', '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 0,
-    path: '/',
-  });
-
+  clearSession(response);
   return response;
 }

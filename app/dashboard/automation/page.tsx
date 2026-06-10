@@ -37,6 +37,48 @@ function PipelineCard({ label, value, sub, color, icon, href }: { label: string;
   return inner;
 }
 
+
+function CompletenessBanner() {
+  const [data, setData] = useState<{ readyToAutoApply: boolean; percentComplete: number; missingRequired: string[] } | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  useEffect(() => {
+    fetch('/api/profile/completeness', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setData)
+      .catch(() => {});
+  }, []);
+  const seed = async () => {
+    setSeeding(true);
+    await fetch('/api/job-preferences/seed', { method: 'POST', credentials: 'include' });
+    setSeeding(false);
+    window.location.reload();
+  };
+  if (!data) return null;
+  if (data.readyToAutoApply) {
+    return (
+      <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center justify-between">
+        <span>✓ Profile complete ({data.percentComplete}%) — ready to auto-apply</span>
+        <span className="flex gap-3">
+          <Link href="/dashboard/review" className="underline">Review Queue</Link>
+          <Link href="/dashboard/settings" className="underline">Settings</Link>
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+      <p className="font-bold">Profile {data.percentComplete}% complete — auto-apply is blocked until these are set:</p>
+      <p className="mt-1">{data.missingRequired.join(' · ')}</p>
+      <div className="mt-2 flex gap-3">
+        <Link href="/dashboard/profile" className="font-bold underline">Complete profile →</Link>
+        <button onClick={seed} disabled={seeding} className="font-bold underline disabled:opacity-50">
+          {seeding ? 'Seeding…' : 'Seed starter job preferences'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type LogLine = { text: string; type: 'success' | 'error' | 'info' | 'warn' | 'header' };
 
 function classifyLog(line: string): LogLine['type'] {
@@ -183,6 +225,7 @@ export default function AutomatePage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+      <CompletenessBanner />
 
       {/* Full Auto Warning Modal */}
       {showFullAutoWarning && (

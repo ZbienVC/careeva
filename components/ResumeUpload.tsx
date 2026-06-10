@@ -44,7 +44,7 @@ export default function ResumeUpload({ onSuccess, onError }: ResumeUploadProps) 
   const handleFile = async (file: File) => {
     const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
     if (!validTypes.includes(file.type)) {
-      const error = 'Please upload a PDF or DOCX file';
+      const error = 'Please upload a PDF, DOCX, TXT, or image file';
       onError?.(error);
       return;
     }
@@ -85,7 +85,7 @@ export default function ResumeUpload({ onSuccess, onError }: ResumeUploadProps) 
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx"
+            accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg,.webp"
             onChange={handleFileSelect}
             className="hidden"
             disabled={loading}

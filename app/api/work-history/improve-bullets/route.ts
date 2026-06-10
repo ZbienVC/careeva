@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   if (!wh) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const existingBullets = wh.bullets.map(b => b.content).join("\n");
+  const existingBullets = wh.bullets.map((b: any) => b.content).join("\n");
   const jobContext = job ? `TARGET ROLE: ${job.title} at ${job.company}\nJOB REQUIREMENTS: ${job.description?.slice(0, 800) || ""}` : "";
 
   const prompt = `Improve these resume bullet points for ${wh.title} at ${wh.company}.
@@ -42,7 +42,7 @@ Improved bullets:`;
       .map(b => b.replace(/^[-•*]\s*/, "").trim())
       .filter(Boolean);
     
-    return NextResponse.json({ improved: improvedList, original: wh.bullets.map(b => b.content) });
+    return NextResponse.json({ improved: improvedList, original: wh.bullets.map((b: any) => b.content) });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
   }

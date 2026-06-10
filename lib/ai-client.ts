@@ -2,7 +2,7 @@
  * lib/ai-client.ts
  * 
  * Unified AI client for Careeva
- * - Claude Sonnet 4.6 (claude-sonnet-4-5): cover letters, resume tailoring, narrative writing
+ * - Claude Sonnet 4.6 (claude-sonnet-4-6): cover letters, resume tailoring, narrative writing
  * - GPT-4o-mini: question answering, scoring rationale, quick responses
  * - Fallback: GPT-4o-mini when Claude key not available
  */
@@ -44,7 +44,7 @@ export type AITask =
   | 'quick_answer';        // Simple factual answer from profile
 
 const CLAUDE_TASKS: AITask[] = ['cover_letter', 'resume_summary', 'resume_bullets', 'answer_behavioral'];
-const CLAUDE_MODEL = 'claude-sonnet-4-5';
+const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const OPENAI_MODEL = 'gpt-4o-mini';
 
 // ─── Core generation function ─────────────────────────────────────────────────

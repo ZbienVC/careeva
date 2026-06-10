@@ -81,8 +81,8 @@ export async function analyzeJobFit(userId: string, jobId: string): Promise<Keyw
   const jdKeywords = extractKeywords(jdText);
 
   const userSkills = new Set<string>([
-    ...skills.map(s => s.name.toLowerCase()),
-    ...workHistory.flatMap(w => [...(w.skills || []), ...(w.technologies || [])]).map(s => s.toLowerCase()),
+    ...skills.map((s: any) => s.name.toLowerCase()),
+    ...workHistory.flatMap((w: any) => [...(w.skills || []), ...(w.technologies || [])]).map((s: any) => s.toLowerCase()),
   ]);
 
   const matchedSkills = jdKeywords.filter(k =>
@@ -100,9 +100,9 @@ export async function analyzeJobFit(userId: string, jobId: string): Promise<Keyw
     else missingNiceToHave.push(kw);
   }
 
-  const allBullets = workHistory.flatMap(w => w.bullets.map(b => b.content));
+  const allBullets = workHistory.flatMap((w: any) => w.bullets.map((b: any) => b.content));
   const recommendedBullets = allBullets
-    .filter(b => jdKeywords.some(k => b.toLowerCase().includes(k)))
+    .filter((b: any) => jdKeywords.some(k => b.toLowerCase().includes(k)))
     .slice(0, 5);
 
   const unusedStrengths = Array.from(userSkills)
@@ -118,7 +118,7 @@ export async function analyzeJobFit(userId: string, jobId: string): Promise<Keyw
     try {
       const profileSummary = workHistory
         .slice(0, 2)
-        .map(w => w.title + ' at ' + w.company + ': ' + (w.summary || ''))
+        .map((w: any) => w.title + ' at ' + w.company + ': ' + (w.summary || ''))
         .join('. ');
       const missingList = missingRequired.slice(0, 5).join(', ');
       const prompt =
@@ -157,9 +157,9 @@ export async function generateTailoredSummary(userId: string, jobId: string): Pr
 
   if (!job) throw new Error('Job not found');
 
-  const profile = workHistory.slice(0, 3).map(w =>
+  const profile = workHistory.slice(0, 3).map((w: any) =>
     w.title + ' at ' + w.company + ': ' + (w.summary || '') +
-    '\nKey bullets: ' + w.bullets.slice(0, 3).map(b => b.content).join('; ')
+    '\nKey bullets: ' + w.bullets.slice(0, 3).map((b: any) => b.content).join('; ')
   ).join('\n\n');
 
   const candidateName = personalInfo?.fullName || 'the candidate';
@@ -176,11 +176,11 @@ export async function generateTailoredSummary(userId: string, jobId: string): Pr
 
   const summary = await generateResumeSummary(summaryPrompt);
 
-  const allBullets = workHistory.flatMap(w => w.bullets.map(b => ({ content: b.content, company: w.company })));
+  const allBullets = workHistory.flatMap((w: any) => w.bullets.map((b: any) => ({ content: b.content, company: w.company })));
   const topBullets = allBullets
-    .filter(b => analysis.matchedSkills.some(skill => b.content.toLowerCase().includes(skill.toLowerCase())))
+    .filter((b: any) => analysis.matchedSkills.some(skill => b.content.toLowerCase().includes(skill.toLowerCase())))
     .slice(0, 6)
-    .map(b => b.content);
+    .map((b: any) => b.content);
 
   return {
     title: job.title,

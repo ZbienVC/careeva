@@ -18,7 +18,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getCurrentUserFromRequest } from '@/lib/session';
 import { runJobSync, cleanupStaleJobs, TOP_GREENHOUSE_BOARDS, TOP_LEVER_BOARDS, TOP_ASHBY_BOARDS } from '@/lib/job-connectors';
+import { aggregateJobSearch, getAvailableSources } from '@/lib/job-search';
 import { autoApplyToJob } from '@/lib/auto-apply';
+import { enqueueApplyTask } from '@/lib/apply-queue';
 import { scoreJob } from '@/lib/job-scorer';
 
 const DEFAULT_APPLY_THRESHOLD = 50;
@@ -41,15 +43,15 @@ async function buildScoringProfile(userId: string) {
   }
 
   return {
-    skills: [...new Set([...(profile?.skills || []), ...skills.map(s => s.name), ...workHistory.flatMap(w => w.skills || [])])],
+    skills: [...new Set([...(profile?.skills || []), ...skills.map((s: any) => s.name), ...workHistory.flatMap((w: any) => w.skills || [])])],
     roles: [...new Set([...(profile?.roles || []), ...(jobPrefs?.targetTitles || [])])],
     industries: [...new Set([...(profile?.industries || []), ...(jobPrefs?.targetIndustries || [])])],
     yearsExperience: yearsExp || profile?.yearsExperience || 0,
     education: profile?.education || [],
     technologies: [...new Set([
       ...(profile?.technologies || []),
-      ...workHistory.flatMap(w => w.technologies || []),
-      ...skills.filter(s => /python|sql|typescript|javascript|react|node|aws|gcp|docker|kubernetes/i.test(s.name)).map(s => s.name.toLowerCase()),
+      ...workHistory.flatMap((w: any) => w.technologies || []),
+      ...skills.filter((s: any) => /python|sql|typescript|javascript|react|node|aws|gcp|docker|kubernetes/i.test(s.name)).map((s: any) => s.name.toLowerCase()),
     ])],
     targetTitles: [
       ...(jobPrefs?.targetTitles || []),
@@ -98,6 +100,37 @@ export async function POST(request: NextRequest) {
         runLog.push('Board sync complete: ' + syncResult.totalNew + ' new jobs from ' + boardSources.length + ' companies');
       } catch (syncErr) {
         runLog.push('Board sync error: ' + (syncErr instanceof Error ? syncErr.message : String(syncErr)));
+      }
+
+      // Step 1b: Multi-source aggregator (Google Jobs / JSearch=LinkedIn+ZipRecruiter+
+      // Glassdoor via Google for Jobs / Adzuna / Remotive / The Muse / etc.)
+      // Sources auto-enable based on which API keys are configured.
+      try {
+        const jobPrefs = await prisma.jobPreferences.findUnique({ where: { userId: user.id } });
+        const workHistory = await prisma.workHistory.findMany({
+          where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 3,
+        });
+        let queries: string[] =
+          Array.isArray(jobPrefs?.targetTitles) && jobPrefs.targetTitles.length > 0
+            ? (jobPrefs.targetTitles as string[]).slice(0, 3)
+            : workHistory.map((w: { title: string }) => w.title).filter(Boolean).slice(0, 2);
+        queries = [...new Set(queries)];
+
+        if (queries.length === 0) {
+          runLog.push('Aggregator skipped: no target titles or work history to search with. Set target titles in Job Preferences.');
+        } else {
+          const sources = getAvailableSources();
+          const locations: string[] =
+            Array.isArray(jobPrefs?.preferredLocations) && jobPrefs.preferredLocations.length > 0
+              ? (jobPrefs.preferredLocations as string[]).slice(0, 2)
+              : ['United States'];
+          runLog.push('Aggregator searching ' + sources.length + ' sources (' + sources.join(', ') + ') for: ' + queries.join(' | '));
+          const agg = await aggregateJobSearch({ userId: user.id, queries, locations, sources });
+          stats.searched += agg.new;
+          runLog.push('Aggregator complete: ' + agg.new + ' new jobs (' + agg.duped + ' duplicates skipped, ' + agg.total + ' total found)');
+        }
+      } catch (aggErr) {
+        runLog.push('Aggregator error: ' + (aggErr instanceof Error ? aggErr.message : String(aggErr)));
       }
     }
 
@@ -153,50 +186,66 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 3: Find top jobs to apply to ───────────────────────────────────────
+    // Config-driven: threshold + per-run cap come from user settings (UI-tunable).
+    const config = await prisma.autoApplyConfig.findUnique({ where: { userId: user.id } });
+    const effectiveThreshold = body.threshold ?? config?.minScoreToApply ?? DEFAULT_APPLY_THRESHOLD;
+    const perRunCap = body.maxApplies ?? config?.maxAppliesPerRun ?? 0; // 0 = unlimited
+
     const topJobs = await prisma.job.findMany({
       where: {
         userId: user.id,
         isActive: true,
-        jobScores: { some: { userId: user.id, overallScore: { gte: threshold } } },
+        jobScores: { some: { userId: user.id, overallScore: { gte: effectiveThreshold } } },
         applications: { none: { userId: user.id } },
       },
       include: {
-        jobScores: { where: { userId: user.id } },
+        jobScores: { where: { userId: user.id }, orderBy: { overallScore: 'desc' }, take: 1 },
       },
-      orderBy: { jobScores: { _count: 'desc' } },
-      take: maxApplies,
+      take: 500,
     });
+    // BUGFIX: previously ordered by jobScores _count (meaningless); order by actual score.
+    topJobs.sort((a: { jobScores: Array<{ overallScore: number | null }> }, b: { jobScores: Array<{ overallScore: number | null }> }) =>
+      (b.jobScores[0]?.overallScore || 0) - (a.jobScores[0]?.overallScore || 0));
+    const selectedJobs = perRunCap > 0 ? topJobs.slice(0, perRunCap) : topJobs;
 
-    if (topJobs.length === 0) {
-      runLog.push('No jobs above ' + threshold + ' score threshold. Try lowering threshold or run sync first.');
+    if (selectedJobs.length === 0) {
+      runLog.push('No jobs above ' + effectiveThreshold + ' score threshold. Try lowering the threshold in Settings or run sync first.');
       return NextResponse.json({ success: true, mode, stats, log: runLog });
     }
 
-    runLog.push('Found ' + topJobs.length + ' jobs above ' + threshold + ' score to process');
+    runLog.push('Found ' + selectedJobs.length + ' jobs above ' + effectiveThreshold + ' score to process' + (perRunCap > 0 ? ' (capped at ' + perRunCap + ')' : ' (no cap)'));
 
-    // Step 4: Generate and submit applications ────────────────────────────────
-    for (const job of topJobs) {
+    // Step 4: Build packets and enqueue for the worker ─────────────────────────
+    for (const job of selectedJobs) {
       const scoreData = job.jobScores[0];
-      const applyMode = mode === 'full_auto' ? 'auto' :
-        mode === 'auto_safe' ? (scoreData?.recommendation === 'auto_apply' ? 'auto' : 'review_first') :
-        'prep_only';
-
       try {
         runLog.push('  ' + job.title + ' @ ' + job.company + ' (score: ' + (scoreData?.overallScore || '?') + ')');
-        const result = await autoApplyToJob(user.id, job.id, applyMode);
 
-        if (result.status === 'applied') {
-          stats.submitted++;
-          runLog.push('    Submitted! ID: ' + (result.applicationId || 'unknown'));
-        } else if (result.status === 'queued_for_review') {
-          stats.queued++;
-          const missing = result.packet.missingFields?.length
-            ? 'missing: ' + result.packet.missingFields.join(', ')
-            : 'quality check needed (score: ' + result.packet.qualityScore + '/100)';
-          runLog.push('    Queued for review (' + missing + ')');
-        } else if (result.status === 'prep_ready') {
+        if (mode === 'prep_all') {
+          const result = await autoApplyToJob(user.id, job.id, 'prep_only');
           stats.packetsBuilt++;
-          runLog.push('    Packet ready (confidence: ' + Math.round(result.packet.confidence * 100) + '%, quality: ' + result.packet.qualityScore + '/100)');
+          runLog.push('    Packet ready (quality: ' + result.packet.qualityScore + '/100)');
+          continue;
+        }
+
+        // auto_safe / full_auto: enqueue for the Playwright worker.
+        // Task mode comes from the user's submitMode setting; auto_safe forces
+        // approval unless the score clears the auto bar.
+        const taskMode = mode === 'full_auto'
+          ? (config?.submitMode || 'approve_first')
+          : ((scoreData?.overallScore || 0) >= (config?.minScoreToAutoApply ?? 75) ? (config?.submitMode || 'approve_first') : 'approve_first');
+
+        const enq = await enqueueApplyTask(user.id, job.id, taskMode);
+        if (enq.blocked) {
+          stats.queued++;
+          runLog.push('    Skipped: ' + enq.blocked);
+        } else if (enq.duplicate && enq.duplicateInfo) {
+          stats.submitted += 0;
+          runLog.push('    NOTE: previously applied to ' + enq.duplicateInfo.company + ' (' + enq.duplicateInfo.role + ') — enqueued anyway per settings. Task ' + enq.taskId);
+          stats.queued++;
+        } else {
+          stats.queued++;
+          runLog.push('    Enqueued for worker (task ' + enq.taskId + ', mode ' + taskMode + ')');
         }
       } catch (err) {
         stats.errors++;

@@ -75,7 +75,7 @@ function getCompanyName(slug: string): string {
     slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-// ─── Top company boards hardcoded for Zach (SWE/AI/startup focus) ─────────────
+// ─── Default seed company boards (SWE/AI/startup focus) ───────────────────────
 
 export const TOP_GREENHOUSE_BOARDS = [
   // AI Labs
@@ -171,7 +171,7 @@ function detectRoleFamilies(title: string, description: string): string[] {
 
 
 // ─── Title relevance filter (from career-ops) ────────────────────────────────
-// Only save jobs that match Zach's target roles. Blocks retail/unrelated jobs.
+// Only save jobs that match the user's target roles. Blocks retail/unrelated jobs.
 
 const TITLE_POSITIVE = [
   'engineer', 'developer', 'software', 'full.?stack', 'backend', 'frontend',
@@ -179,6 +179,12 @@ const TITLE_POSITIVE = [
   'llm', 'nlp', 'data', 'product manager', 'pm', 'solutions architect',
   'forward deployed', 'solutions engineer', 'technical', 'architect',
   'founding', 'staff', 'principal', 'lead', 'senior', 'head of',
+  // Loosened (Q11): finance / analytics / sales families matching the user's background
+  'analyst', 'analytics', 'business intelligence', 'finance', 'financial',
+  'fintech', 'investment', 'trading', 'crypto', 'web3', 'blockchain',
+  'account executive', 'sales engineer', 'business development', 'bdr', 'sdr',
+  'revenue', 'growth', 'strategy', 'operations', 'partnerships',
+  'customer success', 'marketing',
   'automation', 'integration', 'api', 'cloud', 'security', 'analytics',
   'growth engineer', 'gtm engineer', 'devrel', 'developer advocate',
   'customer engineer', 'implementation', 'applied ai', 'agent',

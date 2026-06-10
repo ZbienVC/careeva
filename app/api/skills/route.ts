@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   // Bulk import: { skills: string[] }
   if (Array.isArray(body.skills)) {
     const existing = await prisma.skill.findMany({ where: { userId: user.id }, select: { name: true } });
-    const existingNames = new Set(existing.map(s => s.name.toLowerCase()));
+    const existingNames = new Set(existing.map((s: any) => s.name.toLowerCase()));
     const toCreate = (body.skills as string[]).filter(s => !existingNames.has(s.toLowerCase()));
     if (toCreate.length > 0) {
       await prisma.skill.createMany({

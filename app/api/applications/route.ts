@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Fetch cover letters for each application that has a jobId
-    const jobIds = applications.filter(a => a.jobId).map(a => a.jobId as string);
+    const jobIds = applications.filter((a: any) => a.jobId).map((a: any) => a.jobId as string);
     const coverLetters = jobIds.length > 0 ? await prisma.coverLetter.findMany({
       where: { userId: user.id, jobId: { in: jobIds } },
       orderBy: { createdAt: 'desc' },
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       if (cl.jobId && !clByJobId[cl.jobId]) clByJobId[cl.jobId] = cl.content;
     }
 
-    const formatted = applications.map((app) => ({
+    const formatted = applications.map((app: any) => ({
       id: app.id,
       company: app.company,
       role: app.role,

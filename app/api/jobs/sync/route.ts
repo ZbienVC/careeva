@@ -40,10 +40,10 @@ export async function POST(request: NextRequest) {
       ? prefs.targetTitles
       : String(prefs?.targetTitles || '').split(',').map((s: string) => s.trim()).filter(Boolean);
 
-    const queries = profileTitles.length > 0
+    const queries: string[] = profileTitles.length > 0
       ? profileTitles.slice(0, 3)
       : workHistory.length > 0
-        ? workHistory.slice(0, 2).map(w => w.title).filter(Boolean)
+        ? workHistory.slice(0, 2).map((w: any) => w.title as string).filter(Boolean)
         : ['Software Engineer', 'AI Engineer', 'Full Stack Engineer'];
 
     const searchResult = await aggregateJobSearch({

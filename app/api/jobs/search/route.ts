@@ -3,8 +3,9 @@ import { getCurrentUserFromRequest } from '@/lib/session';
 import { aggregateJobSearch, CURATED_GREENHOUSE_BOARDS, CURATED_LEVER_BOARDS } from '@/lib/job-search';
 import { prisma } from '@/lib/prisma';
 
-// Zach's personal fallback profile (used when JobPreferences not yet configured)
-const ZACH_FALLBACK = {
+// Neutral default search titles. Used only when the user has not configured
+// JobPreferences and has no work history to derive queries from.
+const GENERIC_TITLE_FALLBACK = {
   targetTitles: [
     'Software Engineer',
     'Full Stack Engineer',
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
       prisma.workHistory.findMany({ where: { userId: user.id }, orderBy: { startDate: 'desc' }, take: 3 }),
     ]);
 
-    // Build search queries - profile > work history > Zach fallback
+    // Build search queries: explicit body > preferences > work history > neutral default
     let queries: string[] = body.queries || [];
 
     if (queries.length === 0) {
@@ -45,12 +46,12 @@ export async function POST(request: NextRequest) {
       }
 
       if (queries.length === 0 && workHistory.length > 0) {
-        queries = workHistory.slice(0, 2).map(w => w.title).filter(Boolean);
+        queries = workHistory.slice(0, 2).map((w: any) => w.title).filter(Boolean);
       }
 
-      // Always fall back to Zach's profile if nothing configured yet
+      // Neutral default only if the user has configured nothing yet
       if (queries.length === 0) {
-        queries = ZACH_FALLBACK.targetTitles.slice(0, 3);
+        queries = GENERIC_TITLE_FALLBACK.targetTitles.slice(0, 3);
       }
     }
 
@@ -69,18 +70,17 @@ export async function POST(request: NextRequest) {
     // Location - remote first for tech roles
     const locations = body.locations || ['United States'];
 
-    // Build curated Greenhouse/Lever boards based on profile
-    const allIndustries = [
-      ...(Array.isArray(prefs?.targetIndustries) ? prefs.targetIndustries : []),
-      ...ZACH_FALLBACK.targetIndustries,
-    ].map(i => i.toLowerCase());
+    // Build curated Greenhouse/Lever boards based on profile.
+    // Use the user's own targets when present; fall back to neutral defaults only if empty.
+    const userIndustries: string[] = Array.isArray(prefs?.targetIndustries) ? (prefs.targetIndustries as string[]) : [];
+    const allIndustries = (userIndustries.length ? userIndustries : GENERIC_TITLE_FALLBACK.targetIndustries)
+      .map((i: string) => i.toLowerCase());
 
-    const allFunctions = [
-      ...(Array.isArray(prefs?.targetFunctions) ? prefs.targetFunctions : []),
-      ...ZACH_FALLBACK.targetFunctions,
-    ].map(f => f.toLowerCase());
+    const userFunctions: string[] = Array.isArray(prefs?.targetFunctions) ? (prefs.targetFunctions as string[]) : [];
+    const allFunctions = (userFunctions.length ? userFunctions : GENERIC_TITLE_FALLBACK.targetFunctions)
+      .map((f: string) => f.toLowerCase());
 
-    const skillNames = skills.map(s => s.name.toLowerCase());
+    const skillNames = skills.map((s: any) => s.name.toLowerCase());
 
     const greenhouseBoards: string[] = [];
     const leverBoards: string[] = [];
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     if (allIndustries.some(i => /fintech|finance|payments/.test(i))) {
       greenhouseBoards.push(...(CURATED_GREENHOUSE_BOARDS.fintech || []));
     }
-    if (allFunctions.some(f => /data|analytic|ml|ai/.test(f)) || skillNames.some(s => /sql|python|data/.test(s))) {
+    if (allFunctions.some(f => /data|analytic|ml|ai/.test(f)) || skillNames.some((s: any) => /sql|python|data/.test(s))) {
       greenhouseBoards.push(...(CURATED_GREENHOUSE_BOARDS.analytics || []));
       leverBoards.push(...(CURATED_LEVER_BOARDS.analytics || []));
     }

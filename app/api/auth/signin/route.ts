@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { attachSession } from "@/lib/session";
 import bcrypt from "bcryptjs";
 
 export async function POST(request: NextRequest) {
@@ -20,11 +21,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No account found with this email. Please sign up first." }, { status: 404 });
     }
 
-    // If user has no password hash (old email-only account), prompt them to reset
+    // SECURITY FIX: previously a legacy (no-password) account accepted ANY
+    // typed password as its new password — an account-takeover path. Legacy
+    // accounts must now go through signup again (same email, sets password
+    // explicitly) rather than being claimable at signin.
     if (!user.passwordHash) {
-      // Legacy account — set password now to upgrade it
-      const passwordHash = await bcrypt.hash(password, 12);
-      await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+      return NextResponse.json(
+        { error: 'This account predates password login. Please use Sign Up with this email to set your password.' },
+        { status: 409 }
+      );
     } else {
       const passwordValid = await bcrypt.compare(password, user.passwordHash);
       if (!passwordValid) {
@@ -37,13 +42,7 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
-    response.cookies.set('careeva-session', JSON.stringify({ userId: user.id, email: user.email }), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 30 * 24 * 60 * 60,
-      path: '/',
-    });
+    attachSession(response, { userId: user.id, email: user.email });
 
     return response;
   } catch (error) {

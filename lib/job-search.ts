@@ -945,7 +945,10 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
       filteredCount++;
       return false;
     }
-    if (!allowInternational && !job.isRemote && isForeignLocation(job.location, userCountry)) {
+    // A location naming a different country is unusable even when "remote" —
+    // "Canada - Remote (ON, AB only)" can't hire a US candidate. Plain
+    // "Remote" (no country detected) always passes.
+    if (!allowInternational && isForeignLocation(job.location, userCountry)) {
       filteredCount++;
       return false;
     }

@@ -54,6 +54,7 @@ export default function ReviewQueuePage() {
   const [filter, setFilter] = useState<string>('active');
   const [editing, setEditing] = useState<string | null>(null);
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
+  const [draftQuestionTexts, setDraftQuestionTexts] = useState<Record<string, string>>({});
 
   const [workerOnline, setWorkerOnline] = useState<boolean | null>(null);
 
@@ -91,11 +92,29 @@ export default function ReviewQueuePage() {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_answers', answers: draftAnswers }),
+      body: JSON.stringify({ action: 'update_answers', answers: draftAnswers, questionTexts: draftQuestionTexts }),
     });
     setActing(null);
     setEditing(null);
     load();
+  };
+
+  // Mirrors the worker's label slug — answers keyed this way match the form
+  // field on refill AND auto-fill the same question on future applications.
+  const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 50);
+
+  const openEditor = (t: Task) => {
+    const answers: Record<string, string> = { ...(t.packet?.answers || {}) };
+    const texts: Record<string, string> = {};
+    for (const question of t.fieldReport?.unanswered || []) {
+      const clean = question.replace(/\s*\((fill did not stick|no option matched[^)]*)\)\s*$/i, '').trim();
+      const key = slugify(clean);
+      if (!(key in answers)) answers[key] = '';
+      texts[key] = clean;
+    }
+    setDraftAnswers(answers);
+    setDraftQuestionTexts(texts);
+    setEditing(t.id);
   };
 
   // Primary signal: the worker's heartbeat (updated every ~45s). Fallback: a
@@ -255,7 +274,11 @@ export default function ReviewQueuePage() {
                         <ul className="ml-4 list-disc space-y-0.5">
                           {report.unanswered.map((q, i) => <li key={i}>{q}</li>)}
                         </ul>
-                        <p className="mt-2 text-amber-300">Add these as Reusable Answers in your profile, then Retry.</p>
+                        <div className="mt-3">
+                          <button onClick={() => openEditor(t)} className="btn-primary text-xs !px-3 !py-1.5">
+                            Answer them now — saved for every future application
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -325,10 +348,13 @@ export default function ReviewQueuePage() {
                       <div className="text-xs">
                         {editing === t.id ? (
                           <div className="space-y-3 rounded-xl border border-blue-400/25 bg-blue-500/[0.05] p-3">
-                            <p className="font-semibold text-blue-300">Edit answers — the form will be refilled with your changes</p>
+                            <p className="font-semibold text-blue-300">Edit answers — the form is refilled with your changes, and new answers join your answer bank for every future application</p>
                             {Object.entries(draftAnswers).map(([k, v]) => (
                               <div key={k}>
-                                <label className="field-label !mb-1 !text-xs">{k.replace(/_/g, ' ')}</label>
+                                <label className="field-label !mb-1 !text-xs">
+                                  {draftQuestionTexts[k] || k.replace(/_/g, ' ')}
+                                  {draftQuestionTexts[k] && !v && <span className="ml-2 text-amber-300">(new — needs your answer)</span>}
+                                </label>
                                 <textarea
                                   value={v}
                                   rows={Math.min(4, Math.max(1, Math.ceil(v.length / 90)))}
@@ -355,13 +381,7 @@ export default function ReviewQueuePage() {
                             <div className="flex items-center justify-between">
                               <p className="font-semibold text-slate-400">Answers on this application</p>
                               {['awaiting_approval', 'needs_review', 'failed', 'queued'].includes(t.status) && (
-                                <button
-                                  onClick={() => {
-                                    setDraftAnswers({ ...(t.packet?.answers || {}) });
-                                    setEditing(t.id);
-                                  }}
-                                  className="btn-ghost text-xs !px-3 !py-1"
-                                >
+                                <button onClick={() => openEditor(t)} className="btn-ghost text-xs !px-3 !py-1">
                                   Edit answers
                                 </button>
                               )}

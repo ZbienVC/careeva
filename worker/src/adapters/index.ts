@@ -78,7 +78,7 @@ export function buildMatchers(p: Packet): Matcher[] {
     { key: 'full_name', test: /^(full\s*)?name$|your\s*name/i, value: () => id.fullName },
     { key: 'email', test: /e-?mail/i, value: () => id.email },
     { key: 'phone', test: /phone|mobile|cell/i, value: () => id.phone || a['phone'] },
-    { key: 'location', test: /location|city|current\s+address|where.*based/i, value: () => id.location || a['address'] },
+    { key: 'location', test: /location|city|current\s+address|where.*based|state\s+or\s+province|which\s+state|state\s*\/\s*province/i, value: () => id.location || a['address'] },
     { key: 'linkedin_url', test: /linked\s*in/i, value: () => id.linkedinUrl || a['linkedin_url'] },
     { key: 'github_url', test: /github/i, value: () => id.githubUrl || a['github_url'] },
     { key: 'portfolio_url', test: /portfolio|personal\s+(web)?site|website/i, value: () => id.portfolioUrl || a['portfolio_url'] },
@@ -244,11 +244,14 @@ export async function fillVisibleForm(
     }
 
     const m = matchers.find((mm) => mm.test.test(label));
-    const value = m?.value(packet);
+    // Canonical matcher first, then the user's taught answer bank (answers the
+    // user provided for this exact question on a previous application).
+    const value = m?.value(packet) ?? packet.answers[slug(label)];
+    const via = m?.value(packet) ? m!.key : 'answer_bank';
     if (value) {
       if (await verifiedFill(el, value)) {
-        report.filled.push({ label, value: value.slice(0, 60), via: m!.key });
-        if (m!.key === 'cover_letter') report.coverLetterAttached = true;
+        report.filled.push({ label, value: value.slice(0, 60), via });
+        if (m?.key === 'cover_letter') report.coverLetterAttached = true;
       } else if (required) {
         report.unanswered.push(label + ' (fill did not stick)');
       } else {
@@ -280,7 +283,7 @@ export async function fillVisibleForm(
     if (!(await el.isVisible().catch(() => false))) continue;
     const label = (await labelFor(root, el)) || (await el.getAttribute('name')) || '';
     const m = matchers.find((mm) => mm.test.test(label));
-    const value = m?.value(packet);
+    const value = m?.value(packet) ?? packet.answers[slug(label)];
     const optionTexts: string[] = await el.locator('option').allTextContents();
     const verifiedSelect = async (optionLabel: string): Promise<boolean> => {
       await el.selectOption({ label: optionLabel }, { timeout: 5000 }).catch(() => {});
@@ -297,9 +300,12 @@ export async function fillVisibleForm(
     if (value) {
       const target = optionTexts.find((o) => o.toLowerCase().includes(value.toLowerCase().slice(0, 20)))
         || (/^yes$/i.test(value) ? optionTexts.find((o) => /^yes/i.test(o)) : undefined)
-        || (/^no$/i.test(value) ? optionTexts.find((o) => /^no/i.test(o)) : undefined);
+        || (/^no$/i.test(value) ? optionTexts.find((o) => /^no/i.test(o)) : undefined)
+        // "Which state/province do you live in?" — expand abbreviations from
+        // the user's location ("Hawthorne, NJ" -> "New Jersey").
+        || expandedStateOption(value, optionTexts);
       if (target && (await verifiedSelect(target))) {
-        report.filled.push({ label, value: target, via: m!.key });
+        report.filled.push({ label, value: target, via: m?.key || 'answer_bank' });
       } else {
         report.unanswered.push(label + ` (no option matched "${value.slice(0, 30)}")`);
       }
@@ -316,6 +322,40 @@ export async function fillVisibleForm(
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 50);
+}
+
+// US state + Canadian province abbreviation expansion for location dropdowns.
+const STATE_NAMES: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado',
+  CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho',
+  IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana',
+  ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota',
+  MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York',
+  NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon',
+  PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota',
+  TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington',
+  WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming', DC: 'District of Columbia',
+  ON: 'Ontario', QC: 'Quebec', BC: 'British Columbia', AB: 'Alberta', NS: 'Nova Scotia',
+};
+
+function expandedStateOption(value: string, optionTexts: string[]): string | undefined {
+  for (const token of value.toUpperCase().split(/[^A-Z]+/)) {
+    const full = STATE_NAMES[token];
+    if (full) {
+      const hit = optionTexts.find((o) => o.toLowerCase().includes(full.toLowerCase()));
+      if (hit) return hit;
+    }
+  }
+  // Also try full state names already present in the value
+  const low = value.toLowerCase();
+  for (const full of Object.values(STATE_NAMES)) {
+    if (low.includes(full.toLowerCase())) {
+      const hit = optionTexts.find((o) => o.toLowerCase().includes(full.toLowerCase()));
+      if (hit) return hit;
+    }
+  }
+  return undefined;
 }
 
 async function labelFor(scope: FormScope, el: ReturnType<FormScope['locator']>): Promise<string | null> {

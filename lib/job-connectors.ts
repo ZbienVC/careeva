@@ -271,7 +271,9 @@ async function upsertJob(userId: string, scrapeRunId: string, jobData: {
     const titleLow = title.toLowerCase();
     if (!gate.titlePatterns.some((p) => p.test(titleLow))) return 'filtered';
   }
-  if (!isRemote && !gate.allowInternational && isForeignLocation(location, gate.userCountry)) {
+  // Foreign-country locations are unusable even for "remote" roles — remote
+  // postings that name another country are country-restricted hiring.
+  if (!gate.allowInternational && isForeignLocation(location, gate.userCountry)) {
     return 'filtered';
   }
 

@@ -38,9 +38,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!edits || typeof edits !== 'object' || Array.isArray(edits)) {
       return NextResponse.json({ error: 'answers object required' }, { status: 400 });
     }
+    const questionTexts: Record<string, string> =
+      body.questionTexts && typeof body.questionTexts === 'object' ? body.questionTexts : {};
     const sanitized: Record<string, string> = {};
     for (const [key, value] of Object.entries(edits)) {
-      if (typeof value === 'string') sanitized[key] = value.slice(0, 4000);
+      if (typeof value === 'string' && value.trim()) sanitized[key] = value.slice(0, 4000);
     }
     const packet = (task.packet || {}) as Record<string, unknown>;
     const mergedPacket = {
@@ -54,6 +56,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (result.count === 0) {
       return NextResponse.json({ error: `Cannot edit answers while task is "${task.status}"` }, { status: 409 });
     }
+
+    // The learning loop: every answer the user provides becomes a verified
+    // reusable answer, so future applications asking the same question
+    // auto-fill without asking again.
+    for (const [key, answer] of Object.entries(sanitized)) {
+      if (key.startsWith('__')) continue; // internal packet keys
+      await prisma.reusableAnswer.upsert({
+        where: { userId_questionKey: { userId: user.id, questionKey: key } },
+        update: { answer, isVerified: true, questionText: questionTexts[key] || undefined },
+        create: {
+          userId: user.id,
+          questionKey: key,
+          questionFamily: 'custom',
+          questionText: questionTexts[key] || key.replace(/_/g, ' '),
+          answer,
+          isVerified: true,
+        },
+      }).catch(() => {});
+    }
+
     return NextResponse.json(await prisma.applyTask.findUnique({ where: { id } }));
   }
 

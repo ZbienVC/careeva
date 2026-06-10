@@ -83,6 +83,10 @@ const COUNTRY_MARKERS: Record<string, string[]> = {
   'Nigeria': ['nigeria', 'lagos'],
   'Kenya': ['kenya', 'nairobi'],
   'South Africa': ['south africa', 'cape town', 'johannesburg'],
+  // Region-restricted hiring reads as "foreign" for anyone outside the region
+  'Europe (region)': ['europe', 'emea', 'eu only', 'european union'],
+  'Asia-Pacific (region)': ['apac', 'asia-pacific', 'southeast asia'],
+  'Latin America (region)': ['latam', 'latin america', 'south america'],
 };
 
 /**
@@ -93,7 +97,14 @@ const COUNTRY_MARKERS: Record<string, string[]> = {
 export function detectCountry(location: string | null | undefined): string | null {
   if (!location) return null;
   const loc = location.toLowerCase().trim();
-  if (!loc || /^(remote|anywhere|worldwide|global|various|flexible)/.test(loc)) return null;
+  if (!loc) return null;
+  // Only bail when the location is PURELY remote-ish ("Remote", "Anywhere") —
+  // "Remote - EMEA" or "Canada - Remote" still carries geography to detect.
+  const stripped = loc
+    .replace(/\b(remote|anywhere|worldwide|global|various|flexible|hybrid|on-?site|only)\b/g, ' ')
+    .replace(/[\s\-,./();]+/g, ' ')
+    .trim();
+  if (!stripped) return null;
 
   // Explicit country markers first (most reliable)
   for (const [country, markers] of Object.entries(COUNTRY_MARKERS)) {

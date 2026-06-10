@@ -27,6 +27,15 @@ export async function materializeFile(prisma: PrismaClient, key: string): Promis
 
 export async function saveScreenshot(prisma: PrismaClient, page: Page, userId: string, taskId: string): Promise<string> {
   const key = path.posix.join('screenshots', userId, `${taskId}-${Date.now()}.png`);
+  // Fixed/sticky navs repeat across a full-page capture and slice through the
+  // middle of the form — hide them first. The page is discarded after the
+  // screenshot, so there's nothing to restore.
+  await page.evaluate(() => {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
+      const position = getComputedStyle(el).position;
+      if (position === 'fixed' || position === 'sticky') el.style.visibility = 'hidden';
+    }
+  }).catch(() => {});
   const data = await page.screenshot({ fullPage: true });
   await prisma.fileBlob.create({ data: { key, data: new Uint8Array(data), size: data.length } });
   return key;

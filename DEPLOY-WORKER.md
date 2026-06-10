@@ -15,9 +15,11 @@ forever.**
 
 ### 2. Create the worker service
 - Railway project → **New → Service → GitHub Repo** → pick this same repo
-- Service **Settings → Root Directory**: `worker`
-- Railway will use `worker/nixpacks.toml` automatically (installs Chromium +
-  Playwright deps, generates the Prisma client, builds TypeScript).
+- **Leave Root Directory EMPTY** (the build needs `prisma/schema.prisma` from
+  the repo root)
+- Service **Settings → Config-as-code → Config file path**: `worker/railway.toml`
+  — this sets the build command (installs Chromium + Playwright deps, generates
+  the Prisma client, compiles TypeScript) and the start command automatically.
 
 ### 3. Attach the SAME volume to the worker
 - Worker service → **Settings → Volumes → Attach** the volume from step 1

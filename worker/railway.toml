@@ -1,9 +1,15 @@
-# Deploy this directory as a SECOND Railway service in the same project.
-# Service settings -> Root Directory: /worker
-# Attach the SAME volume as the web service (same mount path) so the worker
-# can read resume files and write screenshots.
+# Deploy the apply worker as a SECOND Railway service in the same project.
+#
+# Service settings:
+#   - Root Directory: leave EMPTY (repo root) — the build needs ../prisma/schema.prisma
+#   - Settings -> Config-as-code -> Config file path: worker/railway.toml
+#   - Attach the SAME volume as the web service (same mount path, e.g. /data)
+#   - Env: DATABASE_URL = same Postgres as the web app
+
 [build]
 builder = "nixpacks"
+buildCommand = "cd worker && npm install && npx prisma generate --schema=../prisma/schema.prisma && npx playwright install --with-deps chromium && npm run build"
+watchPatterns = ["worker/**", "prisma/**"]
 
 [deploy]
-startCommand = "npm run start"
+startCommand = "cd worker && npm run start"

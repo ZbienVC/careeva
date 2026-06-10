@@ -213,6 +213,7 @@ export const jobsAPI = {
     page?: number;
     pageSize?: number;
     search?: string;
+    location?: string;
   }) => {
     const page = params?.page || 1;
     const pageSize = params?.pageSize || 10;
@@ -220,6 +221,7 @@ export const jobsAPI = {
     query.append('limit', pageSize.toString());
     query.append('skip', ((page - 1) * pageSize).toString());
     if (params?.search) query.append('search', params.search);
+    if (params?.location) query.append('location', params.location);
 
     const result = await apiCall<any>(`/api/jobs?${query.toString()}`, {
       method: 'GET',

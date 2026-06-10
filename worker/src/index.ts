@@ -242,10 +242,26 @@ async function recoverStuckTasks() {
   }).catch(() => {});
 }
 
+/**
+ * Heartbeat the dashboard reads to show "apply engine online/offline".
+ * Reuses the file_blobs table (shared with the web app) as a tiny KV.
+ */
+const HEARTBEAT_KEY = 'system/worker-heartbeat';
+async function beatHeart() {
+  const payload = new Uint8Array(Buffer.from(JSON.stringify({ workerId: WORKER_ID, at: new Date().toISOString() })));
+  await prisma.fileBlob.upsert({
+    where: { key: HEARTBEAT_KEY },
+    update: { data: payload, size: payload.length },
+    create: { key: HEARTBEAT_KEY, data: payload, size: payload.length },
+  }).catch(() => {});
+}
+
 async function main() {
   console.log(`[${WORKER_ID}] Careeva apply worker starting (poll ${POLL_MS}ms, headless=${HEADLESS})`);
   await recoverStuckTasks();
+  await beatHeart();
   let lastRecovery = Date.now();
+  let lastBeat = Date.now();
 
   for (;;) {
     try {
@@ -254,6 +270,10 @@ async function main() {
       if (Date.now() - lastRecovery > 5 * 60 * 1000) {
         await recoverStuckTasks();
         lastRecovery = Date.now();
+      }
+      if (Date.now() - lastBeat > 45 * 1000) {
+        await beatHeart();
+        lastBeat = Date.now();
       }
       const task = await claimTask();
       if (task) {

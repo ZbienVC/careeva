@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const skip = parseInt(searchParams.get('skip') || '0', 10);
     const search = (searchParams.get('search') || '').trim();
+    const location = (searchParams.get('location') || '').trim();
 
     // Search the FULL job set server-side, before pagination — filtering after
     // pagination silently searched only one page of results.
@@ -24,6 +25,18 @@ export async function GET(request: NextRequest) {
         { location: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
       ];
+    }
+    if (location) {
+      const locationCondition =
+        location.toLowerCase() === 'remote'
+          ? {
+              OR: [
+                { isRemote: true },
+                { location: { contains: 'remote', mode: 'insensitive' } },
+              ],
+            }
+          : { location: { contains: location, mode: 'insensitive' } };
+      where.AND = [...(where.AND || []), locationCondition];
     }
 
     const jobs = await prisma.job.findMany({

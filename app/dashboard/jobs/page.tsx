@@ -34,12 +34,14 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [location, setLocation] = useState('');
   const [page, setPage] = useState(1);
   const [totalJobs, setTotalJobs] = useState(0);
   const [sortBy, setSortBy] = useState<'match' | 'recent' | 'company'>('match');
   const [activeChip, setActiveChip] = useState('all');
   const [sourcing, setSourcing] = useState(false);
   const [sourcingResult, setSourcingResult] = useState('');
+  const [clearing, setClearing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const pageSize = 9;
 
@@ -56,6 +58,7 @@ export default function JobsPage() {
           page,
           pageSize,
           search: search || undefined,
+          location: location || undefined,
         });
 
         if (result.success) {
@@ -78,7 +81,7 @@ export default function JobsPage() {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [search, page, router, reloadKey]);
+  }, [search, location, page, router, reloadKey]);
 
   // Pull fresh jobs from every connected job board, scoped to the current
   // search term (or the saved profile targets when the box is empty).
@@ -102,6 +105,27 @@ export default function JobsPage() {
       setError(err instanceof Error ? err.message : 'Job board search failed');
     } finally {
       setSourcing(false);
+    }
+  };
+
+  // Remove every scraped job the user hasn't applied to — applications and
+  // the tracker are untouched (the endpoint only deletes application-free scraped jobs).
+  const clearFoundJobs = async () => {
+    if (!window.confirm('Remove all found jobs that you haven\'t applied to? Your applications and tracker are untouched.')) return;
+    setClearing(true);
+    setSourcingResult('');
+    setError('');
+    try {
+      const res = await fetch('/api/jobs', { method: 'DELETE', credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to clear jobs');
+      setSourcingResult(`Removed ${data.deleted} found job${data.deleted === 1 ? '' : 's'}.`);
+      setPage(1);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear jobs');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -151,7 +175,7 @@ export default function JobsPage() {
       </section>
 
       <section className="premium-card p-6 md:p-7 space-y-4">
-        <div className="grid gap-4 lg:grid-cols-[1.4fr_0.7fr_0.7fr]">
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr_0.6fr_0.6fr]">
           <div>
             <label className="field-label">Search roles</label>
             <input
@@ -160,6 +184,18 @@ export default function JobsPage() {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div>
+            <label className="field-label">Location</label>
+            <input
+              type="text"
+              placeholder="e.g. NJ, New York, Remote"
+              value={location}
+              onChange={(e) => {
+                setLocation(e.target.value);
                 setPage(1);
               }}
             />
@@ -183,7 +219,7 @@ export default function JobsPage() {
         {sourcingResult && <div className="alert-success">{sourcingResult}</div>}
 
         {/* Filter chips */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {FILTER_CHIPS.map((chip) => (
             <button
               key={chip.key}
@@ -197,6 +233,13 @@ export default function JobsPage() {
               {chip.label}
             </button>
           ))}
+          <button
+            onClick={clearFoundJobs}
+            disabled={clearing}
+            className="btn-ghost ml-auto text-sm !px-4 !py-2 disabled:opacity-50"
+          >
+            {clearing ? 'Clearing…' : 'Clear found jobs'}
+          </button>
         </div>
       </section>
 

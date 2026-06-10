@@ -147,6 +147,12 @@ export default function AutomatePage() {
   const [showFullAutoWarning, setShowFullAutoWarning] = useState(false);
   const [pendingMode, setPendingMode] = useState<Mode | null>(null);
   const [runHistory, setRunHistory] = useState<RunHistoryEntry[]>([]);
+  const [readiness, setReadiness] = useState<{
+    workerOnline: boolean;
+    workerLastSeenAt: string | null;
+    resumeOnFile: boolean;
+    jobsScored: boolean;
+  } | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const loadPipeline = async () => {
@@ -155,6 +161,7 @@ export default function AutomatePage() {
       const data = await res.json();
       setPipeline(data.pipeline);
       setRecentApps(data.recentApplications || []);
+      setReadiness(data.readiness || null);
       setLastSynced(new Date().toLocaleTimeString());
     }
   };
@@ -287,16 +294,66 @@ export default function AutomatePage() {
             <p className="section-subcopy mt-4">AI-powered, quality-gated automation — from job discovery to submitted application.</p>
           </div>
           <div className="flex flex-shrink-0 gap-2">
-            <a href="/api/applications/patterns" target="_blank" rel="noopener noreferrer"
-              className="btn-ghost text-sm !px-4 !py-2">
-              <IconBarChart size={14} /> Patterns
-            </a>
+            <Link href="/dashboard/patterns" className="btn-ghost text-sm !px-4 !py-2">
+              <IconBarChart size={14} /> Insights
+            </Link>
             <Link href="/dashboard/profile" className="btn-secondary text-sm !px-4 !py-2">
               Edit Profile <IconArrowRight size={14} />
             </Link>
           </div>
         </div>
       </section>
+
+      {/* System readiness — answers "what do I still need to do?" at a glance */}
+      {readiness && (
+        <div className="premium-card-soft p-5">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Auto-apply readiness</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="flex items-start gap-3">
+              <span className={readiness.workerOnline ? 'step-dot-done !h-7 !w-7' : 'step-dot !h-7 !w-7 bg-red-500 text-paper'}>
+                {readiness.workerOnline ? <IconCheckCircle size={14} /> : '!'}
+              </span>
+              <div className="text-sm">
+                <p className="font-semibold text-white">Apply engine {readiness.workerOnline ? 'online' : 'offline'}</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {readiness.workerOnline
+                    ? 'Filling and submitting applications'
+                    : 'The worker service isn’t running — queued applications wait until it’s online (see DEPLOY-WORKER.md)'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className={readiness.resumeOnFile ? 'step-dot-done !h-7 !w-7' : 'step-dot !h-7 !w-7 bg-red-500 text-paper'}>
+                {readiness.resumeOnFile ? <IconCheckCircle size={14} /> : '!'}
+              </span>
+              <div className="text-sm">
+                <p className="font-semibold text-white">Resume {readiness.resumeOnFile ? 'on file' : 'missing'}</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {readiness.resumeOnFile
+                    ? 'Attached to every application'
+                    : <>No stored resume file — <Link href="/dashboard/profile" className="underline underline-offset-2 hover:text-blue-300">upload it on your Profile</Link></>}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className={readiness.jobsScored ? 'step-dot-done !h-7 !w-7' : 'step-dot-todo !h-7 !w-7'}>
+                {readiness.jobsScored ? <IconCheckCircle size={14} /> : '·'}
+              </span>
+              <div className="text-sm">
+                <p className="font-semibold text-white">Jobs {readiness.jobsScored ? 'scored' : 'not scored yet'}</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {readiness.jobsScored ? 'Matches ready to apply to' : 'Run Find & Score below to build your pipeline'}
+                </p>
+              </div>
+            </div>
+          </div>
+          {readiness.workerOnline && readiness.resumeOnFile && readiness.jobsScored && (
+            <p className="mt-4 text-xs font-semibold text-emerald-300">
+              All systems go — run Auto-Apply (Safe) below and approve the results in Review.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Pipeline stats */}
       {pipeline && (

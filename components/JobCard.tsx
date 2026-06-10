@@ -4,7 +4,7 @@ import { JobWithScore } from '@/lib/types';
 import Link from 'next/link';
 import { getScoreQuality } from '@/lib/api';
 import { useState, useEffect } from 'react';
-import { IconBriefcase, IconCheckCircle, IconStar, IconTrendingUp } from '@/components/icons';
+import { IconBot, IconBriefcase, IconCheckCircle, IconStar, IconTrendingUp } from '@/components/icons';
 
 interface JobCardProps {
   job: JobWithScore;
@@ -29,6 +29,7 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
   const scoreQuality = getScoreQuality(score);
   const [saved, setSaved] = useState(false);
   const [toast, setToast] = useState('');
+  const [autoApplying, setAutoApplying] = useState(false);
 
   useEffect(() => {
     setSaved(getSavedJobs().includes(job.id));
@@ -40,6 +41,34 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
     setSaved(isNowSaved);
     setToast(isNowSaved ? 'Job saved' : 'Job removed');
     setTimeout(() => setToast(''), 2000);
+  };
+
+  const handleAutoApply = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setAutoApplying(true);
+    try {
+      const res = await fetch('/api/apply-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ jobId: job.id }),
+      });
+      const data = await res.json();
+      if (data.blocked) {
+        setToast(data.blocked);
+      } else if (data.duplicate && data.duplicateInfo) {
+        setToast(`Queued — note: you previously applied to ${data.duplicateInfo.company}`);
+      } else if (data.taskId) {
+        setToast('Queued — approve it in the Review queue');
+      } else {
+        setToast(data.error || 'Could not queue');
+      }
+    } catch {
+      setToast('Queue failed');
+    } finally {
+      setAutoApplying(false);
+      setTimeout(() => setToast(''), 5000);
+    }
   };
 
   const handleQuickApply = async (e: React.MouseEvent) => {
@@ -137,12 +166,25 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
         <p className="mb-6 line-clamp-3 text-sm leading-6 text-slate-400">{job.description}</p>
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          <Link href={`/dashboard/jobs/${job.id}`} className="btn-primary flex-1">
+          <button
+            onClick={handleAutoApply}
+            disabled={autoApplying}
+            className="btn-primary flex-1 disabled:opacity-50"
+          >
+            {autoApplying ? (
+              'Queuing…'
+            ) : (
+              <>
+                <IconBot size={16} /> Auto-Apply
+              </>
+            )}
+          </button>
+          <Link href={`/dashboard/jobs/${job.id}`} className="btn-secondary flex-1">
             View role details
           </Link>
           {job.url && (
-            <button onClick={handleQuickApply} className="btn-secondary flex-1 text-center">
-              Quick Apply
+            <button onClick={handleQuickApply} className="btn-ghost flex-1 text-center">
+              Apply manually
             </button>
           )}
         </div>

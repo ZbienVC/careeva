@@ -65,6 +65,23 @@ export async function resolveApplyUrl(rawUrl: string): Promise<{ url: string; at
   return { url, atsType };
 }
 
+/**
+ * Is the apply worker alive? It heartbeats into file_blobs every ~45s;
+ * silence beyond 2 minutes means offline (crashed, not deployed, or paused).
+ */
+export async function getWorkerStatus(): Promise<{ online: boolean; lastSeenAt: string | null }> {
+  try {
+    const blob = await prisma.fileBlob.findUnique({ where: { key: 'system/worker-heartbeat' } });
+    if (!blob) return { online: false, lastSeenAt: null };
+    const parsed = JSON.parse(Buffer.from(blob.data).toString('utf8')) as { at?: string };
+    const lastSeenAt = parsed.at || null;
+    const online = !!lastSeenAt && Date.now() - new Date(lastSeenAt).getTime() < 2 * 60 * 1000;
+    return { online, lastSeenAt };
+  } catch {
+    return { online: false, lastSeenAt: null };
+  }
+}
+
 export interface EnqueueResult {
   taskId?: string;
   status: string;

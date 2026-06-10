@@ -181,6 +181,20 @@ export default function Applications() {
     } catch { /* non-fatal */ }
   };
 
+  const deleteApp = async (id: string) => {
+    if (!window.confirm('Delete this application from your tracker? This can\'t be undone.')) return;
+    try {
+      const res = await fetch(`/api/applications/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      setApps(prev => prev.filter(a => a.id !== id));
+    } catch {
+      setError('Failed to delete application');
+    }
+  };
+
   const saveNotes = async (id: string, notes: string) => {
     try {
       await fetch(`/api/applications/${id}`, {
@@ -396,6 +410,14 @@ export default function Applications() {
                   >
                     Edit
                   </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); deleteApp(app.id); }}
+                    title="Delete application"
+                    aria-label="Delete application"
+                    className="btn-ghost text-sm !px-3 !py-2 !text-slate-500 hover:!text-red-300"
+                  >
+                    <IconX size={14} />
+                  </button>
                 </div>
               </div>
               {/* Expandable notes */}
@@ -420,7 +442,17 @@ export default function Applications() {
               <div className="space-y-2">
                 {(byStatus[col.key] || []).map(app => (
                   <div key={app.id} className="rounded-xl border border-white/10 bg-white/[0.04] p-3 transition-colors hover:border-white/20">
-                    <p className="text-xs font-bold leading-tight text-white">{app.role}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-bold leading-tight text-white">{app.role}</p>
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteApp(app.id); }}
+                        title="Delete application"
+                        aria-label="Delete application"
+                        className="-mr-1 -mt-1 flex-shrink-0 rounded-md p-1 text-slate-500 transition-colors hover:text-red-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/50"
+                      >
+                        <IconX size={12} />
+                      </button>
+                    </div>
                     <p className="mt-0.5 text-xs text-slate-400">{app.company}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       <select

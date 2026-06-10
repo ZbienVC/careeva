@@ -55,11 +55,14 @@ export default function ReviewQueuePage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
 
+  const [workerOnline, setWorkerOnline] = useState<boolean | null>(null);
+
   const load = useCallback(async () => {
     const res = await fetch('/api/apply-queue', { credentials: 'include' });
     if (res.ok) {
       const data = await res.json();
       setTasks(data.tasks || []);
+      if (data.worker) setWorkerOnline(Boolean(data.worker.online));
     }
     setLoading(false);
   }, []);
@@ -95,11 +98,11 @@ export default function ReviewQueuePage() {
     load();
   };
 
-  // The worker claims queued tasks within seconds when it's running — a task
-  // still queued after a few minutes means the apply worker is offline.
-  const workerLooksOffline = tasks.some(
-    (t) => t.status === 'queued' && Date.now() - new Date(t.createdAt).getTime() > 3 * 60 * 1000
-  );
+  // Primary signal: the worker's heartbeat (updated every ~45s). Fallback: a
+  // task still queued after a few minutes also means the engine isn't picking up.
+  const workerLooksOffline =
+    workerOnline === false ||
+    tasks.some((t) => t.status === 'queued' && Date.now() - new Date(t.createdAt).getTime() > 3 * 60 * 1000);
 
   const visible = tasks.filter((t) => {
     if (filter === 'active') return !['submitted', 'cancelled', 'failed'].includes(t.status);

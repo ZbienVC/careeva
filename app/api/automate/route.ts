@@ -298,12 +298,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET - automation status / last run summary
+// GET - automation status / last run summary / system readiness
 export async function GET(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const [totalJobs, scoredJobs, highMatchJobs, applications, recentApps] = await Promise.all([
+  const { getWorkerStatus } = await import('@/lib/apply-queue');
+
+  const [totalJobs, scoredJobs, highMatchJobs, applications, recentApps, worker, storedResume] = await Promise.all([
     prisma.job.count({ where: { userId: user.id, isActive: true } }),
     prisma.jobScore.count({ where: { userId: user.id } }),
     prisma.jobScore.count({ where: { userId: user.id, overallScore: { gte: DEFAULT_APPLY_THRESHOLD } } }),
@@ -314,11 +316,30 @@ export async function GET(request: NextRequest) {
       take: 5,
       select: { company: true, role: true, status: true, createdAt: true, submittedVia: true },
     }),
+    getWorkerStatus(),
+    // A resume counts only if its file actually exists in storage —
+    // pre-DB-storage uploads have a key but no blob and can't be attached.
+    prisma.resume.findFirst({
+      where: { userId: user.id, fileUrl: { startsWith: 'storage://' } },
+      orderBy: [{ isBase: 'desc' }, { createdAt: 'desc' }],
+      select: { fileUrl: true },
+    }).then(async (resume) => {
+      if (!resume?.fileUrl) return false;
+      const key = resume.fileUrl.slice('storage://'.length);
+      const blob = await prisma.fileBlob.findUnique({ where: { key }, select: { key: true } });
+      return !!blob;
+    }),
   ]);
 
   return NextResponse.json({
     pipeline: { totalJobs, scoredJobs, highMatchJobs, applications },
     recentApplications: recentApps,
     readyToRun: highMatchJobs > 0,
+    readiness: {
+      workerOnline: worker.online,
+      workerLastSeenAt: worker.lastSeenAt,
+      resumeOnFile: storedResume,
+      jobsScored: scoredJobs > 0,
+    },
   });
 }

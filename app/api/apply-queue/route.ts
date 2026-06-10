@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/session';
-import { enqueueApplyTask } from '@/lib/apply-queue';
+import { enqueueApplyTask, getWorkerStatus } from '@/lib/apply-queue';
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUserFromRequest(request);
@@ -18,10 +18,14 @@ export async function GET(request: NextRequest) {
     take: 100,
   });
   const jobIds = [...new Set(tasks.map((t: { jobId: string }) => t.jobId))];
-  const jobs = await prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, title: true, company: true, url: true, applyUrl: true } });
+  const [jobs, worker] = await Promise.all([
+    prisma.job.findMany({ where: { id: { in: jobIds } }, select: { id: true, title: true, company: true, url: true, applyUrl: true } }),
+    getWorkerStatus(),
+  ]);
   const jobMap = Object.fromEntries(jobs.map((j: { id: string }) => [j.id, j]));
   return NextResponse.json({
     tasks: tasks.map((t: { jobId: string } & Record<string, unknown>) => ({ ...t, job: jobMap[t.jobId] || null })),
+    worker,
   });
 }
 

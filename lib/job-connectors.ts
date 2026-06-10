@@ -9,6 +9,7 @@
  */
 
 import { prisma } from '@/lib/db';
+import { isForeignLocation, parseRelocationScope, canonicalCountry } from '@/lib/geo';
 import crypto from 'crypto';
 
 // ─── Company name lookup ──────────────────────────────────────────────────────
@@ -205,6 +206,54 @@ function isTitleRelevant(title: string): boolean {
   // Must match at least one positive keyword
   return TITLE_POSITIVE.some(p => new RegExp(p).test(t));
 }
+
+// ─── Per-user ingest gate ─────────────────────────────────────────────────────
+// Board syncs pull EVERY opening from a company — without this, a user
+// targeting "analyst" roles in NJ drowns in thousands of unrelated foreign
+// postings. Gate: title must connect to a target title; on-site roles in a
+// different country are dropped (unless open to international relocation).
+
+interface IngestGate {
+  titlePatterns: RegExp[];
+  userCountry: string;
+  allowInternational: boolean;
+  at: number;
+}
+
+const GATE_STOPWORDS = new Set(['the', 'and', 'for', 'job', 'jobs', 'role', 'roles', 'senior', 'junior', 'lead', 'staff', 'specialist', 'manager']);
+const gateCache = new Map<string, IngestGate>();
+
+async function getIngestGate(userId: string): Promise<IngestGate> {
+  const cached = gateCache.get(userId);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached;
+
+  const [prefs, personalInfo] = await Promise.all([
+    prisma.jobPreferences.findUnique({
+      where: { userId },
+      select: { targetTitles: true, relocationNote: true, willingToRelocate: true },
+    }),
+    prisma.personalInfo.findUnique({ where: { userId }, select: { country: true } }),
+  ]);
+
+  const tokens = new Set<string>();
+  for (const targetTitle of prefs?.targetTitles || []) {
+    for (const word of targetTitle.toLowerCase().split(/[^a-z0-9+#.-]+/)) {
+      if (word.length > 2 && !GATE_STOPWORDS.has(word)) tokens.add(word);
+    }
+  }
+
+  const scope = parseRelocationScope(prefs?.relocationNote, prefs?.willingToRelocate);
+  const gate: IngestGate = {
+    titlePatterns: [...tokens].map(
+      (tok) => new RegExp(`(^|[^a-z0-9])${tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`)
+    ),
+    userCountry: canonicalCountry(personalInfo?.country),
+    allowInternational: scope === 'international',
+    at: Date.now(),
+  };
+  gateCache.set(userId, gate);
+  return gate;
+}
 async function upsertJob(userId: string, scrapeRunId: string, jobData: {
   title: string; company: string; description: string; requirements: string;
   location: string; isRemote: boolean; isHybrid: boolean;
@@ -215,6 +264,17 @@ async function upsertJob(userId: string, scrapeRunId: string, jobData: {
   const { isRemote, isHybrid, title, company, location } = jobData;
   // Filter irrelevant titles before saving
   if (!isTitleRelevant(title)) return 'filtered';
+
+  // User-aware gates: target-title relevance + geography.
+  const gate = await getIngestGate(userId);
+  if (gate.titlePatterns.length) {
+    const titleLow = title.toLowerCase();
+    if (!gate.titlePatterns.some((p) => p.test(titleLow))) return 'filtered';
+  }
+  if (!isRemote && !gate.allowInternational && isForeignLocation(location, gate.userCountry)) {
+    return 'filtered';
+  }
+
   const dedupeKey = makeDedupeKey(company, title, location);
   const roleFamilies = detectRoleFamilies(title, jobData.description);
 

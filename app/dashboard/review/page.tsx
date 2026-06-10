@@ -52,6 +52,8 @@ export default function ReviewQueuePage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('active');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     const res = await fetch('/api/apply-queue', { credentials: 'include' });
@@ -80,6 +82,25 @@ export default function ReviewQueuePage() {
     load();
   };
 
+  const saveAnswers = async (id: string) => {
+    setActing(id + 'save');
+    await fetch(`/api/apply-queue/${id}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_answers', answers: draftAnswers }),
+    });
+    setActing(null);
+    setEditing(null);
+    load();
+  };
+
+  // The worker claims queued tasks within seconds when it's running — a task
+  // still queued after a few minutes means the apply worker is offline.
+  const workerLooksOffline = tasks.some(
+    (t) => t.status === 'queued' && Date.now() - new Date(t.createdAt).getTime() > 3 * 60 * 1000
+  );
+
   const visible = tasks.filter((t) => {
     if (filter === 'active') return !['submitted', 'cancelled', 'failed'].includes(t.status);
     if (filter === 'approval') return t.status === 'awaiting_approval';
@@ -106,6 +127,20 @@ export default function ReviewQueuePage() {
           </div>
         </div>
       </section>
+
+      {workerLooksOffline && (
+        <div className="alert-error text-sm">
+          <p className="flex items-center gap-2 font-semibold">
+            <IconAlertTriangle size={18} /> The apply engine looks offline
+          </p>
+          <p className="mt-1.5">
+            Applications have been queued for several minutes without being picked up. Nothing can be
+            filled or submitted until the worker service is running on Railway — see{' '}
+            <span className="font-mono">DEPLOY-WORKER.md</span> in the repo for the 10-minute setup.
+            Your queue is safe and will process as soon as it comes online.
+          </p>
+        </div>
+      )}
 
       {approvalCount > 0 && (
         <div className="alert-warning flex items-center gap-3 text-sm font-semibold">
@@ -258,7 +293,7 @@ export default function ReviewQueuePage() {
                           rel="noopener noreferrer"
                           className="btn-secondary text-sm !px-4 !py-2"
                         >
-                          <IconLink size={16} /> Open form (companion view)
+                          <IconLink size={16} /> Open original form (manual fallback)
                         </a>
                       )}
                       {['failed', 'needs_review', 'cancelled'].includes(t.status) && (
@@ -281,19 +316,67 @@ export default function ReviewQueuePage() {
                       )}
                     </div>
 
-                    {t.packet?.coverLetter && (
-                      <details className="text-xs">
-                        <summary className="cursor-pointer font-semibold text-slate-400 transition hover:text-slate-300">
-                          Cover letter & answers (copy for manual paste)
-                        </summary>
-                        <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 text-slate-300">{t.packet.coverLetter}</pre>
-                        {t.packet.answers && (
-                          <div className="mt-2 space-y-1">
+                    {/* Edit the answers right here — saving requeues the task so
+                        the worker refills the form with your edits. */}
+                    {t.packet?.answers && Object.keys(t.packet.answers).length > 0 && (
+                      <div className="text-xs">
+                        {editing === t.id ? (
+                          <div className="space-y-3 rounded-xl border border-blue-400/25 bg-blue-500/[0.05] p-3">
+                            <p className="font-semibold text-blue-300">Edit answers — the form will be refilled with your changes</p>
+                            {Object.entries(draftAnswers).map(([k, v]) => (
+                              <div key={k}>
+                                <label className="field-label !mb-1 !text-xs">{k.replace(/_/g, ' ')}</label>
+                                <textarea
+                                  value={v}
+                                  rows={Math.min(4, Math.max(1, Math.ceil(v.length / 90)))}
+                                  onChange={(e) => setDraftAnswers((prev) => ({ ...prev, [k]: e.target.value }))}
+                                  className="!text-xs"
+                                />
+                              </div>
+                            ))}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => saveAnswers(t.id)}
+                                disabled={acting === t.id + 'save'}
+                                className="btn-primary text-xs !px-3 !py-1.5 disabled:opacity-50"
+                              >
+                                {acting === t.id + 'save' ? 'Saving…' : 'Save & refill form'}
+                              </button>
+                              <button onClick={() => setEditing(null)} className="btn-ghost text-xs !px-3 !py-1.5">
+                                Discard
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <p className="font-semibold text-slate-400">Answers on this application</p>
+                              {['awaiting_approval', 'needs_review', 'failed', 'queued'].includes(t.status) && (
+                                <button
+                                  onClick={() => {
+                                    setDraftAnswers({ ...(t.packet?.answers || {}) });
+                                    setEditing(t.id);
+                                  }}
+                                  className="btn-ghost text-xs !px-3 !py-1"
+                                >
+                                  Edit answers
+                                </button>
+                              )}
+                            </div>
                             {Object.entries(t.packet.answers).map(([k, v]) => (
-                              <p key={k} className="text-slate-400"><span className="font-semibold text-slate-300">{k}:</span> {v}</p>
+                              <p key={k} className="text-slate-400"><span className="font-semibold text-slate-300">{k.replace(/_/g, ' ')}:</span> {v}</p>
                             ))}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {t.packet?.coverLetter && (
+                      <details className="text-xs">
+                        <summary className="cursor-pointer font-semibold text-slate-400 transition hover:text-slate-300">
+                          Cover letter
+                        </summary>
+                        <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 text-slate-300">{t.packet.coverLetter}</pre>
                       </details>
                     )}
                   </div>

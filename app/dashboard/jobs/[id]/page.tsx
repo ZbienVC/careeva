@@ -214,7 +214,7 @@ export default function JobDetailPage() {
                 'Tracking...'
               ) : job.url ? (
                 <>
-                  <IconZap size={16} /> Quick Apply + Track
+                  <IconZap size={16} /> Apply manually (opens posting)
                 </>
               ) : (
                 'Mark as Applied'

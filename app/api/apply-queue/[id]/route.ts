@@ -1,10 +1,12 @@
 /**
  * /api/apply-queue/[id]
  * GET    — task detail (packet, field report, screenshot key)
- * PATCH  — { action: "approve" | "cancel" | "retry" }
- *           approve: awaiting_approval -> approved (worker submits)
- *           cancel : any non-final -> cancelled
- *           retry  : failed/needs_review -> queued (resets attempts)
+ * PATCH  — { action: "approve" | "cancel" | "retry" | "update_answers" }
+ *           approve        : awaiting_approval -> approved (worker submits)
+ *           cancel         : any non-final -> cancelled
+ *           retry          : failed/needs_review -> queued (resets attempts)
+ *           update_answers : merge user-edited answers into the packet and
+ *                            requeue so the worker refills with the edits
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -24,9 +26,36 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const user = await getCurrentUserFromRequest(request);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { action } = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => ({}));
+  const { action } = body;
   const task = await prisma.applyTask.findFirst({ where: { id, userId: user.id } });
   if (!task) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  if (action === 'update_answers') {
+    // Edit the application's answers without leaving Careeva: merge the edits
+    // into the packet and requeue so the worker refills the form with them.
+    const edits = body.answers;
+    if (!edits || typeof edits !== 'object' || Array.isArray(edits)) {
+      return NextResponse.json({ error: 'answers object required' }, { status: 400 });
+    }
+    const sanitized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(edits)) {
+      if (typeof value === 'string') sanitized[key] = value.slice(0, 4000);
+    }
+    const packet = (task.packet || {}) as Record<string, unknown>;
+    const mergedPacket = {
+      ...packet,
+      answers: { ...((packet.answers as Record<string, string>) || {}), ...sanitized },
+    };
+    const result = await prisma.applyTask.updateMany({
+      where: { id, userId: user.id, status: { in: ['awaiting_approval', 'needs_review', 'failed', 'queued'] } },
+      data: { packet: mergedPacket, status: 'queued', attempts: 0, claimedBy: null, lastError: null, approvedAt: null },
+    });
+    if (result.count === 0) {
+      return NextResponse.json({ error: `Cannot edit answers while task is "${task.status}"` }, { status: 409 });
+    }
+    return NextResponse.json(await prisma.applyTask.findUnique({ where: { id } }));
+  }
 
   // All transitions are CONDITIONAL updates (status checked inside the UPDATE)
   // so a concurrently-running worker can't race the user's action.

@@ -646,6 +646,18 @@ model ScrapeRun {
   @@map("scrape_runs")
 }
 
+// Binary file storage (resumes, screenshots) — lives in Postgres so the web
+// app and the apply worker share files without a shared disk (Railway volumes
+// attach to one service only).
+model FileBlob {
+  key       String   @id
+  data      Bytes
+  size      Int
+  createdAt DateTime @default(now())
+
+  @@map("file_blobs")
+}
+
 // Company registry for dedup and enrichment
 model Company {
   id           String   @id @default(cuid())

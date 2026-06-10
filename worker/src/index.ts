@@ -16,9 +16,8 @@
  *   Any unanswerable REQUIRED question (config 'pause') or error -> needs_review/failed.
  *
  * Env (set on the worker Railway service):
- *   DATABASE_URL                — same Postgres as the web app
- *   RAILWAY_VOLUME_MOUNT_PATH   — same volume as the web app (resumes + screenshots)
- *   STORAGE_DIR                 — optional override, must match web app
+ *   DATABASE_URL                — same Postgres as the web app (also carries
+ *                                 files: resumes + screenshots in file_blobs)
  *   WORKER_POLL_MS              — queue poll interval (default 5000)
  *   HEADLESS                    — "false" to watch locally (default true)
  */
@@ -26,9 +25,8 @@
 import { PrismaClient } from '@prisma/client';
 import { chromium, Browser } from 'playwright';
 import crypto from 'crypto';
-import fs from 'fs';
 import { getAdapterFor } from './adapters';
-import { storagePathFor, saveScreenshot } from './storage';
+import { materializeFile, saveScreenshot } from './storage';
 
 const prisma = new PrismaClient({ log: ['error'] });
 const WORKER_ID = `worker-${crypto.randomBytes(4).toString('hex')}`;
@@ -100,16 +98,16 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
   try {
     const packet = (task.packet || {}) as Record<string, unknown>;
     const resumeKey = packet.resumeKey as string | undefined;
-    const resumePath = resumeKey ? storagePathFor(resumeKey) : null;
 
-    // Never submit an application with a silently-missing resume: if the packet
-    // references a file the volume doesn't have (volume not mounted, stale key),
-    // stop here with an actionable error instead of filing a resume-less app.
-    if (resumePath && !fs.existsSync(resumePath)) {
+    // Never submit an application with a silently-missing resume: the packet's
+    // key must resolve to a real stored file (Postgres file_blobs). Resumes
+    // uploaded before DB-backed storage landed need a one-time re-upload.
+    const resumePath = resumeKey ? await materializeFile(prisma, resumeKey) : null;
+    if (resumeKey && !resumePath) {
       await setStatus(task.id, 'needs_review', {
-        lastError: 'Resume file not found on the worker volume — confirm both services share the same volume/mount path, then re-upload your resume and retry.',
+        lastError: 'Stored resume file not found — re-upload your resume on the Profile page, then Retry this application.',
       });
-      log(`resume file missing at ${resumePath}`);
+      log(`resume blob missing for key ${resumeKey}`);
       return;
     }
 
@@ -143,7 +141,7 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
     const fill = await adapter.fill(page, task, { resumePath, config });
 
     // Screenshot the final form state regardless of outcome (review evidence)
-    const shotKey = await saveScreenshot(page, task.userId, task.id);
+    const shotKey = await saveScreenshot(prisma, page, task.userId, task.id);
 
     if (!fill.ok) {
       await setStatus(task.id, 'needs_review', {

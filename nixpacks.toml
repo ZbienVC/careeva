@@ -1,4 +1,5 @@
 [phases.install]
-cmds = ["npm install --legacy-peer-deps"]
-# bust: 20:13:38
-# cache-bust: 2026-04-13-00-31
+# --include=dev is required: Railway builds with NODE_ENV=production, which
+# makes npm skip devDependencies — but `next build` needs typescript/tailwind.
+cmds = ["npm install --legacy-peer-deps --include=dev"]
+# cache-bust: 2026-06-10-storage

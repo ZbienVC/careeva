@@ -8,7 +8,10 @@
 
 [build]
 builder = "nixpacks"
-buildCommand = "cd worker && npm install && npx prisma generate --schema=../prisma/schema.prisma && npx playwright install --with-deps chromium && npm run build"
+# Copy the schema INTO the worker before generating: Prisma outputs the client
+# into the node_modules nearest the schema, and the worker must end up with the
+# generated client in its OWN node_modules (.prisma/client), not the repo root's.
+buildCommand = "cd worker && npm install && rm -rf ./prisma && cp -r ../prisma ./prisma && npx prisma generate --schema=./prisma/schema.prisma && npx playwright install --with-deps chromium && npm run build"
 watchPatterns = ["worker/**", "prisma/**"]
 
 [deploy]

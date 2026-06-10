@@ -43,7 +43,7 @@ function ResumeScoreCard({ personal, workHistory, education, skills, writing }: 
     (skillScore / 15) * 25 +
     (checks.education ? 15 : 0)
   );
-  const scoreColor = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+  const scoreColor = score >= 80 ? '#5f8a45' : score >= 50 ? '#b97f24' : '#c14a36';
 
   const items = [
     { label: 'Contact Info',                     ok: checks.contact,    warn: false, tip: 'Add name, email and phone' },
@@ -67,7 +67,7 @@ function ResumeScoreCard({ personal, workHistory, education, skills, writing }: 
         </div>
         <div className="flex flex-col items-center">
           <div className="w-14 h-14 rounded-full flex items-center justify-center"
-            style={{ background: `conic-gradient(${scoreColor} ${score}%, rgba(255,255,255,0.10) 0)` }}>
+            style={{ background: `conic-gradient(${scoreColor} ${score}%, rgba(38,28,16,0.12) 0)` }}>
             <div className="w-10 h-10 rounded-full bg-slate-950 flex items-center justify-center text-sm font-black text-white">{score}</div>
           </div>
         </div>
@@ -401,7 +401,7 @@ export default function ProfileBuilderPage() {
           </div>
           <div className="flex flex-col items-center shrink-0">
             <div className="w-16 h-16 rounded-full flex items-center justify-center"
-              style={{ background: `conic-gradient(#10b981 ${overall}%, rgba(255,255,255,0.10) 0)` }}>
+              style={{ background: `conic-gradient(#5f8a45 ${overall}%, rgba(38,28,16,0.12) 0)` }}>
               <div className="w-12 h-12 rounded-full bg-slate-950 flex items-center justify-center text-base font-bold text-white">{overall}%</div>
             </div>
             <p className="text-xs text-slate-400 mt-1.5">Complete</p>
@@ -410,7 +410,7 @@ export default function ProfileBuilderPage() {
 
         <div className="mt-6">
           <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all" style={{ width: `${overall}%`, background: overall >= 80 ? '#10b981' : overall >= 50 ? '#f59e0b' : '#ef4444' }} />
+            <div className="h-full rounded-full transition-all" style={{ width: `${overall}%`, background: overall >= 80 ? '#5f8a45' : overall >= 50 ? '#b97f24' : '#c14a36' }} />
           </div>
         </div>
 

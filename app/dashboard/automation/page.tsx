@@ -242,10 +242,10 @@ export default function AutomatePage() {
 
   const selectedMode = MODES.find(m => m.id === mode)!;
   const SelectedIcon = selectedMode.icon;
-  const runBtnBg = running ? 'rgba(51,65,85,0.8)'
-    : selectedMode.risk === 'high' ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)'
-    : selectedMode.risk === 'medium' ? 'linear-gradient(135deg,#f59e0b,#d97706)'
-    : 'linear-gradient(135deg,#3b82f6,#2563eb)';
+  const runBtnBg = running ? 'rgba(116,97,74,0.8)'
+    : selectedMode.risk === 'high' ? 'linear-gradient(135deg,#91471d,#683012)'
+    : selectedMode.risk === 'medium' ? 'linear-gradient(135deg,#b97f24,#9a6a1e)'
+    : 'linear-gradient(135deg,#c0501f,#a63d17)';
 
   return (
     <div className="page-shell space-y-8">
@@ -269,8 +269,8 @@ export default function AutomatePage() {
                 Cancel
               </button>
               <button onClick={confirmFullAuto}
-                className="flex-1 rounded-2xl py-2.5 text-sm font-bold text-white transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
-                style={{ background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)' }}>
+                className="flex-1 rounded-2xl py-2.5 text-sm font-bold text-paper transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
+                style={{ background: 'linear-gradient(135deg,#91471d,#683012)' }}>
                 Yes, enable Full Auto
               </button>
             </div>
@@ -392,9 +392,9 @@ export default function AutomatePage() {
               </div>
               <button onClick={() => setDoSearch(v => !v)}
                 aria-pressed={doSearch}
-                className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 ${doSearch ? '' : 'bg-white/10'}`}
-                style={doSearch ? { background: 'linear-gradient(135deg,#10b981,#059669)' } : {}}>
-                <div className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${doSearch ? 'translate-x-6' : 'translate-x-1'}`} />
+                className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 ${doSearch ? '' : 'bg-ink/15'}`}
+                style={doSearch ? { background: 'linear-gradient(135deg,#5f8a45,#4f7539)' } : {}}>
+                <div className={`absolute top-1 h-4 w-4 rounded-full bg-paper shadow transition-transform ${doSearch ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-6">
@@ -420,13 +420,13 @@ export default function AutomatePage() {
       {/* Run button */}
       <div className="flex items-center gap-4">
         <button onClick={runAutomation} disabled={running}
-          className="flex min-h-[48px] items-center gap-2.5 rounded-2xl px-7 py-3.5 text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
+          className="flex min-h-[48px] items-center gap-2.5 rounded-2xl px-7 py-3.5 text-sm font-bold text-paper transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/60"
           style={{
             background: runBtnBg,
-            boxShadow: running ? 'none' : '0 4px 20px rgba(59,130,246,0.3)',
+            boxShadow: running ? 'none' : '0 4px 20px rgba(166,61,23,0.3)',
           }}>
           {running ? (
-            <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Running…</>
+            <><span className="h-4 w-4 animate-spin rounded-full border-2 border-paper/30 border-t-paper" /> Running…</>
           ) : (
             <><SelectedIcon size={16} /> {selectedMode.label}</>
           )}

@@ -68,15 +68,15 @@ export default function Navbar({ showAuth = false, showDashboard = false }: Navb
     link.exact ? pathname === link.href : pathname === link.href || pathname?.startsWith(`${link.href}/`);
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/70 backdrop-blur-xl">
+    <nav className="sticky top-0 z-50 border-b border-ink/[0.08] bg-slate-950/70 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex min-h-[72px] items-center justify-between gap-4 py-3">
           <Link href={isDashboard ? '/dashboard' : '/'} className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-400 to-violet-500 text-lg font-black text-white shadow-lg shadow-blue-950/40">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-400 to-violet-500 font-display text-lg font-black text-paper shadow-lg shadow-blue-950/30">
               C
             </div>
             <div>
-              <div className="text-xl font-bold tracking-tight text-white">Careeva</div>
+              <div className="font-display text-xl font-bold tracking-tight text-ink">Careeva</div>
               <div className="hidden text-xs text-slate-400 sm:block">AI job search assistant</div>
             </div>
           </Link>

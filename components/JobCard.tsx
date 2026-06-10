@@ -84,7 +84,7 @@ export default function JobCard({ job, onQuickApply }: JobCardProps) {
         {toast && (
           <div
             role="status"
-            className={`absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium text-white shadow-lg ${toast.includes('failed') ? 'border border-amber-500/40 bg-amber-600' : 'border border-emerald-500/30 bg-emerald-600'}`}
+            className={`absolute top-3 right-3 z-10 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium text-paper shadow-lg ${toast.includes('failed') ? 'border border-amber-500/40 bg-amber-600' : 'border border-emerald-500/30 bg-emerald-600'}`}
           >
             {!toast.includes('failed') && <IconCheckCircle size={14} />}
             {toast}

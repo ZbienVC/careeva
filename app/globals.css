@@ -2,20 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── "Kiln" theme ────────────────────────────────────────────────────────────
+   Warm editorial light theme: paper + ink + terracotta. The Tailwind palette is
+   remapped in tailwind.config.ts (white -> ink, slate -> warm browns, blue ->
+   terracotta, etc.) so utility classes across the app pick this theme up. */
+
 :root {
-  color-scheme: dark;
-  --bg: #07111f;
-  --bg-secondary: #0d1628;
-  --surface: rgba(12, 22, 38, 0.82);
-  --surface-strong: rgba(15, 25, 44, 0.95);
-  --border: rgba(148, 163, 184, 0.16);
-  --border-strong: rgba(96, 165, 250, 0.22);
-  --text: #e5eefc;
-  --muted: #94a3b8;
-  --blue: #4f8cff;
-  --blue-strong: #316dff;
-  --purple: #8b5cf6;
-  --teal: #22c7b8;
+  color-scheme: light;
+  --paper: #f3ecdd;
+  --paper-raised: #fdfaf2;
+  --ink: #261c10;
+  --muted: #74614a;
+  --brick: #a63d17;
+  --brick-bright: #c0501f;
+  --ochre: #c8862a;
+  --olive: #5f8a45;
 }
 
 * {
@@ -33,23 +34,27 @@ body {
   font-family: var(--font-inter), Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: var(--text);
+  color: var(--ink);
   background:
-    radial-gradient(circle at top left, rgba(79, 140, 255, 0.14), transparent 30%),
-    radial-gradient(circle at top right, rgba(139, 92, 246, 0.12), transparent 26%),
-    linear-gradient(180deg, #08111d 0%, #0a1323 45%, #08101c 100%);
+    radial-gradient(900px 600px at 85% -5%, rgba(192, 80, 31, 0.10), transparent 60%),
+    radial-gradient(800px 500px at -10% 25%, rgba(200, 134, 42, 0.10), transparent 55%),
+    radial-gradient(700px 500px at 60% 110%, rgba(95, 138, 69, 0.07), transparent 60%),
+    linear-gradient(180deg, #f5efe2 0%, #f2eadb 50%, #f4eee0 100%);
 }
 
+/* Paper grain — subtle SVG noise for a tactile, printed feel */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
+  z-index: 0;
   pointer-events: none;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(circle at center, black, transparent 85%);
-  opacity: 0.45;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+::selection {
+  background: rgba(192, 80, 31, 0.22);
 }
 
 ::-webkit-scrollbar {
@@ -58,26 +63,31 @@ body::before {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(12, 18, 30, 0.9);
+  background: rgba(38, 28, 16, 0.05);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(79, 140, 255, 0.45);
+  background: rgba(166, 61, 23, 0.35);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(96, 165, 250, 0.65);
+  background: rgba(166, 61, 23, 0.55);
+}
+
+h1 {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.02em;
 }
 
 input,
 textarea,
 select {
   width: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(38, 28, 16, 0.16);
   border-radius: 12px;
-  background: rgba(8, 15, 28, 0.65);
-  color: var(--text);
+  background: #fffdf7;
+  color: var(--ink);
   padding: 0.75rem 1rem;
   font-size: 0.9rem;
   font-family: inherit;
@@ -86,21 +96,21 @@ select {
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(148, 163, 184, 0.55);
+  color: rgba(116, 97, 74, 0.6);
 }
 
 input:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: rgba(96, 165, 250, 0.65);
-  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.18);
-  background: rgba(10, 18, 33, 0.9);
+  border-color: rgba(192, 80, 31, 0.55);
+  box-shadow: 0 0 0 3px rgba(192, 80, 31, 0.14);
+  background: #fffefb;
 }
 
 select option {
-  background: #0d1628;
-  color: var(--text);
+  background: #fffdf7;
+  color: var(--ink);
 }
 
 input[type='checkbox'],
@@ -134,7 +144,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid rgba(96, 165, 250, 0.8);
+  outline: 2px solid rgba(166, 61, 23, 0.7);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -151,24 +161,51 @@ a {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 @layer components {
   .page-shell {
-    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10;
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10 relative;
   }
 
   .premium-card {
-    @apply rounded-3xl border border-white/10 bg-slate-950/55 backdrop-blur-xl shadow-[0_24px_80px_rgba(2,8,23,0.45)];
+    @apply rounded-3xl border border-ink/[0.08] backdrop-blur-sm;
+    background: rgba(253, 250, 242, 0.82);
+    box-shadow: 0 1px 2px rgba(38, 28, 16, 0.04), 0 16px 48px -16px rgba(94, 60, 30, 0.18);
   }
 
   .premium-card-soft {
-    @apply rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-md;
+    @apply rounded-2xl border border-ink/[0.07];
+    background: rgba(255, 253, 247, 0.6);
   }
 
   .hero-panel {
     @apply premium-card overflow-hidden relative;
-    background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.95));
+    background:
+      radial-gradient(700px 360px at 90% 0%, rgba(192, 80, 31, 0.09), transparent 60%),
+      radial-gradient(500px 300px at 5% 100%, rgba(200, 134, 42, 0.10), transparent 55%),
+      linear-gradient(135deg, #fdf9f0 0%, #faf3e4 60%, #f8efdd 100%);
+  }
+
+  /* Faint brick coursing — the kiln signature, kept whisper-quiet */
+  .brick-texture::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(166, 61, 23, 0.07) 0 1px, transparent 1px 44px),
+      repeating-linear-gradient(90deg, rgba(166, 61, 23, 0.05) 0 1px, transparent 1px 96px),
+      repeating-linear-gradient(90deg, transparent 0 48px, rgba(166, 61, 23, 0.05) 48px 49px, transparent 49px 96px);
+    background-size: 100% 88px, 192px 88px, 192px 88px;
+    background-position: 0 0, 0 0, 0 44px;
+    mask-image: linear-gradient(180deg, black, transparent 75%);
   }
 
   .gradient-border {
@@ -181,7 +218,7 @@ a {
     inset: 0;
     border-radius: inherit;
     padding: 1px;
-    background: linear-gradient(135deg, rgba(96, 165, 250, 0.45), rgba(139, 92, 246, 0.35), rgba(34, 197, 184, 0.28));
+    background: linear-gradient(135deg, rgba(192, 80, 31, 0.45), rgba(200, 134, 42, 0.4), rgba(95, 138, 69, 0.3));
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -189,7 +226,8 @@ a {
   }
 
   .section-heading {
-    @apply text-2xl md:text-3xl font-bold text-slate-50 tracking-tight;
+    @apply text-2xl md:text-3xl font-bold text-ink tracking-tight;
+    font-family: var(--font-display), Georgia, serif;
   }
 
   .section-subcopy {
@@ -197,43 +235,49 @@ a {
   }
 
   .stat-tile {
-    @apply premium-card-soft p-5;
+    @apply premium-card-soft p-5 transition-all duration-300 hover:-translate-y-0.5;
+  }
+
+  .stat-tile:hover {
+    box-shadow: 0 12px 32px -12px rgba(94, 60, 30, 0.25);
   }
 
   .badge {
-    @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-slate-300;
+    @apply inline-flex items-center gap-2 rounded-full border border-ink/10 bg-ink/[0.04] px-3 py-1 text-xs font-medium text-slate-300;
   }
 
   .badge-success {
-    @apply badge border-emerald-500/25 bg-emerald-500/10 text-emerald-200;
+    @apply badge border-emerald-500/25 bg-emerald-500/10 text-emerald-300;
   }
 
   .badge-warning {
-    @apply badge border-amber-500/25 bg-amber-500/10 text-amber-200;
+    @apply badge border-amber-500/30 bg-amber-500/10 text-amber-300;
   }
 
   .badge-danger {
-    @apply badge border-red-500/25 bg-red-500/10 text-red-200;
+    @apply badge border-red-500/25 bg-red-500/10 text-red-300;
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-950/40 hover:bg-blue-500;
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-paper hover:bg-blue-500;
+    box-shadow: 0 2px 4px rgba(94, 33, 9, 0.18), 0 12px 28px -10px rgba(166, 61, 23, 0.45);
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 font-semibold text-slate-200 hover:bg-white/[0.08];
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-ink/[0.12] px-5 py-3 font-semibold text-slate-200 hover:border-ink/20;
+    background: rgba(255, 253, 247, 0.7);
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 font-medium text-slate-300 hover:bg-white/[0.06] hover:text-white;
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 font-medium text-slate-400 hover:bg-ink/[0.05] hover:text-ink;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-3 font-semibold text-red-200 hover:bg-red-500/20;
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-3 font-semibold text-red-300 hover:bg-red-500/20;
   }
 
   .field-input {
-    @apply block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-400/60 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all;
+    @apply block w-full rounded-xl border border-ink/[0.14] bg-[#fffdf7] px-4 py-3 text-sm text-ink placeholder:text-slate-500 focus:border-blue-400/60 focus:outline-none focus:ring-2 focus:ring-blue-500/15 transition-all;
   }
 
   .field-label {
@@ -249,19 +293,19 @@ a {
   }
 
   .alert-error {
-    @apply rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200;
+    @apply rounded-2xl border border-red-500/25 bg-red-500/[0.08] p-4 text-sm text-red-300;
   }
 
   .alert-success {
-    @apply rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-200;
+    @apply rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.08] p-4 text-sm text-emerald-300;
   }
 
   .alert-warning {
-    @apply rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-amber-100;
+    @apply rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4 text-sm text-amber-300;
   }
 
   .alert-info {
-    @apply rounded-2xl border border-blue-500/25 bg-blue-500/10 p-4 text-sm text-blue-100;
+    @apply rounded-2xl border border-blue-400/25 bg-blue-500/[0.07] p-4 text-sm text-blue-300;
   }
 
   .empty-state {
@@ -274,18 +318,37 @@ a {
   }
 
   .step-dot-done {
-    @apply step-dot bg-emerald-500/90 text-white;
+    @apply step-dot bg-emerald-500 text-paper;
   }
 
   .step-dot-active {
-    @apply step-dot bg-blue-500 text-white shadow-lg shadow-blue-950/50;
+    @apply step-dot bg-blue-600 text-paper;
+    box-shadow: 0 6px 16px -6px rgba(166, 61, 23, 0.55);
   }
 
   .step-dot-todo {
-    @apply step-dot border border-white/15 bg-white/[0.04] text-slate-400;
+    @apply step-dot border border-ink/15 bg-ink/[0.04] text-slate-500;
   }
 
   .icon-tile {
-    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/25 via-cyan-400/15 to-violet-500/25 text-blue-200;
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-blue-300;
+    background: linear-gradient(135deg, rgba(192, 80, 31, 0.14), rgba(200, 134, 42, 0.12));
+  }
+
+  /* Scroll-reveal: pair with components/Reveal.tsx */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .reveal.revealed {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Organic drifting color fields for hero sections */
+  .blob {
+    @apply pointer-events-none absolute rounded-full blur-3xl;
   }
 }

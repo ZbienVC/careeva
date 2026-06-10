@@ -104,8 +104,13 @@ export default function DashboardPage() {
     return index === -1 ? journeySteps.length - 1 : index;
   }, [journeySteps]);
 
+  // Only surface roles that actually match — a 0-score job is noise, not an opportunity.
   const topMatches = useMemo(
-    () => [...recentJobs].sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0)).slice(0, 3),
+    () =>
+      [...recentJobs]
+        .filter((job) => (job.score?.overallScore || 0) >= 40)
+        .sort((a, b) => (b.score?.overallScore || 0) - (a.score?.overallScore || 0))
+        .slice(0, 3),
     [recentJobs]
   );
 
@@ -170,7 +175,7 @@ export default function DashboardPage() {
                   <circle
                     cx="18" cy="18" r={radius}
                     fill="none"
-                    stroke="rgba(255,255,255,0.06)"
+                    stroke="rgba(38,28,16,0.10)"
                     strokeWidth="3"
                   />
                   <circle
@@ -185,8 +190,8 @@ export default function DashboardPage() {
                   />
                   <defs>
                     <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#3b82f6" />
-                      <stop offset="100%" stopColor="#8b5cf6" />
+                      <stop offset="0%" stopColor="#c0501f" />
+                      <stop offset="100%" stopColor="#c8862a" />
                     </linearGradient>
                   </defs>
                 </svg>

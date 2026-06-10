@@ -31,7 +31,7 @@ html {
 
 body {
   min-height: 100vh;
-  font-family: var(--font-inter), Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--ink);
@@ -350,5 +350,43 @@ a {
   /* Organic drifting color fields for hero sections */
   .blob {
     @apply pointer-events-none absolute rounded-full blur-3xl;
+  }
+
+  /* Editorial spec-sheet label — mono, tracked-out, terracotta */
+  .eyebrow {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-blue-300;
+  }
+
+  /* Hairline editorial rule */
+  .rule {
+    @apply border-t border-ink/10;
+  }
+
+  /* The kiln arch — signature shape for featured panels */
+  .arch {
+    border-radius: 999px 999px 28px 28px;
+  }
+
+  /* Light button for inverted (terracotta/ink) surfaces */
+  .btn-paper {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-semibold;
+    background: #faf5eb;
+    color: #261c10;
+    box-shadow: 0 2px 4px rgba(38, 28, 16, 0.2), 0 12px 28px -12px rgba(38, 28, 16, 0.5);
+  }
+
+  .btn-paper:hover {
+    background: #fffdf7;
+  }
+
+  .btn-outline-paper {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border px-5 py-3 font-semibold;
+    border-color: rgba(250, 245, 235, 0.35);
+    color: #faf5eb;
+  }
+
+  .btn-outline-paper:hover {
+    border-color: rgba(250, 245, 235, 0.7);
+    background: rgba(250, 245, 235, 0.08);
   }
 }

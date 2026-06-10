@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Fraunces } from "next/font/google";
+import { Fraunces, Instrument_Sans, Spline_Sans_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+// "Kiln" type system — editorial serif display, characterful humanist body,
+// mono for spec-sheet labels and figures.
+const body = Instrument_Sans({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-inter",
+  variable: "--font-body",
 });
 
 const fraunces = Fraunces({
@@ -13,6 +15,12 @@ const fraunces = Fraunces({
   display: "swap",
   variable: "--font-display",
   axes: ["opsz", "SOFT", "WONK"],
+});
+
+const mono = Spline_Sans_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
@@ -36,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${fraunces.variable}`}>
+    <html lang="en" className={`${body.variable} ${fraunces.variable} ${mono.variable}`}>
       <body>{children}</body>
     </html>
   );

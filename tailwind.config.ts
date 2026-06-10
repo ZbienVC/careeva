@@ -23,7 +23,8 @@ const config: Config = {
     extend: {
       fontFamily: {
         display: ["var(--font-display)", "Georgia", "serif"],
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        sans: ["var(--font-body)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       colors: {
         paper: "#faf5eb",
@@ -127,6 +128,7 @@ const config: Config = {
         "drift-slow": "drift 26s ease-in-out infinite alternate-reverse",
         float: "float 6s ease-in-out infinite",
         marquee: "marquee 36s linear infinite",
+        ticker: "tickerY 26s linear infinite",
       },
       keyframes: {
         fadeUp: {
@@ -144,6 +146,10 @@ const config: Config = {
         marquee: {
           from: { transform: "translateX(0)" },
           to: { transform: "translateX(-50%)" },
+        },
+        tickerY: {
+          from: { transform: "translateY(0)" },
+          to: { transform: "translateY(-50%)" },
         },
       },
     },

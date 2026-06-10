@@ -153,6 +153,20 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
       return;
     }
 
+    // A "successful" fill that filled NOTHING means we never found a real
+    // application form (listing page, login wall, unsupported embed). That
+    // must never be presented as ready for approval.
+    const filledReport = fill.report as { filled?: unknown[]; resumeAttached?: boolean } | undefined;
+    if ((filledReport?.filled?.length || 0) === 0 && !filledReport?.resumeAttached) {
+      await setStatus(task.id, 'needs_review', {
+        lastError: 'No fillable application form was found at this URL — it appears to be a listing page or login-gated. Open the original form to apply manually (your answers and cover letter are below), or Retry after the posting link is fixed.',
+        screenshotKey: shotKey,
+        fieldReport: fill.report as object,
+      });
+      log('needs review: zero fields filled (no real form found)');
+      return;
+    }
+
     const mode = task.mode || config?.submitMode || 'approve_first';
 
     if (mode === 'fill_and_leave') {

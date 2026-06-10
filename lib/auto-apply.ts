@@ -294,7 +294,7 @@ ${profileContext.slice(0, 400)}`,
 async function generateAnswers(
   userId: string,
   profileContext: string,
-  job: { title: string; company: string; description: string }
+  job: { id?: string; title: string; company: string; description: string }
 ): Promise<Record<string, string>> {
   const answers: Record<string, string> = {};
 
@@ -316,7 +316,7 @@ async function generateAnswers(
   for (const key of STANDARD_KEYS) {
     if (answers[key]) continue; // stored answer already covers it
     try {
-      const resolved = await resolveAnswerFromProfile(userId, key);
+      const resolved = await resolveAnswerFromProfile(userId, key, job.id);
       if (resolved?.answer && resolved.confidence >= 0.8) {
         answers[key] = resolved.answer;
       }
@@ -396,6 +396,7 @@ export async function buildApplicationPacket(
 
   // Generate answers
   const answers = await generateAnswers(userId, profileContext, {
+    id: job.id,
     title: job.title,
     company: job.company,
     description: job.description || '',

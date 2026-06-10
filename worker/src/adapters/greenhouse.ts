@@ -12,21 +12,52 @@ export const greenhouseAdapter: AtsAdapter = {
 
   async fill(page: Page, task: TaskLike, ctx: FillContext): Promise<FillResult> {
     await page.goto(task.applyUrl!, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    // Hosted boards: the form is on-page (id "application-form" / "#app_body"),
-    // embedded boards: inside #grnhse_app iframe.
-    const iframe = page.frameLocator('#grnhse_iframe');
-    const hasIframe = await page.locator('#grnhse_iframe').count();
-    if (hasIframe) {
-      // Drive the iframe's page directly by navigating to its src
-      const src = await page.locator('#grnhse_iframe').getAttribute('src');
-      if (src) await page.goto(src, { waitUntil: 'domcontentloaded', timeout: 45000 });
+
+    // GH embeds inject their iframe via JS AFTER load — wait for any form
+    // signal before deciding what kind of page this is.
+    await page
+      .waitForSelector('#grnhse_iframe, input[type="file"], #application-form, form[action*="greenhouse"]', { timeout: 10000 })
+      .catch(() => {});
+
+    // Custom career sites (careers.<company>.com) embed the real form in an
+    // iframe — drive the iframe's page directly by navigating to its src.
+    const resolveEmbed = async (): Promise<void> => {
+      const iframeEl = page.locator('#grnhse_iframe');
+      if (await iframeEl.count()) {
+        const src = await iframeEl.getAttribute('src');
+        if (src) await page.goto(src, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      }
+    };
+    await resolveEmbed();
+
+    // Listing page without a visible form: click the Apply control, then
+    // re-check for an injected embed.
+    if (!(await page.locator('input[type="file"]').count())) {
+      const applyBtn = page
+        .locator('a:has-text("Apply"), button:has-text("Apply Now"), button:has-text("Apply for this job"), a:has-text("APPLY")')
+        .first();
+      if (await applyBtn.count()) {
+        await applyBtn.click().catch(() => {});
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.waitForTimeout(1500);
+        await resolveEmbed();
+      }
     }
-    // Some GH pages need the "Apply" tab clicked to reveal the form
-    const applyBtn = page.locator('a:has-text("Apply"), button:has-text("Apply Now"), button:has-text("Apply for this job")').first();
-    if (await applyBtn.count() && !(await page.locator('input[type="file"]').count())) {
-      await applyBtn.click().catch(() => {});
-      await page.waitForTimeout(1200);
+
+    // Last resort: the page links out to the hosted Greenhouse board.
+    if (!(await page.locator('input[type="file"], #application-form').count())) {
+      const ghLink = await page
+        .locator('a[href*="greenhouse.io"]')
+        .first()
+        .getAttribute('href')
+        .catch(() => null);
+      if (ghLink) {
+        await page.goto(ghLink, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.waitForTimeout(1000);
+        await resolveEmbed();
+      }
     }
+
     await page.waitForSelector('input, textarea', { timeout: 15000 }).catch(() => {});
     return fillVisibleForm(page, task, ctx, { formSelector: 'form, #application-form, #main' });
   },

@@ -284,7 +284,8 @@ export function normalizeQuestion(questionText: string): QuestionNormalizationRe
  */
 export async function resolveAnswerFromProfile(
   userId: string,
-  questionKey: string
+  questionKey: string,
+  jobId?: string
 ): Promise<{ answer: string; confidence: number; source: string } | null> {
   const [personalInfo, jobPrefs, workHistory] = await Promise.all([
     prisma.personalInfo.findUnique({ where: { userId } }),
@@ -313,14 +314,29 @@ export async function resolveAnswerFromProfile(
       }
       return null;
 
-    case 'salary_expectation':
-      if (jobPrefs?.salaryMinUSD) {
-        const min = jobPrefs.salaryMinUSD;
-        const max = jobPrefs.salaryMaxUSD;
-        const answer = max ? `$${min.toLocaleString()} â€“ $${max.toLocaleString()}` : `$${min.toLocaleString()}+`;
-        return { answer, confidence: 0.95, source: 'job_preferences' };
+    case 'salary_expectation': {
+      if (!jobPrefs?.salaryMinUSD) return null;
+      // Presentation strategy: a TIGHT window (max $30k spread) anchored to
+      // the job's posted range when it's known. The user's wide profile range
+      // is for filtering jobs, not for negotiating against themselves.
+      const SPREAD = 30_000;
+      const userMin = jobPrefs.salaryMinUSD;
+      let lo = userMin;
+      let hi = jobPrefs.salaryMaxUSD ? Math.min(jobPrefs.salaryMaxUSD, userMin + SPREAD) : userMin + SPREAD;
+      if (jobId) {
+        const job = await prisma.job.findUnique({ where: { id: jobId }, select: { salaryMin: true, salaryMax: true } });
+        if (job?.salaryMin || job?.salaryMax) {
+          const jobLo = job.salaryMin ?? job.salaryMax!;
+          const jobHi = job.salaryMax ?? job.salaryMin!;
+          // Aim at the upper-middle of the posting's band, never below our floor.
+          lo = Math.max(userMin, Math.round((jobLo + jobHi) / 2 / 1000) * 1000);
+          hi = Math.max(lo + 10_000, Math.min(jobHi, lo + SPREAD));
+        }
       }
-      return null;
+      if (hi <= lo) hi = lo + 10_000;
+      const answer = `$${lo.toLocaleString()} - $${hi.toLocaleString()}, flexible depending on total compensation`;
+      return { answer, confidence: 0.95, source: 'job_preferences' };
+    }
 
     case 'remote_preference':
       if (jobPrefs?.remotePreference) {
@@ -328,7 +344,7 @@ export async function resolveAnswerFromProfile(
           remote_only: 'Remote',
           hybrid_ok: 'Open to hybrid or remote',
           onsite_ok: 'Open to onsite, hybrid, or remote',
-          any: 'Flexible â€” open to all arrangements',
+          any: 'Flexible - open to all arrangements',
         };
         return {
           answer: map[jobPrefs.remotePreference] || jobPrefs.remotePreference,
@@ -366,7 +382,7 @@ export async function resolveAnswerFromProfile(
           source: 'personal_info',
         };
       }
-      if (personalInfo?.noticePeriodDays !== undefined) {
+      if (personalInfo?.noticePeriodDays != null) {
         const days = personalInfo.noticePeriodDays;
         return {
           answer: days === 0 ? 'Immediately' : `${days} days notice`,
@@ -374,7 +390,8 @@ export async function resolveAnswerFromProfile(
           source: 'personal_info',
         };
       }
-      return null;
+      // No start-date data at all → safe, universally-true default.
+      return { answer: 'Available immediately', confidence: 0.8, source: 'default' };
 
     case 'linkedin_url':
       return personalInfo?.linkedinUrl

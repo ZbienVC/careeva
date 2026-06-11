@@ -26,6 +26,14 @@ interface Task {
     skippedOptional?: string[];
     resumeAttached?: boolean;
     coverLetterAttached?: boolean;
+    diag?: {
+      workerBuild?: string;
+      scope?: string;
+      textInputs?: number;
+      selects?: number;
+      comboboxes?: number;
+      fileInputs?: number;
+    };
   } | null;
   packet?: { coverLetter?: string; answers?: Record<string, string> } | null;
   createdAt: string;
@@ -264,6 +272,13 @@ export default function ReviewQueuePage() {
                           <p className="mt-0.5 text-slate-500">flagged</p>
                         </div>
                       </div>
+                    )}
+
+                    {report?.diag && (
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                        worker {report.diag.workerBuild} · form in {report.diag.scope} · saw {report.diag.textInputs ?? 0} inputs
+                        / {report.diag.selects ?? 0} selects / {report.diag.comboboxes ?? 0} dropdowns / {report.diag.fileInputs ?? 0} file fields
+                      </p>
                     )}
 
                     {report?.unanswered && report.unanswered.length > 0 && (

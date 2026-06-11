@@ -26,6 +26,15 @@ export interface FieldReport {
   guessed: string[];         // ai_guess mode: fields filled with flagged guesses
   resumeAttached: boolean;
   coverLetterAttached: boolean;
+  /** Diagnostics: which worker build ran, where the form was, what it saw. */
+  diag?: {
+    workerBuild: string;
+    scope: 'main' | 'iframe';
+    textInputs: number;
+    selects: number;
+    comboboxes: number;
+    fileInputs: number;
+  };
 }
 
 export interface FillResult { ok: boolean; error?: string; report: FieldReport }
@@ -176,6 +185,15 @@ export async function fillVisibleForm(
   const root = await pickFormScope(page);
   const scope = root === page ? (opts.formSelector || 'body') : 'body';
 
+  report.diag = {
+    workerBuild: (process.env.RAILWAY_GIT_COMMIT_SHA || 'local').slice(0, 7),
+    scope: root === page ? 'main' : 'iframe',
+    textInputs: 0,
+    selects: 0,
+    comboboxes: 0,
+    fileInputs: 0,
+  };
+
   // Every fill is VERIFIED by reading the value back. A fill that didn't
   // stick is reported as failed — the report must never claim success the
   // screenshot can't corroborate.
@@ -192,6 +210,7 @@ export async function fillVisibleForm(
   };
 
   // 1) Resume file input(s)
+  report.diag.fileInputs = await root.locator(`${scope} input[type="file"]`).count().catch(() => 0);
   if (ctx.resumePath) {
     const fileInputs = root.locator(`${scope} input[type="file"]`);
     const n = await fileInputs.count();
@@ -215,6 +234,7 @@ export async function fillVisibleForm(
     `${scope} input[type="text"], ${scope} input[type="email"], ${scope} input[type="tel"], ${scope} input[type="url"], ${scope} input:not([type]), ${scope} textarea`
   );
   const count = await textInputs.count();
+  report.diag.textInputs = count;
   for (let i = 0; i < count; i++) {
     const el = textInputs.nth(i);
     if (!(await el.isVisible().catch(() => false))) continue;
@@ -278,6 +298,7 @@ export async function fillVisibleForm(
   //    EEO selects pick a "decline" option when present and no stored answer.
   const selects = root.locator(`${scope} select`);
   const sCount = await selects.count();
+  report.diag.selects = sCount;
   for (let i = 0; i < sCount; i++) {
     const el = selects.nth(i);
     if (!(await el.isVisible().catch(() => false))) continue;
@@ -309,6 +330,74 @@ export async function fillVisibleForm(
       } else {
         report.unanswered.push(label + ` (no option matched "${value.slice(0, 30)}")`);
       }
+    }
+  }
+
+  // 4) ARIA comboboxes — the NEW Greenhouse (job-boards.greenhouse.io) and
+  //    other React forms render dropdowns as role=combobox widgets with
+  //    listbox popups, not native <select> elements.
+  const combos = root.locator(`${scope} [role="combobox"], ${scope} input[aria-haspopup="listbox"], ${scope} button[aria-haspopup="listbox"]`);
+  const cbCount = await combos.count();
+  report.diag.comboboxes = cbCount;
+  for (let i = 0; i < cbCount; i++) {
+    const el = combos.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const current = ((await el.inputValue().catch(() => '')) || (await el.textContent().catch(() => '')) || '').trim();
+    if (current && !/^select/i.test(current)) continue; // already has a real value
+    const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
+    if (!label) continue;
+    const required = (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
+    const isEeo = EEO_PATTERN.test(label);
+
+    const m = matchers.find((mm) => mm.test.test(label));
+    const value = m?.value(packet) ?? packet.answers[slug(label)];
+    if (!value && !isEeo) {
+      if (required) report.unanswered.push(label);
+      else report.skippedOptional.push(label);
+      continue;
+    }
+
+    try {
+      await el.click({ timeout: 4000 });
+      await page.waitForTimeout(500);
+      // Options often render in a portal at the document root — search broadly.
+      const options = root.locator('[role="option"]');
+      const texts = await options.allTextContents();
+      const wanted = String(value || '');
+      const target =
+        (wanted && texts.find((o) => o.toLowerCase().includes(wanted.toLowerCase().slice(0, 20)))) ||
+        (/^yes/i.test(wanted) ? texts.find((o) => /^yes/i.test(o.trim())) : undefined) ||
+        (/^no/i.test(wanted) ? texts.find((o) => /^no\b/i.test(o.trim())) : undefined) ||
+        (wanted ? expandedStateOption(wanted, texts) : undefined) ||
+        (isEeo ? texts.find((o) => /decline|prefer not|don.t wish|do not wish/i.test(o)) : undefined);
+      if (target) {
+        await options.filter({ hasText: target.trim().slice(0, 40) }).first().click({ timeout: 4000 });
+        report.filled.push({
+          label,
+          value: target.trim().slice(0, 60),
+          via: m?.key || (isEeo ? 'eeo_decline' : 'answer_bank'),
+        });
+        continue;
+      }
+      // Typing-style combobox fallback: type the value and pick/enter.
+      if (wanted) {
+        await el.pressSequentially(wanted.slice(0, 60), { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(600);
+        const firstOption = root.locator('[role="option"]').first();
+        if (await firstOption.isVisible().catch(() => false)) {
+          await firstOption.click({ timeout: 3000 }).catch(() => {});
+          report.filled.push({ label, value: wanted.slice(0, 60), via: (m?.key || 'answer_bank') + ':typed' });
+          continue;
+        }
+        await page.keyboard.press('Escape').catch(() => {});
+      } else {
+        await page.keyboard.press('Escape').catch(() => {});
+      }
+      if (required && !isEeo) report.unanswered.push(label + ' (no option matched)');
+      else report.skippedOptional.push(label + (isEeo ? ' (EEO — no decline option found)' : ''));
+    } catch {
+      await page.keyboard.press('Escape').catch(() => {});
+      if (required && !isEeo) report.unanswered.push(label + ' (dropdown interaction failed)');
     }
   }
 

@@ -229,6 +229,9 @@ export async function fillVisibleForm(
     }
   }
 
+  // Remember full values so the end-state audit can re-fill and re-verify.
+  const fullValues = new Map<string, string>();
+
   // 2) Text inputs + textareas
   const textInputs = root.locator(
     `${scope} input[type="text"], ${scope} input[type="email"], ${scope} input[type="tel"], ${scope} input[type="url"], ${scope} input:not([type]), ${scope} textarea`
@@ -242,9 +245,11 @@ export async function fillVisibleForm(
     if (existing) continue; // never clobber prefilled values
     const label = (await labelFor(root, el)) || (await el.getAttribute('placeholder')) || (await el.getAttribute('name')) || '';
     if (!label) continue;
+    // name attrs come underscored ("first_name") — normalize so patterns match
+    const labelNorm = label.replace(/[_-]+/g, ' ');
     const required = (await el.getAttribute('required')) !== null || (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
 
-    if (EEO_PATTERN.test(label)) {
+    if (EEO_PATTERN.test(labelNorm)) {
       // Only fill EEO from explicit stored answers (never guess)
       const eeoVal = packet.answers['gender'] && /gender/i.test(label) ? packet.answers['gender']
         : packet.answers['ethnicity'] && /race|ethnic/i.test(label) ? packet.answers['ethnicity']
@@ -263,14 +268,15 @@ export async function fillVisibleForm(
       continue;
     }
 
-    const m = matchers.find((mm) => mm.test.test(label));
+    const m = matchers.find((mm) => mm.test.test(labelNorm));
     // Canonical matcher first, then the user's taught answer bank (answers the
     // user provided for this exact question on a previous application).
-    const value = m?.value(packet) ?? packet.answers[slug(label)];
+    const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
     const via = m?.value(packet) ? m!.key : 'answer_bank';
     if (value) {
       if (await verifiedFill(el, value)) {
         report.filled.push({ label, value: value.slice(0, 60), via });
+        fullValues.set(label, value);
         if (m?.key === 'cover_letter') report.coverLetterAttached = true;
       } else if (required) {
         report.unanswered.push(label + ' (fill did not stick)');
@@ -283,6 +289,7 @@ export async function fillVisibleForm(
         if (await verifiedFill(el, guess)) {
           report.guessed.push(label);
           report.filled.push({ label, value: guess.slice(0, 60), via: 'ai_guess' });
+          fullValues.set(label, guess);
         } else {
           report.unanswered.push(label);
         }
@@ -303,15 +310,16 @@ export async function fillVisibleForm(
     const el = selects.nth(i);
     if (!(await el.isVisible().catch(() => false))) continue;
     const label = (await labelFor(root, el)) || (await el.getAttribute('name')) || '';
-    const m = matchers.find((mm) => mm.test.test(label));
-    const value = m?.value(packet) ?? packet.answers[slug(label)];
+    const labelNorm = label.replace(/[_-]+/g, ' ');
+    const m = matchers.find((mm) => mm.test.test(labelNorm));
+    const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
     const optionTexts: string[] = await el.locator('option').allTextContents();
     const verifiedSelect = async (optionLabel: string): Promise<boolean> => {
       await el.selectOption({ label: optionLabel }, { timeout: 5000 }).catch(() => {});
       const after = await el.inputValue().catch(() => '');
       return !!after;
     };
-    if (EEO_PATTERN.test(label) && !value) {
+    if (EEO_PATTERN.test(labelNorm) && !value) {
       const decline = optionTexts.find((o) => /decline|prefer not|don.t wish/i.test(o));
       if (decline && (await verifiedSelect(decline))) {
         report.filled.push({ label, value: decline, via: 'eeo_decline' });
@@ -346,11 +354,12 @@ export async function fillVisibleForm(
     if (current && !/^select/i.test(current)) continue; // already has a real value
     const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
     if (!label) continue;
+    const labelNorm = label.replace(/[_-]+/g, ' ');
     const required = (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
-    const isEeo = EEO_PATTERN.test(label);
+    const isEeo = EEO_PATTERN.test(labelNorm);
 
-    const m = matchers.find((mm) => mm.test.test(label));
-    const value = m?.value(packet) ?? packet.answers[slug(label)];
+    const m = matchers.find((mm) => mm.test.test(labelNorm));
+    const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
     if (!value && !isEeo) {
       if (required) report.unanswered.push(label);
       else report.skippedOptional.push(label);
@@ -398,6 +407,36 @@ export async function fillVisibleForm(
     } catch {
       await page.keyboard.press('Escape').catch(() => {});
       if (required && !isEeo) report.unanswered.push(label + ' (dropdown interaction failed)');
+    }
+  }
+
+  // 5) End-state audit — React forms can clear values after we move on (state
+  //    resets, re-renders). The report must describe the FINAL form, not our
+  //    attempts: re-read every field we filled, re-fill once if the value
+  //    vanished, and demote anything still empty so it reaches the user's
+  //    answer loop instead of being claimed as done.
+  if (fullValues.size > 0) {
+    await page.waitForTimeout(800); // let any pending re-render settle
+    const auditInputs = root.locator(
+      `${scope} input[type="text"], ${scope} input[type="email"], ${scope} input[type="tel"], ${scope} input[type="url"], ${scope} input:not([type]), ${scope} textarea`
+    );
+    const auditCount = await auditInputs.count();
+    for (let i = 0; i < auditCount; i++) {
+      const el = auditInputs.nth(i);
+      if (!(await el.isVisible().catch(() => false))) continue;
+      const label = (await labelFor(root, el)) || (await el.getAttribute('placeholder')) || (await el.getAttribute('name')) || '';
+      const intended = fullValues.get(label);
+      if (!intended) continue;
+      let current = await el.inputValue().catch(() => '');
+      if (!current.trim()) {
+        await verifiedFill(el, intended);
+        current = await el.inputValue().catch(() => '');
+      }
+      if (!current.trim()) {
+        const idx = report.filled.findIndex((f) => f.label === label);
+        if (idx >= 0) report.filled.splice(idx, 1);
+        report.unanswered.push(label + ' (value did not persist — the form cleared it)');
+      }
     }
   }
 
@@ -462,10 +501,20 @@ async function labelFor(scope: FormScope, el: ReturnType<FormScope['locator']>):
   const wrapped = await el.evaluate((node: Element) => {
     const l = node.closest('label');
     if (l) return l.textContent || '';
-    // common ATS pattern: label sibling above the input's container
-    const container = node.closest('div, li, fieldset');
-    const prev = container?.querySelector('label, legend, .label, [class*="label"]');
-    return prev?.textContent || '';
+    // Walk up ancestors, but ONLY trust a container that holds exactly one
+    // form control — otherwise we steal a NEIGHBORING field's label (which
+    // put a first name into "Current Company" on Greenhouse's React forms).
+    let container: Element | null = node.parentElement;
+    for (let depth = 0; depth < 4 && container; depth++) {
+      const controls = container.querySelectorAll('input:not([type="hidden"]), textarea, select, [role="combobox"]');
+      if (controls.length === 1) {
+        const lbl = container.querySelector('label, legend, .label, [class*="label"]');
+        if (lbl?.textContent?.trim()) return lbl.textContent;
+      }
+      if (controls.length > 1) break; // multi-field section — stop, don't guess
+      container = container.parentElement;
+    }
+    return '';
   }).catch(() => '');
   return wrapped ? wrapped.trim().slice(0, 200) : null;
 }

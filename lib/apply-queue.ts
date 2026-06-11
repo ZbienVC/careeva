@@ -263,6 +263,7 @@ export async function enqueueApplyTask(
           githubUrl: personalInfo.githubUrl || undefined,
           portfolioUrl: personalInfo.portfolioUrl || undefined,
           location: [personalInfo.city, personalInfo.state].filter(Boolean).join(', ') || undefined,
+          country: (await import('@/lib/geo')).canonicalCountry(personalInfo.country),
         },
         qualityScore: packet.qualityScore,
         archetype: packet.archetype,

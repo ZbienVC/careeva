@@ -60,7 +60,7 @@ export interface Packet {
   answers: Record<string, string>;
   coverLetter?: string;
   resumeKey?: string;
-  identity: { firstName: string; lastName: string; fullName: string; email: string; phone?: string; linkedinUrl?: string; githubUrl?: string; portfolioUrl?: string; location?: string };
+  identity: { firstName: string; lastName: string; fullName: string; email: string; phone?: string; linkedinUrl?: string; githubUrl?: string; portfolioUrl?: string; location?: string; country?: string };
 }
 
 export function getPacket(task: TaskLike): Packet {
@@ -87,6 +87,7 @@ export function buildMatchers(p: Packet): Matcher[] {
     { key: 'full_name', test: /^(full\s*)?name$|your\s*name/i, value: () => id.fullName },
     { key: 'email', test: /e-?mail/i, value: () => id.email },
     { key: 'phone', test: /phone|mobile|cell/i, value: () => id.phone || a['phone'] },
+    { key: 'country', test: /^country|country\s*[*]?$|country\s+of\s+residence/i, value: () => id.country || a['country'] },
     { key: 'location', test: /location|city|current\s+address|where.*based|state\s+or\s+province|which\s+state|state\s*\/\s*province/i, value: () => id.location || a['address'] },
     { key: 'linkedin_url', test: /linked\s*in/i, value: () => id.linkedinUrl || a['linkedin_url'] },
     { key: 'github_url', test: /github/i, value: () => id.githubUrl || a['github_url'] },
@@ -106,7 +107,7 @@ export function buildMatchers(p: Packet): Matcher[] {
   ];
 }
 
-const EEO_PATTERN = /gender|race|ethnic|veteran|disabilit|sexual\s+orientation|transgender/i;
+const EEO_PATTERN = /gender|race|ethnic|veteran|disabilit|sexual\s+orientation|transgender|lgbtq|2slgbtqia|person\s+of\s+colou?r|indigenous|pronoun/i;
 
 // ─── Overlay/consent dismissal ─────────────────────────────────────────────────
 // Cookie banners (OneTrust et al.) intercept pointer events and silently block
@@ -347,6 +348,9 @@ export async function fillVisibleForm(
   const combos = root.locator(`${scope} [role="combobox"], ${scope} input[aria-haspopup="listbox"], ${scope} button[aria-haspopup="listbox"]`);
   const cbCount = await combos.count();
   report.diag.comboboxes = cbCount;
+  // One widget often matches twice (outer role=combobox + inner haspopup
+  // input) — process each labeled question once.
+  const seenComboLabels = new Set<string>();
   for (let i = 0; i < cbCount; i++) {
     const el = combos.nth(i);
     if (!(await el.isVisible().catch(() => false))) continue;
@@ -354,6 +358,8 @@ export async function fillVisibleForm(
     if (current && !/^select/i.test(current)) continue; // already has a real value
     const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
     if (!label) continue;
+    if (seenComboLabels.has(label)) continue;
+    seenComboLabels.add(label);
     const labelNorm = label.replace(/[_-]+/g, ' ');
     const required = (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
     const isEeo = EEO_PATTERN.test(labelNorm);
@@ -367,7 +373,13 @@ export async function fillVisibleForm(
     }
 
     try {
-      await el.click({ timeout: 4000 });
+      // Transient misses happen on React widgets — one retry before giving up.
+      try {
+        await el.click({ timeout: 4000 });
+      } catch {
+        await page.waitForTimeout(1000);
+        await el.click({ timeout: 4000 });
+      }
       await page.waitForTimeout(500);
       // Options often render in a portal at the document root — search broadly.
       const options = root.locator('[role="option"]');
@@ -439,6 +451,11 @@ export async function fillVisibleForm(
       }
     }
   }
+
+  // The same question can be recorded twice (duplicate widgets, audit) —
+  // present each once.
+  report.unanswered = [...new Set(report.unanswered)];
+  report.skippedOptional = [...new Set(report.skippedOptional)];
 
   const ok = report.unanswered.length === 0;
   return {

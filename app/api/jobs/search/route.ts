@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
       leverBoards: [...new Set(leverBoards)].slice(0, 20),
       userCountry: canonicalCountry(personalInfo?.country),
       allowInternational: relocationScope === 'international',
+      homeState: personalInfo?.state || undefined,
+      relocationScope,
     });
 
     return NextResponse.json({

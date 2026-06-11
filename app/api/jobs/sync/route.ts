@@ -67,6 +67,8 @@ export async function POST(request: NextRequest) {
       leverBoards: [],
       userCountry: canonicalCountry(personalInfo?.country),
       allowInternational: relocationScope === 'international',
+      homeState: personalInfo?.state || undefined,
+      relocationScope,
     });
 
     // ── Count active jobs ─────────────────────────────────────────────────────

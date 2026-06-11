@@ -93,6 +93,8 @@ export async function POST(request: NextRequest) {
               sources: getAvailableSources(),
               userCountry: canonicalCountry(user.personalInfo?.country),
               allowInternational: scope === 'international',
+              homeState: user.personalInfo?.state || undefined,
+              relocationScope: scope,
             });
             userNewJobs += agg.new;
             allStats.newJobs += agg.new;
@@ -171,7 +173,8 @@ export async function POST(request: NextRequest) {
         const autoConfig = await prisma.autoApplyConfig.findUnique({ where: { userId: user.id } });
         if (autoConfig?.autoApplyEnabled) {
           const gate = autoConfig.minScoreToApply ?? 65;
-          const perRunCap = Math.min(autoConfig.maxAppliesPerRun || 10, 15);
+          // 0 = unlimited (the daily cap in enqueue still governs volume)
+          const perRunCap = autoConfig.maxAppliesPerRun > 0 ? autoConfig.maxAppliesPerRun : 1000;
           const candidates = await prisma.job.findMany({
             where: {
               userId: user.id,

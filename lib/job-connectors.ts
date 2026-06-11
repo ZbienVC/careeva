@@ -9,7 +9,7 @@
  */
 
 import { prisma } from '@/lib/db';
-import { isForeignLocation, parseRelocationScope, canonicalCountry } from '@/lib/geo';
+import { isForeignLocation, parseRelocationScope, canonicalCountry, detectUSState, allowedStatesFor } from '@/lib/geo';
 import crypto from 'crypto';
 
 // ─── Company name lookup ──────────────────────────────────────────────────────
@@ -217,6 +217,7 @@ interface IngestGate {
   titlePatterns: RegExp[];
   userCountry: string;
   allowInternational: boolean;
+  allowedStates: Set<string> | null;
   at: number;
 }
 
@@ -232,7 +233,7 @@ async function getIngestGate(userId: string): Promise<IngestGate> {
       where: { userId },
       select: { targetTitles: true, relocationNote: true, willingToRelocate: true },
     }),
-    prisma.personalInfo.findUnique({ where: { userId }, select: { country: true } }),
+    prisma.personalInfo.findUnique({ where: { userId }, select: { country: true, state: true } }),
   ]);
 
   const tokens = new Set<string>();
@@ -249,6 +250,7 @@ async function getIngestGate(userId: string): Promise<IngestGate> {
     ),
     userCountry: canonicalCountry(personalInfo?.country),
     allowInternational: scope === 'international',
+    allowedStates: allowedStatesFor(personalInfo?.state, scope),
     at: Date.now(),
   };
   gateCache.set(userId, gate);
@@ -275,6 +277,12 @@ async function upsertJob(userId: string, scrapeRunId: string, jobData: {
   // postings that name another country are country-restricted hiring.
   if (!gate.allowInternational && isForeignLocation(location, gate.userCountry)) {
     return 'filtered';
+  }
+  // On-site in a far-away state is not a real option unless relocating
+  // nationally. Remote exempt; undetectable states pass.
+  if (!isRemote && gate.allowedStates) {
+    const jobState = detectUSState(location);
+    if (jobState && !gate.allowedStates.has(jobState)) return 'filtered';
   }
 
   const dedupeKey = makeDedupeKey(company, title, location);

@@ -134,7 +134,7 @@ export default function AutomatePage() {
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<Mode>('score_only');
   const [threshold, setThreshold] = useState(65);
-  const [maxApplies, setMaxApplies] = useState(10);
+  const [maxApplies, setMaxApplies] = useState(0); // 0 = unlimited
   const [doSearch, setDoSearch] = useState(true);
   const [pipeline, setPipeline] = useState<any>(null);
   const [recentApps, setRecentApps] = useState<any[]>([]);
@@ -464,10 +464,10 @@ export default function AutomatePage() {
               </div>
               <div>
                 <label className="field-label !text-xs font-bold uppercase tracking-wider !text-slate-400">
-                  Max applications: <span className="normal-case font-black text-white">{maxApplies}</span>
+                  Max applications: <span className="normal-case font-black text-white">{maxApplies === 0 ? 'Unlimited' : maxApplies}</span>
                 </label>
-                <input type="range" min="1" max="20" step="1" value={maxApplies} onChange={e => setMaxApplies(+e.target.value)} className="w-full accent-blue-500" />
-                <div className="mt-1 flex justify-between text-[10px] text-slate-500"><span>1</span><span>20/run</span></div>
+                <input type="range" min="0" max="100" step="5" value={maxApplies} onChange={e => setMaxApplies(+e.target.value)} className="w-full accent-blue-500" />
+                <div className="mt-1 flex justify-between text-[10px] text-slate-500"><span>0 = unlimited</span><span>100/run</span></div>
               </div>
             </div>
           </div>

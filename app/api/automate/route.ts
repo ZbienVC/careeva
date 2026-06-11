@@ -142,6 +142,8 @@ export async function POST(request: NextRequest) {
             userId: user.id, queries, locations, sources,
             userCountry: canonicalCountry(personalInfo?.country),
             allowInternational: scope === 'international',
+            homeState: personalInfo?.state || undefined,
+            relocationScope: scope,
           });
           stats.searched += agg.new;
           runLog.push('Aggregator complete: ' + agg.new + ' new jobs (' + agg.duped + ' duplicates skipped, ' + agg.filtered + ' irrelevant/out-of-area filtered, ' + agg.total + ' total found)');
@@ -222,9 +224,13 @@ export async function POST(request: NextRequest) {
       },
       take: 500,
     });
-    // BUGFIX: previously ordered by jobScores _count (meaningless); order by actual score.
-    topJobs.sort((a: { jobScores: Array<{ overallScore: number | null }> }, b: { jobScores: Array<{ overallScore: number | null }> }) =>
-      (b.jobScores[0]?.overallScore || 0) - (a.jobScores[0]?.overallScore || 0));
+    // Order by score; among equal scores, newer postings first ("newer better").
+    topJobs.sort((a: { jobScores: Array<{ overallScore: number | null }>; postedAt: Date | null; createdAt: Date },
+                  b: { jobScores: Array<{ overallScore: number | null }>; postedAt: Date | null; createdAt: Date }) => {
+      const scoreDiff = (b.jobScores[0]?.overallScore || 0) - (a.jobScores[0]?.overallScore || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return +(b.postedAt || b.createdAt) - +(a.postedAt || a.createdAt);
+    });
 
     // Honor the user's blacklists/whitelist BEFORE the per-run cap, so blocked
     // jobs don't consume application slots.

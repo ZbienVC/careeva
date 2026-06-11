@@ -148,6 +148,61 @@ export function isForeignLocation(location: string | null | undefined, userCount
   return detected !== null && detected !== userCountry;
 }
 
+/** Detect a US state (as abbreviation) from a free-text job location. */
+export function detectUSState(location: string | null | undefined): string | null {
+  if (!location) return null;
+  const abbrevMatch = location.match(/,\s*([A-Z]{2})(?:\s+\d{5})?\s*(?:,|$|\s)/);
+  if (abbrevMatch && US_STATE_ABBREVS.includes(abbrevMatch[1])) return abbrevMatch[1];
+  const loc = location.toLowerCase();
+  for (let i = 0; i < US_STATE_NAMES.length; i++) {
+    if (new RegExp(`(^|[\\s,])${US_STATE_NAMES[i]}($|[\\s,)])`).test(loc)) return US_STATE_ABBREVS[i];
+  }
+  return null;
+}
+
+// Adjacent-state map for "my region" relocation scope.
+const STATE_NEIGHBORS: Record<string, string[]> = {
+  AL: ['FL', 'GA', 'MS', 'TN'], AK: [], AZ: ['CA', 'CO', 'NM', 'NV', 'UT'],
+  AR: ['LA', 'MO', 'MS', 'OK', 'TN', 'TX'], CA: ['AZ', 'NV', 'OR'],
+  CO: ['AZ', 'KS', 'NE', 'NM', 'OK', 'UT', 'WY'], CT: ['MA', 'NY', 'RI'],
+  DE: ['MD', 'NJ', 'PA'], FL: ['AL', 'GA'], GA: ['AL', 'FL', 'NC', 'SC', 'TN'],
+  HI: [], ID: ['MT', 'NV', 'OR', 'UT', 'WA', 'WY'], IL: ['IA', 'IN', 'KY', 'MO', 'WI'],
+  IN: ['IL', 'KY', 'MI', 'OH'], IA: ['IL', 'MN', 'MO', 'NE', 'SD', 'WI'],
+  KS: ['CO', 'MO', 'NE', 'OK'], KY: ['IL', 'IN', 'MO', 'OH', 'TN', 'VA', 'WV'],
+  LA: ['AR', 'MS', 'TX'], ME: ['NH'], MD: ['DE', 'PA', 'VA', 'WV', 'DC'],
+  MA: ['CT', 'NH', 'NY', 'RI', 'VT'], MI: ['IN', 'OH', 'WI'],
+  MN: ['IA', 'ND', 'SD', 'WI'], MS: ['AL', 'AR', 'LA', 'TN'],
+  MO: ['AR', 'IA', 'IL', 'KS', 'KY', 'NE', 'OK', 'TN'], MT: ['ID', 'ND', 'SD', 'WY'],
+  NE: ['CO', 'IA', 'KS', 'MO', 'SD', 'WY'], NV: ['AZ', 'CA', 'ID', 'OR', 'UT'],
+  NH: ['MA', 'ME', 'VT'], NJ: ['DE', 'NY', 'PA', 'CT'], NM: ['AZ', 'CO', 'OK', 'TX'],
+  NY: ['CT', 'MA', 'NJ', 'PA', 'VT'], NC: ['GA', 'SC', 'TN', 'VA'],
+  ND: ['MN', 'MT', 'SD'], OH: ['IN', 'KY', 'MI', 'PA', 'WV'],
+  OK: ['AR', 'CO', 'KS', 'MO', 'NM', 'TX'], OR: ['CA', 'ID', 'NV', 'WA'],
+  PA: ['DE', 'MD', 'NJ', 'NY', 'OH', 'WV'], RI: ['CT', 'MA'],
+  SC: ['GA', 'NC'], SD: ['IA', 'MN', 'MT', 'ND', 'NE', 'WY'],
+  TN: ['AL', 'AR', 'GA', 'KY', 'MO', 'MS', 'NC', 'VA'], TX: ['AR', 'LA', 'NM', 'OK'],
+  UT: ['AZ', 'CO', 'ID', 'NV', 'WY'], VT: ['MA', 'NH', 'NY'],
+  VA: ['KY', 'MD', 'NC', 'TN', 'WV', 'DC'], WA: ['ID', 'OR'],
+  WV: ['KY', 'MD', 'OH', 'PA', 'VA'], WI: ['IA', 'IL', 'MI', 'MN'], WY: ['CO', 'ID', 'MT', 'NE', 'SD', 'UT'],
+  DC: ['MD', 'VA'],
+};
+
+/**
+ * The states an on-site job may be in, given the user's home state and
+ * relocation scope. Returns null when no state restriction applies
+ * (national/international scope, or unknown home state).
+ */
+export function allowedStatesFor(homeState: string | null | undefined, scope: RelocationScope): Set<string> | null {
+  const home = (homeState || '').trim().toUpperCase();
+  if (!home || !US_STATE_ABBREVS.includes(home)) return null;
+  if (scope === 'national' || scope === 'international') return null;
+  if (scope === 'none') return new Set([home, ...(STATE_NEIGHBORS[home] || [])]);
+  // regional: home + neighbors + neighbors-of-neighbors
+  const allowed = new Set([home, ...(STATE_NEIGHBORS[home] || [])]);
+  for (const n of STATE_NEIGHBORS[home] || []) for (const nn of STATE_NEIGHBORS[n] || []) allowed.add(nn);
+  return allowed;
+}
+
 /**
  * The relocation scopes the product offers. Stored in
  * JobPreferences.relocationNote as a machine-readable token.

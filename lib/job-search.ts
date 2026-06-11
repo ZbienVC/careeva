@@ -14,7 +14,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { isForeignLocation } from '@/lib/geo';
+import { isForeignLocation, detectUSState, allowedStatesFor, RelocationScope } from '@/lib/geo';
 import crypto from 'crypto';
 
 const SERP_API_KEY = process.env.SERP_API_KEY || '';
@@ -812,6 +812,10 @@ export interface JobSearchParams {
   userCountry?: string;
   /** Keep foreign on-site jobs when the user is open to international relocation. */
   allowInternational?: boolean;
+  /** Home state (e.g. "NJ") + relocation scope: on-site jobs in far-away
+   *  states are dropped when the scope is none/regional. */
+  homeState?: string;
+  relocationScope?: RelocationScope;
 }
 
 export async function aggregateJobSearch(params: JobSearchParams): Promise<{ total: number; new: number; duped: number; filtered: number }> {
@@ -826,7 +830,10 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     applyRelevanceFilter = true,
     userCountry = 'United States',
     allowInternational = false,
+    homeState,
+    relocationScope = 'none',
   } = params;
+  const allowedStates = allowedStatesFor(homeState, relocationScope);
 
   // Create scrape run
   const scrapeRun = await prisma.scrapeRun.create({
@@ -951,6 +958,16 @@ export async function aggregateJobSearch(params: JobSearchParams): Promise<{ tot
     if (!allowInternational && isForeignLocation(job.location, userCountry)) {
       filteredCount++;
       return false;
+    }
+    // On-site/hybrid in a far-away state (SF for an NJ user) is not a real
+    // option when the user isn't relocating nationally. Remote stays exempt;
+    // undetectable states get the benefit of the doubt.
+    if (!job.isRemote && allowedStates) {
+      const jobState = detectUSState(job.location);
+      if (jobState && !allowedStates.has(jobState)) {
+        filteredCount++;
+        return false;
+      }
     }
     return true;
   });

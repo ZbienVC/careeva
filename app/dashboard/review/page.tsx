@@ -10,6 +10,7 @@ import {
   IconArrowRight,
   IconLink,
 } from '@/components/icons';
+import { stripDiagnostics, slugifyQuestion } from '@/lib/answer-key';
 
 interface Task {
   id: string;
@@ -107,16 +108,14 @@ export default function ReviewQueuePage() {
     load();
   };
 
-  // Mirrors the worker's label slug — answers keyed this way match the form
-  // field on refill AND auto-fill the same question on future applications.
-  const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 50);
-
   const openEditor = (t: Task) => {
     const answers: Record<string, string> = { ...(t.packet?.answers || {}) };
     const texts: Record<string, string> = {};
     for (const question of t.fieldReport?.unanswered || []) {
-      const clean = question.replace(/\s*\((fill did not stick|no option matched[^)]*)\)\s*$/i, '').trim();
-      const key = slugify(clean);
+      // The worker's diagnostic suffix must NEVER reach the saved key or
+      // question text — a polluted key can't match the form field again.
+      const clean = stripDiagnostics(question);
+      const key = slugifyQuestion(clean);
       if (!(key in answers)) answers[key] = '';
       texts[key] = clean;
     }

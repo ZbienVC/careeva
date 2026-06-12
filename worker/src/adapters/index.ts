@@ -88,7 +88,8 @@ export function buildMatchers(p: Packet): Matcher[] {
     { key: 'email', test: /e-?mail/i, value: () => id.email },
     { key: 'phone', test: /phone|mobile|cell/i, value: () => id.phone || a['phone'] },
     { key: 'country', test: /^country|country\s*[*]?$|country\s+of\s+residence/i, value: () => id.country || a['country'] },
-    { key: 'location', test: /location|city|current\s+address|where.*based|state\s+or\s+province|which\s+state|state\s*\/\s*province/i, value: () => id.location || a['address'] },
+    // \bcity\b: a bare "city" substring also matches "ethniCITY" (an EEO label)
+    { key: 'location', test: /location|\bcity\b|current\s+address|where.*based|state\s+or\s+province|which\s+state|state\s*\/\s*province/i, value: () => id.location || a['address'] },
     { key: 'linkedin_url', test: /linked\s*in/i, value: () => id.linkedinUrl || a['linkedin_url'] },
     { key: 'github_url', test: /github/i, value: () => id.githubUrl || a['github_url'] },
     { key: 'portfolio_url', test: /portfolio|personal\s+(web)?site|website/i, value: () => id.portfolioUrl || a['portfolio_url'] },
@@ -108,6 +109,61 @@ export function buildMatchers(p: Packet): Matcher[] {
 }
 
 const EEO_PATTERN = /gender|race|ethnic|veteran|disabilit|sexual\s+orientation|transgender|lgbtq|2slgbtqia|person\s+of\s+colou?r|indigenous|pronoun/i;
+
+/** Unselected-dropdown placeholder texts ("Select...", "Please choose", "--"). */
+export const PLACEHOLDER_RE = /^(please\s+)?(select|choose)\b|^--|^—|^\s*$/i;
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Choose which option text best matches the wanted answer. Tier order matters:
+ * exact equality, then whole-word yes/no, then prefix, then substring —
+ * substring LAST and never for yes/no, because "No" is a substring of
+ * "Non-binary", "Norway", and "Notice period" (real cross-fill bugs).
+ * EEO questions fall back to a decline-to-answer option: neutral, and an
+ * empty required dropdown blocks submission.
+ */
+export function pickOption(
+  wanted: string | undefined,
+  optionTexts: string[],
+  opts: { eeoDecline?: boolean } = {}
+): string | undefined {
+  const options = optionTexts.filter((o) => o.trim() && !PLACEHOLDER_RE.test(o.trim()));
+  const norm = (s: string) => s.trim().toLowerCase();
+  if (wanted && wanted.trim()) {
+    const w = norm(wanted);
+    const exact = options.find((o) => norm(o) === w);
+    if (exact) return exact;
+    const yesNo = /^(yes|no)$/.exec(w)?.[1];
+    if (yesNo) {
+      const hit = options.find((o) => new RegExp(`^${yesNo}\\b`, 'i').test(o.trim()));
+      if (hit) return hit;
+    } else {
+      const prefix = w.length >= 3 ? options.find((o) => norm(o).startsWith(w)) : undefined;
+      if (prefix) return prefix;
+      const substr = w.length >= 4 ? options.find((o) => norm(o).includes(w)) : undefined;
+      if (substr) return substr;
+      // Verbose stored answer, terse option: "Yes — authorized to work" → "Yes".
+      const reverse = options
+        .filter((o) => norm(o).length >= 3 && w.startsWith(norm(o)))
+        .sort((a, b) => norm(b).length - norm(a).length)[0];
+      if (reverse) return reverse;
+      const word = /^(yes|no)\b/.exec(w)?.[1];
+      if (word) {
+        const hit = options.find((o) => new RegExp(`^${word}\\b`, 'i').test(o.trim()));
+        if (hit) return hit;
+      }
+    }
+    const state = expandedStateOption(wanted, options);
+    if (state) return state;
+  }
+  if (opts.eeoDecline) {
+    return options.find((o) => /decline|prefer not|don.t wish|do not wish|rather not say/i.test(o));
+  }
+  return undefined;
+}
 
 // ─── Overlay/consent dismissal ─────────────────────────────────────────────────
 // Cookie banners (OneTrust et al.) intercept pointer events and silently block
@@ -242,6 +298,15 @@ export async function fillVisibleForm(
   for (let i = 0; i < count; i++) {
     const el = textInputs.nth(i);
     if (!(await el.isVisible().catch(() => false))) continue;
+    // Combobox filter inputs masquerade as text inputs. Typing raw text into
+    // one shows a value but selects NOTHING — the dropdown pass owns them.
+    const isComboInput = await el.evaluate((node: Element) =>
+      node.getAttribute('role') === 'combobox' ||
+      node.hasAttribute('aria-haspopup') ||
+      node.hasAttribute('aria-autocomplete') ||
+      !!node.closest('[role="combobox"]')
+    ).catch(() => false);
+    if (isComboInput) continue;
     const existing = await el.inputValue().catch(() => '');
     if (existing) continue; // never clobber prefilled values
     const label = (await labelFor(root, el)) || (await el.getAttribute('placeholder')) || (await el.getAttribute('name')) || '';
@@ -321,19 +386,17 @@ export async function fillVisibleForm(
       return !!after;
     };
     if (EEO_PATTERN.test(labelNorm) && !value) {
-      const decline = optionTexts.find((o) => /decline|prefer not|don.t wish/i.test(o));
+      const decline = pickOption(undefined, optionTexts, { eeoDecline: true });
       if (decline && (await verifiedSelect(decline))) {
         report.filled.push({ label, value: decline, via: 'eeo_decline' });
       }
       continue;
     }
     if (value) {
-      const target = optionTexts.find((o) => o.toLowerCase().includes(value.toLowerCase().slice(0, 20)))
-        || (/^yes$/i.test(value) ? optionTexts.find((o) => /^yes/i.test(o)) : undefined)
-        || (/^no$/i.test(value) ? optionTexts.find((o) => /^no/i.test(o)) : undefined)
-        // "Which state/province do you live in?" — expand abbreviations from
-        // the user's location ("Hawthorne, NJ" -> "New Jersey").
-        || expandedStateOption(value, optionTexts);
+      // Exact-first tiered matching; "Which state/province do you live in?"
+      // also expands abbreviations from the user's location ("Hawthorne, NJ"
+      // -> "New Jersey").
+      const target = pickOption(value, optionTexts, { eeoDecline: EEO_PATTERN.test(labelNorm) });
       if (target && (await verifiedSelect(target))) {
         report.filled.push({ label, value: target, via: m?.key || 'answer_bank' });
       } else {
@@ -351,27 +414,48 @@ export async function fillVisibleForm(
   // One widget often matches twice (outer role=combobox + inner haspopup
   // input) — process each labeled question once.
   const seenComboLabels = new Set<string>();
-  for (let i = 0; i < cbCount; i++) {
-    const el = combos.nth(i);
-    if (!(await el.isVisible().catch(() => false))) continue;
-    const current = ((await el.inputValue().catch(() => '')) || (await el.textContent().catch(() => '')) || '').trim();
-    if (current && !/^select/i.test(current)) continue; // already has a real value
-    const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
-    if (!label) continue;
-    if (seenComboLabels.has(label)) continue;
-    seenComboLabels.add(label);
-    const labelNorm = label.replace(/[_-]+/g, ' ');
-    const required = (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
-    const isEeo = EEO_PATTERN.test(labelNorm);
+  // Remember combobox picks so the end-state audit can re-verify them.
+  const comboFills = new Map<string, string>();
 
-    const m = matchers.find((mm) => mm.test.test(labelNorm));
-    const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
-    if (!value && !isEeo) {
-      if (required) report.unanswered.push(label);
-      else report.skippedOptional.push(label);
-      continue;
-    }
+  // What the widget currently displays. React-select-style widgets keep the
+  // chosen option in a sibling node (the input stays empty), so fall back to
+  // the field container's text minus the label.
+  const comboDisplay = async (el: ReturnType<FormScope['locator']>, label: string): Promise<string> => {
+    const own = ((await el.inputValue().catch(() => '')) || (await el.textContent().catch(() => '')) || '').trim();
+    if (own) return own;
+    const text = await el.evaluate((node: Element) => {
+      let c: Element | null = node.parentElement;
+      for (let d = 0; d < 4 && c; d++) {
+        const t = (c.textContent || '').trim();
+        if (t && t.length < 400) {
+          const controls = c.querySelectorAll('input:not([type="hidden"]), select, textarea, [role="combobox"], button[aria-haspopup]');
+          if (controls.length <= 2) return t; // this field's container, not a section
+        }
+        c = c.parentElement;
+      }
+      return '';
+    }).catch(() => '');
+    return text.replace(label, '').trim();
+  };
 
+  // Whole-word check so "No" doesn't count as shown inside "now"/"Non-binary".
+  const displayShows = (display: string, target: string): boolean => {
+    if (!display) return false;
+    const re = new RegExp('(^|\\W)' + escapeRegex(target.trim()).replace(/\s+/g, '\\s+') + '($|\\W)', 'i');
+    return re.test(display);
+  };
+
+  /**
+   * Open a combobox, pick the option matching `wanted` (or an EEO decline),
+   * and VERIFY the widget displays it afterwards — a fill the read-back can't
+   * corroborate is reported as a failure, never as filled.
+   */
+  const selectComboOption = async (
+    el: ReturnType<FormScope['locator']>,
+    label: string,
+    wanted: string | undefined,
+    isEeo: boolean
+  ): Promise<{ ok: boolean; picked?: string; reason?: string }> => {
     try {
       // Transient misses happen on React widgets — one retry before giving up.
       try {
@@ -381,45 +465,112 @@ export async function fillVisibleForm(
         await el.click({ timeout: 4000 });
       }
       await page.waitForTimeout(500);
-      // Options often render in a portal at the document root — search broadly.
-      const options = root.locator('[role="option"]');
-      const texts = await options.allTextContents();
-      const wanted = String(value || '');
-      const target =
-        (wanted && texts.find((o) => o.toLowerCase().includes(wanted.toLowerCase().slice(0, 20)))) ||
-        (/^yes/i.test(wanted) ? texts.find((o) => /^yes/i.test(o.trim())) : undefined) ||
-        (/^no/i.test(wanted) ? texts.find((o) => /^no\b/i.test(o.trim())) : undefined) ||
-        (wanted ? expandedStateOption(wanted, texts) : undefined) ||
-        (isEeo ? texts.find((o) => /decline|prefer not|don.t wish|do not wish/i.test(o)) : undefined);
-      if (target) {
-        await options.filter({ hasText: target.trim().slice(0, 40) }).first().click({ timeout: 4000 });
-        report.filled.push({
-          label,
-          value: target.trim().slice(0, 60),
-          via: m?.key || (isEeo ? 'eeo_decline' : 'answer_bank'),
-        });
-        continue;
-      }
-      // Typing-style combobox fallback: type the value and pick/enter.
-      if (wanted) {
+      // Options often render in a portal at the document root — search
+      // broadly but VISIBLE-ONLY: hidden listboxes stay in the DOM (the phone
+      // widget keeps its 240-country menu there permanently), and matching a
+      // hidden "Norfolk Island" against answer "No" then timing out on its
+      // click was the original "dropdown interaction failed".
+      let options = root.locator('[role="option"]:visible');
+      let texts = await options.allTextContents();
+      // Typing-style combobox: options only appear once you type.
+      let typedOpen = false;
+      if (!texts.some((t) => t.trim()) && wanted) {
         await el.pressSequentially(wanted.slice(0, 60), { timeout: 8000 }).catch(() => {});
         await page.waitForTimeout(600);
-        const firstOption = root.locator('[role="option"]').first();
-        if (await firstOption.isVisible().catch(() => false)) {
-          await firstOption.click({ timeout: 3000 }).catch(() => {});
-          report.filled.push({ label, value: wanted.slice(0, 60), via: (m?.key || 'answer_bank') + ':typed' });
-          continue;
-        }
-        await page.keyboard.press('Escape').catch(() => {});
-      } else {
-        await page.keyboard.press('Escape').catch(() => {});
+        options = root.locator('[role="option"]:visible');
+        texts = await options.allTextContents();
+        typedOpen = true;
       }
-      if (required && !isEeo) report.unanswered.push(label + ' (no option matched)');
-      else report.skippedOptional.push(label + (isEeo ? ' (EEO — no decline option found)' : ''));
+      if (!texts.some((t) => t.trim())) {
+        await page.keyboard.press('Escape').catch(() => {});
+        return { ok: false, reason: 'dropdown did not open' };
+      }
+      let target = pickOption(wanted, texts, { eeoDecline: isEeo });
+      // Autocomplete widgets reformat what you type ("Hawthorne, NJ" →
+      // "Hawthorne, NJ, United States"): accept a filtered suggestion that
+      // shares a real word with the answer, but never a blind first option.
+      if (!target && typedOpen && wanted) {
+        const words = wanted.toLowerCase().split(/\W+/).filter((t) => t.length >= 4);
+        target = texts.find((o) => words.some((t) => o.toLowerCase().includes(t)));
+      }
+      if (!target) {
+        await page.keyboard.press('Escape').catch(() => {});
+        return { ok: false, reason: `no option matched "${(wanted || '').slice(0, 30)}"` };
+      }
+      // Click the EXACT option text — substring filters can hit the wrong row.
+      const exact = options.filter({ hasText: new RegExp('^\\s*' + escapeRegex(target.trim()) + '\\s*$', 'i') }).first();
+      const candidate = (await exact.count().catch(() => 0)) ? exact : options.filter({ hasText: target.trim().slice(0, 40) }).first();
+      await candidate.click({ timeout: 4000 });
+      await page.waitForTimeout(300);
+      const shown = await comboDisplay(el, label);
+      const popupGone = (await root.locator('[role="option"]:visible').count().catch(() => 0)) === 0;
+      if (displayShows(shown, target) || (popupGone && (!shown || !PLACEHOLDER_RE.test(shown)))) {
+        return { ok: true, picked: target.trim() };
+      }
+      await page.keyboard.press('Escape').catch(() => {});
+      return { ok: false, reason: 'selection did not register' };
     } catch {
       await page.keyboard.press('Escape').catch(() => {});
-      if (required && !isEeo) report.unanswered.push(label + ' (dropdown interaction failed)');
+      return { ok: false, reason: 'dropdown interaction failed' };
     }
+  };
+
+  for (let i = 0; i < cbCount; i++) {
+    const el = combos.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    const current = ((await el.inputValue().catch(() => '')) || (await el.textContent().catch(() => '')) || '').trim();
+    if (current && !PLACEHOLDER_RE.test(current)) continue; // already has a real value
+    const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
+    if (!label) continue;
+    if (seenComboLabels.has(label)) continue;
+    const labelNorm = label.replace(/[_-]+/g, ' ');
+    const required = (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
+    const isEeo = EEO_PATTERN.test(labelNorm);
+
+    // EEO answers come ONLY from explicit stored answers — a generic matcher
+    // must never leak an unrelated value in ("ethniCITY" once matched the
+    // location matcher and offered the user's city to a race question).
+    const m = isEeo ? undefined : matchers.find((mm) => mm.test.test(labelNorm));
+    const eeoStored = !isEeo ? undefined
+      : packet.answers['gender'] && /gender/i.test(labelNorm) ? packet.answers['gender']
+      : packet.answers['ethnicity'] && /race|ethnic/i.test(labelNorm) ? packet.answers['ethnicity']
+      : packet.answers['veteran_status'] && /veteran/i.test(labelNorm) ? packet.answers['veteran_status']
+      : packet.answers['disability_status'] && /disabilit/i.test(labelNorm) ? packet.answers['disability_status']
+      : undefined;
+    const value = isEeo
+      ? eeoStored ?? packet.answers[slug(labelNorm)]
+      : m?.value(packet) ?? packet.answers[slug(labelNorm)];
+    if (!value && !isEeo) {
+      seenComboLabels.add(label);
+      if (required) report.unanswered.push(label);
+      else report.skippedOptional.push(label);
+      continue;
+    }
+
+    let result = await selectComboOption(el, label, value, isEeo);
+    if (!result.ok && !result.reason?.startsWith('no option matched')) {
+      // Interaction-level failures are often transient — one full re-attempt.
+      result = await selectComboOption(el, label, value, isEeo);
+    }
+    if (result.ok && result.picked) {
+      seenComboLabels.add(label);
+      report.filled.push({
+        label,
+        value: result.picked.slice(0, 60),
+        via: m?.key || (value ? 'answer_bank' : 'eeo_decline'),
+      });
+      comboFills.set(label, result.picked);
+      continue;
+    }
+    // Leave the label unclaimed: cross-wired widgets can share one label (the
+    // phone country selector once stole "Which state or province…"), and the
+    // real dropdown deserves its attempt. Failures dedupe in the final report.
+    // Honest failure reporting. An EEO question the user HAS an answer for
+    // must surface in unanswered — silently leaving it empty blocks
+    // submission with no trace in the report.
+    const reason = result.reason || 'dropdown interaction failed';
+    if (required && (value || !isEeo)) report.unanswered.push(`${label} (${reason})`);
+    else report.skippedOptional.push(`${label} (${isEeo && !value ? 'EEO — ' : ''}${reason})`);
   }
 
   // 5) End-state audit — React forms can clear values after we move on (state
@@ -427,7 +578,7 @@ export async function fillVisibleForm(
   //    attempts: re-read every field we filled, re-fill once if the value
   //    vanished, and demote anything still empty so it reaches the user's
   //    answer loop instead of being claimed as done.
-  if (fullValues.size > 0) {
+  if (fullValues.size > 0 || comboFills.size > 0) {
     await page.waitForTimeout(800); // let any pending re-render settle
     const auditInputs = root.locator(
       `${scope} input[type="text"], ${scope} input[type="email"], ${scope} input[type="tel"], ${scope} input[type="url"], ${scope} input:not([type]), ${scope} textarea`
@@ -450,7 +601,35 @@ export async function fillVisibleForm(
         report.unanswered.push(label + ' (value did not persist — the form cleared it)');
       }
     }
+
+    // Comboboxes get the same treatment: re-read each claimed pick, retry the
+    // selection once if it vanished, then demote honestly.
+    const seenAudit = new Set<string>();
+    for (let i = 0; i < (comboFills.size ? await combos.count().catch(() => 0) : 0); i++) {
+      const el = combos.nth(i);
+      if (!(await el.isVisible().catch(() => false))) continue;
+      const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
+      if (!label || seenAudit.has(label)) continue;
+      const expected = comboFills.get(label);
+      if (!expected) continue;
+      seenAudit.add(label);
+      const shown = await comboDisplay(el, label);
+      if (displayShows(shown, expected) || (shown && !PLACEHOLDER_RE.test(shown))) continue;
+      const redo = await selectComboOption(el, label, expected, EEO_PATTERN.test(label.replace(/[_-]+/g, ' ')));
+      if (redo.ok) continue;
+      const idx = report.filled.findIndex((f) => f.label === label);
+      if (idx >= 0) report.filled.splice(idx, 1);
+      report.unanswered.push(label + ' (selection did not register)');
+    }
   }
+
+  // A label can fail on one widget and succeed on its twin (cross-wired
+  // labels) — a question that ended up filled is not unanswered.
+  const filledLabels = [...new Set(report.filled.map((f) => f.label))];
+  const ultimatelyFilled = (entry: string) =>
+    filledLabels.some((l) => entry === l || entry.startsWith(l + ' ('));
+  report.unanswered = report.unanswered.filter((q) => !ultimatelyFilled(q));
+  report.skippedOptional = report.skippedOptional.filter((q) => !ultimatelyFilled(q));
 
   // The same question can be recorded twice (duplicate widgets, audit) —
   // present each once.

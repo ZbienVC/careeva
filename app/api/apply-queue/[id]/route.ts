@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUserFromRequest } from '@/lib/session';
+import { stripDiagnostics, slugifyQuestion } from '@/lib/answer-key';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -38,17 +39,29 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!edits || typeof edits !== 'object' || Array.isArray(edits)) {
       return NextResponse.json({ error: 'answers object required' }, { status: 400 });
     }
-    const questionTexts: Record<string, string> =
+    const rawQuestionTexts: Record<string, string> =
       body.questionTexts && typeof body.questionTexts === 'object' ? body.questionTexts : {};
+    // Defense in depth: re-derive every key from its CLEAN question text so a
+    // worker diagnostic suffix ("… (dropdown interaction failed)") can never
+    // poison the answer-bank key, regardless of what the client sends.
     const sanitized: Record<string, string> = {};
+    const questionTexts: Record<string, string> = {};
+    const remappedFrom: Record<string, string> = {}; // cleanKey -> original poisoned key
     for (const [key, value] of Object.entries(edits)) {
-      if (typeof value === 'string' && value.trim()) sanitized[key] = value.slice(0, 4000);
+      if (typeof value !== 'string' || !value.trim()) continue;
+      const rawText = rawQuestionTexts[key];
+      const cleanText = rawText ? stripDiagnostics(rawText) : undefined;
+      const cleanKey = cleanText ? slugifyQuestion(cleanText) : key;
+      sanitized[cleanKey] = value.slice(0, 4000);
+      if (cleanText) questionTexts[cleanKey] = cleanText;
+      if (cleanKey !== key) remappedFrom[cleanKey] = key;
     }
     const packet = (task.packet || {}) as Record<string, unknown>;
-    const mergedPacket = {
-      ...packet,
-      answers: { ...((packet.answers as Record<string, string>) || {}), ...sanitized },
-    };
+    const mergedAnswers = { ...((packet.answers as Record<string, string>) || {}), ...sanitized };
+    // Drop the poisoned variants the clean keys replace — they can never
+    // match a form field and would resurface as ghost entries in the editor.
+    for (const oldKey of Object.values(remappedFrom)) delete mergedAnswers[oldKey];
+    const mergedPacket = { ...packet, answers: mergedAnswers };
     const result = await prisma.applyTask.updateMany({
       where: { id, userId: user.id, status: { in: ['awaiting_approval', 'needs_review', 'failed', 'queued'] } },
       data: { packet: mergedPacket, status: 'queued', attempts: 0, claimedBy: null, lastError: null, approvedAt: null },
@@ -74,6 +87,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           isVerified: true,
         },
       }).catch(() => {});
+      // A poisoned-key row this answer replaces is dead weight: it can never
+      // match a form field, but it WOULD keep riding into every packet.
+      const poisoned = remappedFrom[key];
+      if (poisoned && poisoned !== key) {
+        await prisma.reusableAnswer.deleteMany({
+          where: { userId: user.id, questionKey: poisoned },
+        }).catch(() => {});
+      }
     }
 
     return NextResponse.json(await prisma.applyTask.findUnique({ where: { id } }));

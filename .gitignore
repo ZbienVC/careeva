@@ -42,3 +42,4 @@ tsconfig.tsbuildinfo
 
 # Local tooling
 .claude/
+worker/prisma/

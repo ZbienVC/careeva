@@ -304,6 +304,18 @@ async function generateAnswers(
     answers[ans.questionKey] = ans.answerShort || ans.answer;
   }
 
+  // 1b) Current/most-recent employer — asked verbatim by many forms ("name of
+  //     your current or most recent company"). Sourced from work history so the
+  //     worker can fill it without the user re-typing.
+  if (!answers['current_company']) {
+    const recent = await prisma.workHistory.findFirst({
+      where: { userId },
+      orderBy: [{ isCurrent: 'desc' }, { startDate: 'desc' }],
+      select: { company: true },
+    });
+    if (recent?.company) answers['current_company'] = recent.company;
+  }
+
   // 2) Canonical profile-derived answers via the shared answer engine
   //    (lib/answer-engine) — single source of truth for question → answer
   //    logic, same pipeline the /api/answers/resolve endpoint uses.

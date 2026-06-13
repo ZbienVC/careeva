@@ -77,34 +77,170 @@ export function getPacket(task: TaskLike): Packet {
 // ─── Label → answer matching ───────────────────────────────────────────────────
 // Order matters: identity first (exact intent), then canonical answer keys.
 
-type Matcher = { test: RegExp; value: (p: Packet) => string | undefined; key: string };
+type Matcher = { test: RegExp; notTest?: RegExp; value: (p: Packet) => string | undefined; key: string };
 
-export function buildMatchers(p: Packet): Matcher[] {
+/** A matcher matches a label only if `test` hits AND `notTest` (the
+ * false-positive guard) misses. */
+export function matchesLabel(m: { test: RegExp; notTest?: RegExp }, label: string): boolean {
+  return m.test.test(label) && !(m.notTest && m.notTest.test(label));
+}
+
+export function findMatcher(matchers: Matcher[], label: string): Matcher | undefined {
+  return matchers.find((m) => matchesLabel(m, label));
+}
+
+// ─── Canonical question normalization ──────────────────────────────────────────
+// Forms phrase the SAME question many ways ("Are you authorized to work in the
+// US?" vs "...legally authorized..." vs "...in the country for which you
+// applied?"). The matcher maps a label → canonical key, but the user's saved
+// answers are stored under exact-question slugs. We bridge the two by
+// normalizing BOTH the form label AND each stored answer key into the same
+// canonical space. The notTest guards encode false positives found by an
+// adversarial review (other countries, sponsorship reframes, schedule
+// availability, tax residency, "state your reason", etc.) — a WRONG autofill is
+// worse than a blank field.
+
+type CanonRE = { test: RegExp; not?: RegExp };
+
+// Canada work-eligibility — tested BEFORE the US one so a Canada label never
+// grabs the US "Yes".
+const RE_WORK_AUTH_CA: CanonRE = {
+  test: /(?:authoriz|eligible|entitled|legally\s+(?:able|permitted|allowed)|right\s+to\s+work|permitted\s+to\s+work)[^?]*\bwork\b[^?]*\bcanada\b|canadian\s+work\s+(?:authoriz|eligib|permit)/i,
+  not: /sponsor|immigration|other\s+than|overtime|weekend|\bnight\b|\bshift\b|remotely|from\s+home|\btravel\b/i,
+};
+// Sponsorship — tested BEFORE work authorization (a sponsorship-reframed label
+// mentions "work" too, but its answer is the OPPOSITE polarity).
+const RE_REQUIRES_SPONSORSHIP: CanonRE = {
+  test: /(?:require|need|request)\w*[^?]*\bsponsor|sponsor\w*[^?]*(?:require|need)|(?:visa|immigration|employment|work\s+permit|h-?1-?b)\s+sponsor|sponsor(?:ship)?\s+(?:to\s+work|for\s+employment|is\s+required|required)|now\s+or\s+in\s+the\s+future[^?]*(?:sponsor|immigration)/i,
+  not: /\brefer|athlete|charit|donat|payroll\s+giving|conference/i,
+};
+// US work authorization (incl. the generic "country for which you applied").
+const RE_WORK_AUTH_US: CanonRE = {
+  test: /(?:authoriz|eligible|entitled|legally\s+(?:able|permitted|allowed)|right\s+to\s+work|permitted\s+to\s+work)[^?]*\bwork\b[^?]*(?:united\s+states|u\.?\s?s\.?(?:a)?\b|the\s+country|country\s+(?:for|in)\s+which)|\bwork\b[^?]*\bauthoriz\w*[^?]*(?:united\s+states|u\.?\s?s\.?\b)|^\s*work\s+authori[sz]ation\b/i,
+  not: /sponsor|visa|immigration|canad|kingdom|\buk\b|britain|england|australia|\beu\b|europe|german|france|french|ireland|irish|india|singapore|china|japan|mexico|brazil|netherlands|spain|italy|overtime|weekend|\bnight\b|\bshift\b|flexible\s+hours|remotely|from\s+home|remote\s+work|classified|clearance|itar|equipment|machinery|\brequire[sd]?\b[^?]*\bauthoriz/i,
+};
+const RE_COUNTRY: CanonRE = {
+  test: /^\s*country\b|country\s*\*?\s*$|country\s+of\s+(?:residence|citizenship)|(?:which|what)\s+country\s+do\s+you/i,
+  not: /\bcode\b|\bdial\b|phone/i,
+};
+// Which state/province do you reside in? + "From where do you intend to work?"
+const RE_LOCATION_STATE: CanonRE = {
+  test: /state\s*(?:\/|\s+or\s+)\s*(?:canadian\s+|u\.?s\.?\s+)?province|province\s*(?:\/|\s+or\s+)\s*state|(?:which|what)\s+(?:u\.?s\.?\s+)?state\b[^?]*\b(?:reside|residen|live|living|located|based)|(?:reside|residen|living|located|currently\s+based)\b[^?]*\b(?:state|province)\b|from\s+where\s+do\s+you[^?]*\bwork/i,
+  not: /for\s+tax|tax\s+purpose|universit|college|school|(?:role|position|job)\s+is\s+based|state\s+your|state\s+of\s+mind|were\s+you\s+born/i,
+};
+const RE_HOW_HEARD: CanonRE = {
+  test: /how\s+(?:did|do|were|have)\s+you\s+(?:first\s+)?(?:hear|heard|learn|find\s+out|found\s+out|discover|come\s+to\s+(?:hear|know)|become\s+aware)\s+(?:of|about)|how\s+were\s+you\s+(?:referred|made\s+aware)|referral\s+source|source\s+of\s+(?:referral|your\s+application)|where\s+did\s+you\s+(?:hear|find\s+out)\s+about/i,
+  not: /hear\s+back|our\s+products|competitor|the\s+issue|your\s+(?:strength|weakness|passion)|last\s+role/i,
+};
+// Generic location (city/address) — NOT state/province (that is its own key).
+const RE_LOCATION: CanonRE = {
+  test: /location|\bcity\b|current\s+address|where.*\bbased\b/i,
+  not: /ethnic|relocat/i,
+};
+
+// Order matters — first match wins. More-specific before more-general.
+const CANONICAL_ORDER: Array<[string, CanonRE]> = [
+  ['work_authorization_ca', RE_WORK_AUTH_CA],
+  ['requires_sponsorship', RE_REQUIRES_SPONSORSHIP],
+  ['work_authorization_us', RE_WORK_AUTH_US],
+  ['how_heard', RE_HOW_HEARD],
+  ['location_state', RE_LOCATION_STATE],
+  ['location', RE_LOCATION],
+  ['country', RE_COUNTRY],
+];
+
+function deslug(key: string): string {
+  return key.replace(/[_-]+/g, ' ').trim();
+}
+
+/** Normalize the user's stored answer KEYS (e.g. the slug
+ * "are_you_authorized_to_work_in_the_united_states_") into canonical keys, so a
+ * differently-phrased form reuses the saved answer. */
+export function canonicalAnswersFrom(p: Packet): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(p.answers)) {
+    if (!v || k.startsWith('__')) continue;
+    const label = deslug(k);
+    for (const [canon, re] of CANONICAL_ORDER) {
+      if (matchesLabel({ test: re.test, notTest: re.not }, label)) {
+        if (!out[canon]) out[canon] = v;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Best-effort employer name from the apply URL (greenhouse/lever/ashby slug),
+ * so company-specific questions ("worked for Figma before") match precisely. */
+export function companyFromUrl(url: string | null | undefined): string {
+  if (!url) return '';
+  const m =
+    /(?:job-boards\.|boards\.)?greenhouse\.io\/(?:embed\/job_app\?for=)?([a-z0-9][a-z0-9-]*)/i.exec(url) ||
+    /jobs\.lever\.co\/([a-z0-9][a-z0-9-]*)/i.exec(url) ||
+    /jobs\.ashbyhq\.com\/([a-z0-9][a-z0-9-]*)/i.exec(url);
+  return m ? m[1].replace(/-/g, ' ') : '';
+}
+
+export function buildMatchers(p: Packet, opts: { company?: string } = {}): Matcher[] {
   const a = p.answers;
   const id = p.identity;
+  const canon = canonicalAnswersFrom(p);
+  const company = (opts.company || '').trim();
+
+  // "Have you worked/been employed at <this company> before?" — narrow on
+  // purpose: requires an employment verb, a prior-time word, AND a reference to
+  // THIS employer (here / us / our company / the company slug). Without the
+  // employer anchor a generic regex wrongly fires on "worked with children
+  // before", "worked for the government before", etc. Safe default "No" (the
+  // user has not previously worked at these companies).
+  const companyRef =
+    `(?:\\bhere\\b|\\b(?:with|for|by|at)\\s+us\\b|\\bour\\s+(?:company|organi[sz]ation|team|firm)\\b|\\bthis\\s+(?:company|organi[sz]ation|firm)\\b` +
+    (company ? `|\\b${escapeRegex(company)}\\b` : '') +
+    `)`;
+  const verb = `(?:work\\w*|employ\\w*|contract\\w*|consult\\w*|intern\\w*)`;
+  const workedHereTest = new RegExp(
+    `(?=.*\\b(?:before|previous(?:ly)?|prior|ever|in\\s+the\\s+past|former(?:ly)?|for\\s+any\\s+length)\\b)` +
+      `(?:${verb}[^?]*${companyRef}|${companyRef}[^?]*${verb})`,
+    'i'
+  );
+  const workedHereNot =
+    /current(?:ly)?\s+(?:work|employ)|children|sensitive|recruiter|family|government|competitor|\bunion\b|insurance|salary|reference|staffing|non-?compete|terminated|disciplined|\bpublic\b/i;
+
   return [
-    { key: 'first_name', test: /first\s*name/i, value: () => id.firstName },
+    // Preferred name BEFORE first/last name (it contains "first name").
+    {
+      key: 'preferred_name',
+      test: /preferred\s+(?:first\s+)?name|name\s+you\s+go\s+by|what\s+name\s+do\s+you\s+(?:go\s+by|prefer)|\bnick\s*name\b|what\s+(?:do|should)\s+(?:we|i)\s+call\s+you/i,
+      notTest: /legal\s+name|last\s+name|full\s+name|family\s+name|offer\s+letter|\bbadge\b|call(?:ed)?\s+(?:back|for)|phone\s+screen|first\s+or\s+last/i,
+      value: () => id.firstName,
+    },
+    { key: 'first_name', test: /first\s*name/i, notTest: /preferred/i, value: () => id.firstName },
     { key: 'last_name', test: /last\s*name|surname|family\s*name/i, value: () => id.lastName },
     { key: 'full_name', test: /^(full\s*)?name$|your\s*name/i, value: () => id.fullName },
     { key: 'email', test: /e-?mail/i, value: () => id.email },
     { key: 'phone', test: /phone|mobile|cell/i, value: () => id.phone || a['phone'] },
-    { key: 'country', test: /^country|country\s*[*]?$|country\s+of\s+residence/i, value: () => id.country || a['country'] },
-    // \bcity\b: a bare "city" substring also matches "ethniCITY" (an EEO label)
-    { key: 'location', test: /location|\bcity\b|current\s+address|where.*based|from\s+where|where\s+do\s+you\s+(intend|plan)\s+to\s+work|state\s+or\s+province|which\s+state|state\s*\/\s*province/i, value: () => id.location || a['address'] },
+    // Worked-here-before BEFORE the work-authorization family (both mention "work").
+    { key: 'worked_here_before', test: workedHereTest, notTest: workedHereNot, value: () => a['worked_here_before'] || canon['worked_here_before'] || 'No' },
+    { key: 'work_authorization_ca', test: RE_WORK_AUTH_CA.test, notTest: RE_WORK_AUTH_CA.not, value: () => a['work_authorization_ca'] || canon['work_authorization_ca'] },
+    { key: 'requires_sponsorship', test: RE_REQUIRES_SPONSORSHIP.test, notTest: RE_REQUIRES_SPONSORSHIP.not, value: () => a['requires_sponsorship'] || canon['requires_sponsorship'] },
+    { key: 'work_authorization_us', test: RE_WORK_AUTH_US.test, notTest: RE_WORK_AUTH_US.not, value: () => a['work_authorization_us'] || canon['work_authorization_us'] },
+    { key: 'country', test: RE_COUNTRY.test, notTest: RE_COUNTRY.not, value: () => id.country || a['country'] || canon['country'] },
+    { key: 'location_state', test: RE_LOCATION_STATE.test, notTest: RE_LOCATION_STATE.not, value: () => id.location || a['address'] },
+    { key: 'location', test: RE_LOCATION.test, notTest: RE_LOCATION.not, value: () => id.location || a['address'] },
     { key: 'linkedin_url', test: /linked\s*in/i, value: () => id.linkedinUrl || a['linkedin_url'] },
     { key: 'github_url', test: /github/i, value: () => id.githubUrl || a['github_url'] },
     { key: 'portfolio_url', test: /portfolio|personal\s+(web)?site|website/i, value: () => id.portfolioUrl || a['portfolio_url'] },
-    { key: 'work_authorization_us', test: /authorized\s+to\s+work|work\s+authorization|legally\s+(able|authorized)|right\s+to\s+work/i, value: () => a['work_authorization_us'] },
-    { key: 'requires_sponsorship', test: /sponsorship|require.*visa|now\s+or\s+in\s+the\s+future/i, value: () => a['requires_sponsorship'] },
+    { key: 'current_company', test: /(?:current|present|most\s+recent)\b[^?]{0,25}\b(?:company|employer|organization)|name\s+of\s+your\s+(?:company|employer)|present\s+employer|company\s+you\s+(?:currently\s+)?work/i, notTest: /why|reason|leav|cover|salary|how\s+long|years?\s+at/i, value: () => a['current_company'] },
     { key: 'salary_expectation', test: /salary|compensation|pay\s+expectation/i, value: () => a['salary_expectation'] },
     { key: 'start_date', test: /start\s*date|when\s+can\s+you\s+start|notice\s+period|available/i, value: () => a['start_date'] },
     { key: 'willing_to_relocate', test: /relocat/i, value: () => a['willing_to_relocate'] },
     { key: 'remote_preference', test: /remote|work\s+arrangement|hybrid/i, value: () => a['remote_preference'] },
     { key: 'years_experience', test: /years\s+of\s+(relevant\s+)?experience|how\s+many\s+years/i, value: () => a['years_experience'] },
     { key: 'why_company', test: /why\s+(do\s+you\s+want|are\s+you\s+interested|us|join)/i, value: () => a['why_this_company'] },
-    { key: 'why_role', test: /why\s+this\s+(role|position)|interest\s+in\s+this\s+(role|position)/i, value: () => a['why_this_role'] },
+    { key: 'why_role', test: /why\s+this\s+(role|position)|interest(?:ed)?\s+in\s+this\s+(role|position)/i, value: () => a['why_this_role'] },
     { key: 'cover_letter', test: /cover\s*letter|additional\s+information|anything\s+else/i, value: () => p.coverLetter },
-    { key: 'how_heard', test: /how\s+did\s+you\s+hear/i, value: () => a['how_heard'] || 'Company careers page' },
+    { key: 'how_heard', test: RE_HOW_HEARD.test, notTest: RE_HOW_HEARD.not, value: () => a['how_heard'] || canon['how_heard'] || 'Company careers page' },
     { key: 'pronouns', test: /pronoun/i, value: () => a['pronouns'] },
   ];
 }
@@ -126,39 +262,72 @@ function escapeRegex(s: string): string {
  * EEO questions fall back to a decline-to-answer option: neutral, and an
  * empty required dropdown blocks submission.
  */
+const NEGATION_RE = /\b(not|never|no\s+longer|haven'?t|have\s+not|did\s+not|don'?t|none|neither)\b/i;
+
 export function pickOption(
   wanted: string | undefined,
   optionTexts: string[],
-  opts: { eeoDecline?: boolean } = {}
+  opts: { eeoDecline?: boolean; aliases?: string[]; consent?: boolean; yesNoProse?: boolean } = {}
 ): string | undefined {
   const options = optionTexts.filter((o) => o.trim() && !PLACEHOLDER_RE.test(o.trim()));
   const norm = (s: string) => s.trim().toLowerCase();
-  if (wanted && wanted.trim()) {
-    const w = norm(wanted);
+  const literal = (w: string): string | undefined => {
     const exact = options.find((o) => norm(o) === w);
     if (exact) return exact;
     const yesNo = /^(yes|no)$/.exec(w)?.[1];
     if (yesNo) {
       const hit = options.find((o) => new RegExp(`^${yesNo}\\b`, 'i').test(o.trim()));
       if (hit) return hit;
-    } else {
-      const prefix = w.length >= 3 ? options.find((o) => norm(o).startsWith(w)) : undefined;
-      if (prefix) return prefix;
-      const substr = w.length >= 4 ? options.find((o) => norm(o).includes(w)) : undefined;
-      if (substr) return substr;
-      // Verbose stored answer, terse option: "Yes — authorized to work" → "Yes".
-      const reverse = options
-        .filter((o) => norm(o).length >= 3 && w.startsWith(norm(o)))
-        .sort((a, b) => norm(b).length - norm(a).length)[0];
-      if (reverse) return reverse;
-      const word = /^(yes|no)\b/.exec(w)?.[1];
-      if (word) {
-        const hit = options.find((o) => new RegExp(`^${word}\\b`, 'i').test(o.trim()));
-        if (hit) return hit;
+      // Prose options instead of literal Yes/No ("I have not previously been
+      // employed at Affirm" = No). ONLY when the caller marks this a yes/no
+      // question (yesNoProse) — otherwise "I don't wish to answer" on a gender
+      // dropdown would be read as "No". Map No → the single negated option;
+      // Yes → the single non-negated option (ambiguous when several → blank).
+      if (opts.yesNoProse) {
+        if (yesNo === 'no') {
+          const neg = options.filter((o) => NEGATION_RE.test(o));
+          if (neg.length === 1) return neg[0];
+        } else {
+          const pos = options.filter((o) => !NEGATION_RE.test(o));
+          if (pos.length === 1) return pos[0];
+        }
       }
+      return undefined;
     }
+    const prefix = w.length >= 3 ? options.find((o) => norm(o).startsWith(w)) : undefined;
+    if (prefix) return prefix;
+    const substr = w.length >= 4 ? options.find((o) => norm(o).includes(w)) : undefined;
+    if (substr) return substr;
+    // Verbose stored answer, terse option: "Yes — authorized to work" → "Yes".
+    const reverse = options
+      .filter((o) => norm(o).length >= 3 && w.startsWith(norm(o)))
+      .sort((a, b) => norm(b).length - norm(a).length)[0];
+    if (reverse) return reverse;
+    const word = /^(yes|no)\b/.exec(w)?.[1];
+    if (word) {
+      const hit = options.find((o) => new RegExp(`^${word}\\b`, 'i').test(o.trim()));
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+
+  if (wanted && wanted.trim()) {
+    const hit = literal(norm(wanted));
+    if (hit) return hit;
     const state = expandedStateOption(wanted, options);
     if (state) return state;
+  }
+  // Aliases: the stored answer phrases it one way, the dropdown another
+  // ("Company careers page" vs the option "Affirm's Career Site").
+  for (const alias of opts.aliases || []) {
+    const hit = literal(norm(alias)) || options.find((o) => norm(o).includes(norm(alias)));
+    if (hit) return hit;
+  }
+  // Consent dropdowns ("By selecting 'I agree'…") usually offer one agreement
+  // option — pick the affirmative.
+  if (opts.consent) {
+    const agree = options.find((o) => /\b(i\s+)?(agree|accept|consent)\b|\byes\b|i\s+understand/i.test(o));
+    if (agree) return agree;
   }
   if (opts.eeoDecline) {
     // "I do not want to answer" is the CC-305 disability form's phrasing.
@@ -166,6 +335,20 @@ export function pickOption(
   }
   return undefined;
 }
+
+/** Channel-name aliases so "Company careers page" maps to whatever the
+ * "how did you hear" dropdown actually calls its careers-site option. */
+export const HOW_HEARD_ALIASES = ['career site', 'careers page', 'company website', 'company site', 'careers', 'company career', 'other'];
+
+/** Matcher keys whose answer is a genuine Yes/No — they may map onto prose
+ * options ("I have not previously been employed…" = No). EEO keys are NOT
+ * here, so a decline option is never read as "No". */
+export const YES_NO_KEYS = new Set(['work_authorization_us', 'work_authorization_ca', 'requires_sponsorship', 'worked_here_before']);
+
+/** Consent/agreement gate copy ("I agree to the privacy policy / terms"). These
+ * are proceed-to-apply acknowledgements, not marketing opt-ins. */
+export const CONSENT_RE = /\bi\s+(agree|acknowledge|consent|understand|have\s+read|accept)\b|agree\s+to\s+the|privacy\s+(policy|notice)|terms\s+(and|&|of)|processed\s+in\s+accordance|candidate\s+privacy/i;
+export const CONSENT_NOT = /marketing|newsletter|promotional|subscribe|opt[\s-]?in\s+to|keep\s+me\s+(posted|informed)|future\s+(jobs|opportunities|roles)/i;
 
 // ─── Overlay/consent dismissal ─────────────────────────────────────────────────
 // Cookie banners (OneTrust et al.) intercept pointer events and silently block
@@ -231,7 +414,7 @@ export async function fillVisibleForm(
   opts: { formSelector?: string } = {}
 ): Promise<FillResult> {
   const packet = getPacket(task);
-  const matchers = buildMatchers(packet);
+  const matchers = buildMatchers(packet, { company: companyFromUrl(task.applyUrl) });
   const report: FieldReport = {
     filled: [], skippedOptional: [], unanswered: [], guessed: [],
     resumeAttached: false, coverLetterAttached: false,
@@ -351,7 +534,7 @@ export async function fillVisibleForm(
       continue;
     }
 
-    const m = matchers.find((mm) => mm.test.test(labelNorm));
+    const m = findMatcher(matchers, labelNorm);
     // Canonical matcher first, then the user's taught answer bank (answers the
     // user provided for this exact question on a previous application).
     const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
@@ -394,7 +577,7 @@ export async function fillVisibleForm(
     if (!(await el.isVisible().catch(() => false))) continue;
     const label = (await labelFor(root, el)) || (await el.getAttribute('name')) || '';
     const labelNorm = label.replace(/[_-]+/g, ' ');
-    const m = matchers.find((mm) => mm.test.test(labelNorm));
+    const m = findMatcher(matchers, labelNorm);
     const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
     const optionTexts: string[] = await el.locator('option').allTextContents();
     const verifiedSelect = async (optionLabel: string): Promise<boolean> => {
@@ -402,6 +585,7 @@ export async function fillVisibleForm(
       const after = await el.inputValue().catch(() => '');
       return !!after;
     };
+    const isConsent = CONSENT_RE.test(labelNorm) && !CONSENT_NOT.test(labelNorm);
     if (EEO_PATTERN.test(labelNorm) && !value) {
       const decline = pickOption(undefined, optionTexts, { eeoDecline: true });
       if (decline && (await verifiedSelect(decline))) {
@@ -409,14 +593,20 @@ export async function fillVisibleForm(
       }
       continue;
     }
-    if (value) {
+    if (value || isConsent) {
       // Exact-first tiered matching; "Which state/province do you live in?"
       // also expands abbreviations from the user's location ("Hawthorne, NJ"
-      // -> "New Jersey").
-      const target = pickOption(value, optionTexts, { eeoDecline: EEO_PATTERN.test(labelNorm) });
+      // -> "New Jersey"). Aliases bridge channel-name wording; consent picks
+      // the "I agree" option.
+      const target = pickOption(value, optionTexts, {
+        eeoDecline: EEO_PATTERN.test(labelNorm),
+        aliases: m?.key === 'how_heard' ? HOW_HEARD_ALIASES : undefined,
+        consent: isConsent,
+        yesNoProse: YES_NO_KEYS.has(m?.key || ''),
+      });
       if (target && (await verifiedSelect(target))) {
-        report.filled.push({ label, value: target, via: m?.key || 'answer_bank' });
-      } else {
+        report.filled.push({ label, value: target, via: isConsent && !value ? 'consent' : m?.key || 'answer_bank' });
+      } else if (value) {
         report.unanswered.push(label + ` (no option matched "${value.slice(0, 30)}")`);
       }
     }
@@ -471,7 +661,8 @@ export async function fillVisibleForm(
     el: ReturnType<FormScope['locator']>,
     label: string,
     wanted: string | undefined,
-    isEeo: boolean
+    isEeo: boolean,
+    extra: { aliases?: string[]; consent?: boolean; yesNoProse?: boolean } = {}
   ): Promise<{ ok: boolean; picked?: string; reason?: string }> => {
     try {
       // Transient misses happen on React widgets — one retry before giving up.
@@ -502,7 +693,7 @@ export async function fillVisibleForm(
         await page.keyboard.press('Escape').catch(() => {});
         return { ok: false, reason: 'dropdown did not open' };
       }
-      let target = pickOption(wanted, texts, { eeoDecline: isEeo });
+      let target = pickOption(wanted, texts, { eeoDecline: isEeo, aliases: extra.aliases, consent: extra.consent, yesNoProse: extra.yesNoProse });
       // Autocomplete widgets reformat what you type ("Hawthorne, NJ" →
       // "Hawthorne, NJ, United States"): accept a filtered suggestion that
       // shares a real word with the answer, but never a blind first option.
@@ -547,7 +738,7 @@ export async function fillVisibleForm(
     // EEO answers come ONLY from explicit stored answers — a generic matcher
     // must never leak an unrelated value in ("ethniCITY" once matched the
     // location matcher and offered the user's city to a race question).
-    const m = isEeo ? undefined : matchers.find((mm) => mm.test.test(labelNorm));
+    const m = isEeo ? undefined : findMatcher(matchers, labelNorm);
     const eeoStored = !isEeo ? undefined
       : packet.answers['gender'] && /gender/i.test(labelNorm) ? packet.answers['gender']
       : packet.answers['ethnicity'] && /race|ethnic/i.test(labelNorm) ? packet.answers['ethnicity']
@@ -557,24 +748,28 @@ export async function fillVisibleForm(
     const value = isEeo
       ? eeoStored ?? packet.answers[slug(labelNorm)]
       : m?.value(packet) ?? packet.answers[slug(labelNorm)];
-    if (!value && !isEeo) {
+    // Consent dropdowns ("By selecting 'I agree'…") carry no stored answer but
+    // are a required proceed-to-apply gate — pick the agreement option.
+    const isConsent = !isEeo && CONSENT_RE.test(labelNorm) && !CONSENT_NOT.test(labelNorm);
+    if (!value && !isEeo && !isConsent) {
       seenComboLabels.add(label);
       if (required) report.unanswered.push(label);
       else report.skippedOptional.push(label);
       continue;
     }
 
-    let result = await selectComboOption(el, label, value, isEeo);
+    const extra = { aliases: m?.key === 'how_heard' ? HOW_HEARD_ALIASES : undefined, consent: isConsent, yesNoProse: YES_NO_KEYS.has(m?.key || '') };
+    let result = await selectComboOption(el, label, value, isEeo, extra);
     if (!result.ok && !result.reason?.startsWith('no option matched')) {
       // Interaction-level failures are often transient — one full re-attempt.
-      result = await selectComboOption(el, label, value, isEeo);
+      result = await selectComboOption(el, label, value, isEeo, extra);
     }
     if (result.ok && result.picked) {
       seenComboLabels.add(label);
       report.filled.push({
         label,
         value: result.picked.slice(0, 60),
-        via: m?.key || (value ? 'answer_bank' : 'eeo_decline'),
+        via: m?.key || (value ? 'answer_bank' : isConsent ? 'consent' : 'eeo_decline'),
       });
       comboFills.set(label, result.picked);
       continue;
@@ -637,6 +832,29 @@ export async function fillVisibleForm(
       const idx = report.filled.findIndex((f) => f.label === label);
       if (idx >= 0) report.filled.splice(idx, 1);
       report.unanswered.push(label + ' (selection did not register)');
+    }
+  }
+
+  // 6) Consent / agreement checkboxes. Many forms gate submission behind a
+  //    required "I agree to the privacy policy / terms" box. These are
+  //    proceed-to-apply acknowledgements (not opt-in marketing), so check the
+  //    REQUIRED ones whose label reads as an agreement. Marketing/optional
+  //    opt-ins are deliberately left alone.
+  const consentBoxes = root.locator(`${scope} input[type="checkbox"]`);
+  const cxCount = await consentBoxes.count().catch(() => 0);
+  for (let i = 0; i < cxCount; i++) {
+    const el = consentBoxes.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    if (await el.isChecked().catch(() => false)) continue;
+    const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
+    const required = (await el.getAttribute('required')) !== null || (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
+    if (!required) continue;
+    if (!CONSENT_RE.test(label) || CONSENT_NOT.test(label)) continue;
+    await el.check({ timeout: 4000 }).catch(() => el.click({ timeout: 4000 }).catch(() => {}));
+    if (await el.isChecked().catch(() => false)) {
+      report.filled.push({ label: label.slice(0, 80) || 'Consent', value: 'checked', via: 'consent' });
+    } else {
+      report.unanswered.push((label.slice(0, 80) || 'Required consent checkbox') + ' (could not check)');
     }
   }
 

@@ -69,6 +69,26 @@ expect('non-EEO unmatchable answer returns nothing',
 expect('empty options returns nothing',
   pickOption('Yes', []), undefined);
 
+// ── yes/no → prose options (Affirm "previously employed") ──
+const affirmEmployed = ['I have not previously been employed at Affirm', 'I have been employed at Affirm as a full-time employee', 'I have been employed at Affirm as an intern'];
+expect('No maps to the single negated prose option (yesNoProse)',
+  pickOption('No', affirmEmployed, { yesNoProse: true }), 'I have not previously been employed at Affirm');
+expect('Yes stays blank when several positive prose options (ambiguous)',
+  pickOption('Yes', affirmEmployed, { yesNoProse: true }), undefined);
+expect('without yesNoProse, No does NOT grab a prose negation',
+  pickOption('No', ['I don\'t wish to answer', 'Male', 'Female'], {}), undefined);
+
+// ── aliases (how-heard channel names) ──
+const heardOptions = ['Affirm blog', 'Affirm’s Career Site', 'Indeed', 'Glassdoor', 'LinkedIn'];
+expect('how-heard "Company careers page" aliases to the Career Site option',
+  pickOption('Company careers page', heardOptions, { aliases: ['career site', 'careers page', 'company website', 'other'] }), 'Affirm’s Career Site');
+
+// ── consent dropdown ──
+expect('consent picks the I agree option',
+  pickOption(undefined, ['I agree'], { consent: true }), 'I agree');
+expect('consent picks Yes when that is the affirmative',
+  pickOption(undefined, ['Yes', 'No'], { consent: true }), 'Yes');
+
 if (failures) {
   console.error(`\n${failures} test(s) FAILED`);
   process.exit(1);

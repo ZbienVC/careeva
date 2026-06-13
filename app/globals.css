@@ -27,6 +27,30 @@
 
 html {
   scroll-behavior: smooth;
+  /* Stop iOS from auto-resizing text on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* ─── Mobile hardening ────────────────────────────────────────────────────────
+   Global, layout-agnostic rules that make every page phone-friendly without
+   touching individual components. */
+
+/* Never allow accidental horizontal scroll on small screens. */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* Media and embeds must never blow out the viewport width. */
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+  height: auto;
 }
 
 body {
@@ -89,9 +113,19 @@ select {
   background: #fffdf7;
   color: var(--ink);
   padding: 0.75rem 1rem;
-  font-size: 0.9rem;
+  /* 16px+ prevents iOS Safari from auto-zooming the page on focus. The visual
+     size is nudged back down on larger pointers where zoom isn't a concern. */
+  font-size: 16px;
   font-family: inherit;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+@media (pointer: fine) {
+  input,
+  textarea,
+  select {
+    font-size: 0.9rem;
+  }
 }
 
 input::placeholder,
@@ -136,6 +170,24 @@ button:active:not(:disabled) {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+/* Comfortable touch targets: on touch devices, give every button/link-button a
+   44×44px minimum hit area (Apple HIG / Material guideline) so taps don't miss.
+   Desktop precision pointers are left untouched. */
+@media (pointer: coarse) {
+  button,
+  a[role='button'],
+  [type='button'],
+  [type='submit'],
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger,
+  .btn-paper,
+  .btn-outline-paper {
+    min-height: 44px;
+  }
 }
 
 a {

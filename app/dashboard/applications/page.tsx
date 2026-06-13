@@ -431,9 +431,9 @@ export default function Applications() {
 
       {/* Board view */}
       {view === 'board' && (
-        <div className="grid grid-cols-5 gap-3 overflow-x-auto pb-4">
+        <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3 xl:grid-cols-5">
           {COLUMNS.map(col => (
-            <div key={col.key} className="premium-card-soft min-h-[300px] p-3">
+            <div key={col.key} className="premium-card-soft min-h-[300px] w-[78vw] max-w-[300px] flex-shrink-0 snap-start p-3 sm:w-auto sm:max-w-none">
               <div className="mb-3 flex items-center gap-2">
                 <span className={`h-2 w-2 rounded-full ${col.dot}`} />
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-300">{col.label}</p>

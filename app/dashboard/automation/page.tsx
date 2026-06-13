@@ -71,7 +71,7 @@ function CompletenessBanner() {
   if (!data) return null;
   if (data.readyToAutoApply) {
     return (
-      <div className="alert-success flex items-center justify-between gap-4">
+      <div className="alert-success flex flex-wrap items-center justify-between gap-4">
         <span className="inline-flex items-center gap-2 font-semibold">
           <IconCheckCircle size={16} className="flex-shrink-0 text-emerald-300" />
           Profile complete ({data.percentComplete}%) — ready to auto-apply
@@ -454,7 +454,7 @@ export default function AutomatePage() {
                 <div className={`absolute top-1 h-4 w-4 rounded-full bg-paper shadow transition-transform ${doSearch ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               <div>
                 <label className="field-label !text-xs font-bold uppercase tracking-wider !text-slate-400">
                   Score threshold: <span className="normal-case font-black text-white">{threshold}</span>

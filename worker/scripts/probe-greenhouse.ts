@@ -43,9 +43,14 @@ const task: TaskLike = {
 
 (async () => {
   // Mirror the worker's launcher: full-Chromium headless, shell as fallback.
-  const browser = await chromium
-    .launch({ headless: true, channel: 'chromium' })
-    .catch(() => chromium.launch({ headless: true }));
+  // PROBE_SHELL=1 forces the stripped headless shell (the worker's pre-3e57c61
+  // browser) to isolate fingerprint-blocking from IP-blocking.
+  const browser = process.env.PROBE_SHELL
+    ? await chromium.launch({ headless: true })
+    : await chromium
+        .launch({ headless: true, channel: 'chromium' })
+        .catch(() => chromium.launch({ headless: true }));
+  console.log('browser:', process.env.PROBE_SHELL ? 'headless-shell' : 'full chromium', browser.version());
   const page = await browser.newPage();
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });

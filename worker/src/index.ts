@@ -20,6 +20,12 @@
  *                                 files: resumes + screenshots in file_blobs)
  *   WORKER_POLL_MS              — queue poll interval (default 5000)
  *   HEADLESS                    — "false" to watch locally (default true)
+ *   PROXY_SERVER                — optional browser proxy, e.g.
+ *                                 "http://gate.provider.com:7000". Greenhouse's
+ *                                 job-boards UI refuses to render its form for
+ *                                 datacenter IPs (Railway) — a residential
+ *                                 proxy or a residential-IP worker fixes it.
+ *   PROXY_USERNAME / PROXY_PASSWORD — proxy credentials if required
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -38,13 +44,26 @@ let browser: Browser | null = null;
 async function getBrowser(): Promise<Browser> {
   if (browser && browser.isConnected()) return browser;
   const args = ['--no-sandbox', '--disable-dev-shm-usage'];
+  const proxy = process.env.PROXY_SERVER
+    ? {
+        server: process.env.PROXY_SERVER,
+        username: process.env.PROXY_USERNAME || undefined,
+        password: process.env.PROXY_PASSWORD || undefined,
+      }
+    : undefined;
   // channel "chromium" = the full Chromium build's headless mode, not the
-  // stripped "headless shell". Job boards (job-boards.greenhouse.io) render
-  // their form client-side and refuse the shell's fingerprint — the page
-  // loads with the right title but the application form never mounts.
+  // stripped "headless shell" (more normal fingerprint).
+  let flavor = 'chromium-full';
   browser = await chromium
-    .launch({ headless: HEADLESS, channel: 'chromium', args })
-    .catch(() => chromium.launch({ headless: HEADLESS, args }));
+    .launch({ headless: HEADLESS, channel: 'chromium', args, proxy })
+    .catch(() => {
+      flavor = 'headless-shell';
+      return chromium.launch({ headless: HEADLESS, args, proxy });
+    });
+  // Surfaced in every field report's diag so the dashboard shows exactly
+  // which browser/network the fill ran through.
+  process.env.CAREEVA_BROWSER_DESC = `${flavor} ${browser.version()}${proxy ? ' via proxy' : ''}`;
+  console.log(`[${WORKER_ID}] browser: ${process.env.CAREEVA_BROWSER_DESC}`);
   return browser;
 }
 

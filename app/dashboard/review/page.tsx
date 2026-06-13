@@ -29,6 +29,7 @@ interface Task {
     coverLetterAttached?: boolean;
     diag?: {
       workerBuild?: string;
+      browser?: string;
       scope?: string;
       textInputs?: number;
       selects?: number;
@@ -289,7 +290,7 @@ export default function ReviewQueuePage() {
 
                     {report?.diag && (
                       <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
-                        worker {report.diag.workerBuild} · form in {report.diag.scope} · saw {report.diag.textInputs ?? 0} inputs
+                        worker {report.diag.workerBuild}{report.diag.browser ? ` · ${report.diag.browser}` : ''} · form in {report.diag.scope} · saw {report.diag.textInputs ?? 0} inputs
                         / {report.diag.selects ?? 0} selects / {report.diag.comboboxes ?? 0} dropdowns / {report.diag.fileInputs ?? 0} file fields
                       </p>
                     )}

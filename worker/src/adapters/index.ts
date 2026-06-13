@@ -29,6 +29,7 @@ export interface FieldReport {
   /** Diagnostics: which worker build ran, where the form was, what it saw. */
   diag?: {
     workerBuild: string;
+    browser?: string;
     scope: 'main' | 'iframe';
     textInputs: number;
     selects: number;
@@ -245,6 +246,7 @@ export async function fillVisibleForm(
 
   report.diag = {
     workerBuild: (process.env.RAILWAY_GIT_COMMIT_SHA || 'local').slice(0, 7),
+    browser: process.env.CAREEVA_BROWSER_DESC,
     scope: root === page ? 'main' : 'iframe',
     textInputs: 0,
     selects: 0,
@@ -663,6 +665,11 @@ export async function describeUnfillablePage(page: Page): Promise<string> {
   }
   if (/sign in|log ?in|create (an )?account/i.test(sample) && /password/i.test(sample)) {
     return `the page is a login wall at ${url} — this ATS requires an account before it shows the application form`;
+  }
+  if (/greenhouse\.io/.test(url) && /job application for/i.test(title)) {
+    // Verified live (2026-06-12): the same URL renders 23 inputs from a
+    // residential IP and zero from a datacenter IP, on the same browser.
+    return `the Greenhouse application page loaded ("${title}") but its form never rendered — Greenhouse's bot protection refuses this server's IP. Run the worker from a residential IP, or set PROXY_SERVER to a residential proxy`;
   }
   return `the browser landed on "${title}" at ${url}, which has no application form — likely a listing/landing page or a broken apply link`;
 }

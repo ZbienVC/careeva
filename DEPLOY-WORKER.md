@@ -55,3 +55,31 @@ need NOTHING shared except `DATABASE_URL` — no volumes required.
 | `Stored resume file not found` | Resume uploaded before DB-backed storage | Re-upload on Profile, then Retry the task |
 | Tasks go to `needs_review` with "No adapter" | Job's ATS isn't supported for autofill | Open the form link and apply manually; the packet (answers + letter) is in the task detail |
 | Screenshot 404 in Review | Worker crashed before saving | Hit Retry on the task |
+
+## Greenhouse blocks datacenter IPs (zero-fill on job-boards.greenhouse.io)
+
+Verified live: the same job-boards.greenhouse.io URL renders its application
+form (23 inputs) from a residential IP and renders NOTHING from a datacenter
+IP, in the same browser build. Greenhouse's bot protection scores the IP. If
+field reports show `0 filled` with "the form never rendered", pick one:
+
+**Option A — run the worker from a residential IP (your machine):**
+```bash
+cd worker
+echo 'DATABASE_URL=<DATABASE_PUBLIC_URL from Railway Postgres → Variables>' > .env
+npm install && npx playwright install chromium
+npm run dev          # HEADLESS=false npm run dev to watch it work
+```
+It processes the same queue as the cloud worker; scale the Railway worker to
+0 replicas while this runs to avoid both claiming tasks (the claim is atomic,
+so they won't double-apply either way — datacenter claims would just fail).
+
+**Option B — residential proxy on the Railway worker:**
+Set on the worker service:
+```
+PROXY_SERVER=http://gate.<provider>.com:7000
+PROXY_USERNAME=...
+PROXY_PASSWORD=...
+```
+Any rotating-residential provider works (Decodo/SmartProxy, IPRoyal, Oxylabs).
+The field report's diag line shows `via proxy` when active.

@@ -42,7 +42,10 @@ const task: TaskLike = {
 };
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  // Mirror the worker's launcher: full-Chromium headless, shell as fallback.
+  const browser = await chromium
+    .launch({ headless: true, channel: 'chromium' })
+    .catch(() => chromium.launch({ headless: true }));
   const page = await browser.newPage();
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 });

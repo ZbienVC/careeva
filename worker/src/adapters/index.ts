@@ -160,7 +160,8 @@ export function pickOption(
     if (state) return state;
   }
   if (opts.eeoDecline) {
-    return options.find((o) => /decline|prefer not|don.t wish|do not wish|rather not say/i.test(o));
+    // "I do not want to answer" is the CC-305 disability form's phrasing.
+    return options.find((o) => /decline|prefer not|don.t wish|do not wish|do not want|don.t want|rather not say/i.test(o));
   }
   return undefined;
 }

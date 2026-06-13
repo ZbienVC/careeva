@@ -37,10 +37,14 @@ let browser: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (browser && browser.isConnected()) return browser;
-  browser = await chromium.launch({
-    headless: HEADLESS,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
-  });
+  const args = ['--no-sandbox', '--disable-dev-shm-usage'];
+  // channel "chromium" = the full Chromium build's headless mode, not the
+  // stripped "headless shell". Job boards (job-boards.greenhouse.io) render
+  // their form client-side and refuse the shell's fingerprint — the page
+  // loads with the right title but the application form never mounts.
+  browser = await chromium
+    .launch({ headless: HEADLESS, channel: 'chromium', args })
+    .catch(() => chromium.launch({ headless: HEADLESS, args }));
   return browser;
 }
 

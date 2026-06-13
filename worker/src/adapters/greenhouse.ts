@@ -58,7 +58,14 @@ export const greenhouseAdapter: AtsAdapter = {
       }
     }
 
-    await page.waitForSelector('input, textarea', { timeout: 15000 }).catch(() => {});
+    // The new job-boards UI mounts the form client-side, sometimes seconds
+    // after the header renders (slow containers) — wait for REAL form
+    // controls, and nudge with a scroll once before giving up.
+    const formControls = 'input[type="file"], #application-form input, form input[type="text"], textarea';
+    if (!(await page.waitForSelector(formControls, { timeout: 20000 }).catch(() => null))) {
+      await page.mouse.wheel(0, 4000).catch(() => {});
+      await page.waitForSelector(formControls, { timeout: 8000 }).catch(() => {});
+    }
     return fillVisibleForm(page, task, ctx, { formSelector: 'form, #application-form, #main' });
   },
 

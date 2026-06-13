@@ -56,6 +56,8 @@ expect('EEO with no stored answer declines',
   pickOption(undefined, ['Man', 'Woman', 'I don\'t wish to answer'], { eeoDecline: true }), 'I don\'t wish to answer');
 expect('EEO decline variants',
   pickOption(undefined, ['Male', 'Female', 'Decline to self-identify'], { eeoDecline: true }), 'Decline to self-identify');
+expect('CC-305 disability decline phrasing',
+  pickOption(undefined, ['Yes, I have a disability', 'No, I do not have a disability', 'I do not want to answer'], { eeoDecline: true }), 'I do not want to answer');
 expect('EEO stored answer beats decline',
   pickOption('No', ['Yes', 'No', 'I don\'t wish to answer'], { eeoDecline: true }), 'No');
 expect('EEO unmatchable answer falls back to decline, not empty',

@@ -21,6 +21,9 @@ const answers: Record<string, string> = {
   why_this_company: 'I admire the product and mission.',
   why_this_role: 'It aligns with my background.',
   describe_yourself: 'Data-driven problem solver.',
+  // EEO + extras the user provided
+  gender: 'Male', hispanic_latino: 'No', veteran_status: 'No',
+  worked_here_before: 'No',
 };
 const identity = {
   firstName: 'Zach', lastName: 'Bienstock', fullName: 'Zach Bienstock',

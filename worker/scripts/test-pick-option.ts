@@ -89,6 +89,33 @@ expect('consent picks the I agree option',
 expect('consent picks Yes when that is the affirmative',
   pickOption(undefined, ['Yes', 'No'], { consent: true }), 'Yes');
 
+// ── EEO answers mapped onto real Figma options ──
+import { eeoAnswerFor, eeoPickOpts } from '../src/adapters/index';
+const eeo = { gender: 'Male', hispanic_latino: 'No', veteran_status: 'No' };
+expect('gender Male -> Male option (exact)',
+  pickOption('Male', ['Male', 'Female', 'Decline To Self Identify'], eeoPickOpts('Male')), 'Male');
+expect('gender Male -> Man option (alias) on a Man/Woman form',
+  pickOption('Male', ['Woman', 'Man', 'Non-binary', "I don't wish to answer"], eeoPickOpts('Male')), 'Man');
+expect('hispanic No -> No option',
+  pickOption('No', ['Yes', 'No', 'Decline To Self Identify'], eeoPickOpts('No')), 'No');
+expect('veteran No -> "I am not a protected veteran" (prose negation)',
+  pickOption('No', ['I am not a protected veteran', 'I identify as one or more of the classifications of a protected veteran', "I don't wish to answer"], eeoPickOpts('No')), 'I am not a protected veteran');
+expect('no EEO answer -> decline option',
+  pickOption(undefined, ['Male', 'Female', 'Decline To Self Identify'], eeoPickOpts(undefined)), 'Decline To Self Identify');
+expect('disability unanswered -> "I do not want to answer"',
+  pickOption(undefined, ['Yes, I have a disability', 'No, I do not have a disability', 'I do not want to answer'], eeoPickOpts(undefined)), 'I do not want to answer');
+// eeoAnswerFor routing
+function expectEeo(label: string, want: string | undefined) {
+  const got = eeoAnswerFor(label, eeo);
+  const pass = got === want;
+  if (!pass) { failures++; console.log(`FAIL  eeoAnswerFor(${JSON.stringify(label)}) -> ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); }
+  else console.log(`PASS  eeoAnswerFor [${got}] ${label}`);
+}
+expectEeo('what is your gender or gender identity?', 'Male');
+expectEeo('are you hispanic/latino?', 'No');
+expectEeo('veteran status', 'No');
+expectEeo('disability status', undefined);
+
 if (failures) {
   console.error(`\n${failures} test(s) FAILED`);
   process.exit(1);

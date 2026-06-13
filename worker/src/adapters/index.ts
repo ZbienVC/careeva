@@ -245,7 +245,38 @@ export function buildMatchers(p: Packet, opts: { company?: string } = {}): Match
   ];
 }
 
-const EEO_PATTERN = /gender|race|ethnic|veteran|disabilit|sexual\s+orientation|transgender|lgbtq|2slgbtqia|person\s+of\s+colou?r|indigenous|pronoun/i;
+const EEO_PATTERN = /gender|race|ethnic|veteran|disabilit|sexual\s+orientation|transgender|lgbtq|2slgbtqia|person\s+of\s+colou?r|indigenous|pronoun|hispanic|latin[oa]|latinx/i;
+
+// Gender wording differs by form ("Male"/"Female" vs "Man"/"Woman") — let a
+// stored "Male" still match a "Man" option and vice-versa.
+const GENDER_ALIASES: Record<string, string[]> = {
+  male: ['man'], man: ['male'], female: ['woman'], woman: ['female'],
+};
+
+/** The stored EEO answer for a given EEO label, or undefined. Demographic
+ * fields are answered ONLY from explicit stored answers — never guessed. */
+export function eeoAnswerFor(labelNorm: string, a: Record<string, string>): string | undefined {
+  if (/gender|\bsex\b/i.test(labelNorm)) return a['gender'];
+  if (/hispanic|latin[oa]|latinx/i.test(labelNorm)) return a['hispanic_latino'];
+  if (/race|ethnic|person\s+of\s+colou?r|indigenous|national\s+heritage/i.test(labelNorm)) return a['ethnicity'];
+  if (/veteran/i.test(labelNorm)) return a['veteran_status'];
+  if (/disabilit/i.test(labelNorm)) return a['disability_status'];
+  if (/2slgbtqia|lgbtq|sexual\s+orientation|transgender/i.test(labelNorm)) return a['lgbtqia'];
+  if (/pronoun/i.test(labelNorm)) return a['pronouns'];
+  return undefined;
+}
+
+/** pickOption settings for an EEO dropdown. With a stored answer we map it
+ * (Yes/No onto prose options like "I am not a protected veteran"; Male↔Man);
+ * with none we fall back to a decline-to-answer option. */
+export function eeoPickOpts(value: string | undefined): { eeoDecline: boolean; yesNoProse: boolean; aliases?: string[] } {
+  const v = (value || '').trim().toLowerCase();
+  return {
+    eeoDecline: true, // always the safe fallback if the stored value matches nothing
+    yesNoProse: /^(yes|no)$/.test(v),
+    aliases: GENDER_ALIASES[v],
+  };
+}
 
 /** Unselected-dropdown placeholder texts ("Select...", "Please choose", "--"). */
 export const PLACEHOLDER_RE = /^(please\s+)?(select|choose)\b|^--|^—|^\s*$/i;
@@ -263,6 +294,7 @@ function escapeRegex(s: string): string {
  * empty required dropdown blocks submission.
  */
 const NEGATION_RE = /\b(not|never|no\s+longer|haven'?t|have\s+not|did\s+not|don'?t|none|neither)\b/i;
+const DECLINE_RE = /decline|prefer\s+not|don.?t\s+wish|do\s+not\s+wish|do\s+not\s+want|don.?t\s+want|rather\s+not\s+say|wish\s+to\s+answer/i;
 
 export function pickOption(
   wanted: string | undefined,
@@ -284,11 +316,14 @@ export function pickOption(
       // dropdown would be read as "No". Map No → the single negated option;
       // Yes → the single non-negated option (ambiguous when several → blank).
       if (opts.yesNoProse) {
+        // A decline option ("I don't wish to answer") contains "don't" but is
+        // NOT the negative answer — exclude it from both sides.
+        const real = options.filter((o) => !DECLINE_RE.test(o));
         if (yesNo === 'no') {
-          const neg = options.filter((o) => NEGATION_RE.test(o));
+          const neg = real.filter((o) => NEGATION_RE.test(o));
           if (neg.length === 1) return neg[0];
         } else {
-          const pos = options.filter((o) => !NEGATION_RE.test(o));
+          const pos = real.filter((o) => !NEGATION_RE.test(o));
           if (pos.length === 1) return pos[0];
         }
       }
@@ -331,7 +366,7 @@ export function pickOption(
   }
   if (opts.eeoDecline) {
     // "I do not want to answer" is the CC-305 disability form's phrasing.
-    return options.find((o) => /decline|prefer not|don.t wish|do not wish|do not want|don.t want|rather not say/i.test(o));
+    return options.find((o) => DECLINE_RE.test(o));
   }
   return undefined;
 }
@@ -466,9 +501,16 @@ export async function fillVisibleForm(
     return !!after.trim();
   };
 
-  // 1) Resume file input(s)
+  // 1) Resume file input(s). VERIFY the ATS accepted the file — Playwright's
+  //    setInputFiles only sets input.files; if the page's upload handler errors
+  //    ("Cannot read properties of undefined (reading 'uploadFile')") the file
+  //    is never registered. Confirm the filename appears before claiming the
+  //    resume is attached, so the report never over-promises.
   report.diag.fileInputs = await root.locator(`${scope} input[type="file"]`).count().catch(() => 0);
   if (ctx.resumePath) {
+    const baseName = ctx.resumePath.split('/').pop() || '';
+    // Strip our temp prefix ("<hash>-Real_Name.pdf") for the page-text check.
+    const shownName = baseName.replace(/^[0-9a-f]{8,}-/i, '').replace(/\.[a-z]+$/i, '');
     const fileInputs = root.locator(`${scope} input[type="file"]`);
     const n = await fileInputs.count();
     for (let i = 0; i < n; i++) {
@@ -477,10 +519,20 @@ export async function fillVisibleForm(
       if (i === 0 || /resume|cv/i.test(label)) {
         try {
           await input.setInputFiles(ctx.resumePath);
-          report.resumeAttached = true;
-          report.filled.push({ label: label || 'Resume', value: '[file]', via: 'file' });
-          await page.waitForTimeout(1500); // many ATSes parse the file client-side
-          break;
+          await page.waitForTimeout(1800); // many ATSes parse the file client-side
+          // Did the ATS register it? Look for the filename in the field's
+          // container (or, failing that, anywhere on the page).
+          const token = shownName.split(/[_\s]/).filter((t) => t.length >= 4)[0] || shownName;
+          const pageText = (await root.locator(scope).innerText().catch(() => '')) || '';
+          const accepted = !!token && new RegExp(escapeRegex(token), 'i').test(pageText);
+          if (accepted) {
+            report.resumeAttached = true;
+            report.filled.push({ label: label || 'Resume', value: '[file]', via: 'file' });
+            break;
+          }
+          // Set but not registered — keep trying other inputs; if none work the
+          // report shows resumeAttached=false and the task pauses for review.
+          report.skippedOptional.push((label || 'Resume') + ' (file set but the ATS did not register it)');
         } catch { /* keep trying others */ }
       }
     }
@@ -517,11 +569,7 @@ export async function fillVisibleForm(
 
     if (EEO_PATTERN.test(labelNorm)) {
       // Only fill EEO from explicit stored answers (never guess)
-      const eeoVal = packet.answers['gender'] && /gender/i.test(label) ? packet.answers['gender']
-        : packet.answers['ethnicity'] && /race|ethnic/i.test(label) ? packet.answers['ethnicity']
-        : packet.answers['veteran_status'] && /veteran/i.test(label) ? packet.answers['veteran_status']
-        : packet.answers['disability_status'] && /disabilit/i.test(label) ? packet.answers['disability_status']
-        : undefined;
+      const eeoVal = eeoAnswerFor(labelNorm, packet.answers);
       if (eeoVal) {
         if (await verifiedFill(el, eeoVal)) {
           report.filled.push({ label, value: eeoVal, via: 'eeo_stored' });
@@ -586,10 +634,16 @@ export async function fillVisibleForm(
       return !!after;
     };
     const isConsent = CONSENT_RE.test(labelNorm) && !CONSENT_NOT.test(labelNorm);
-    if (EEO_PATTERN.test(labelNorm) && !value) {
-      const decline = pickOption(undefined, optionTexts, { eeoDecline: true });
-      if (decline && (await verifiedSelect(decline))) {
-        report.filled.push({ label, value: decline, via: 'eeo_decline' });
+    const isEeo = EEO_PATTERN.test(labelNorm);
+    if (isEeo) {
+      // EEO answers come only from stored EEO keys (gender/veteran/etc.), then
+      // a decline option — never a generic matcher value.
+      const eeoVal = eeoAnswerFor(labelNorm, packet.answers);
+      const target = pickOption(eeoVal, optionTexts, eeoPickOpts(eeoVal));
+      if (target && (await verifiedSelect(target))) {
+        report.filled.push({ label, value: target, via: eeoVal ? 'eeo_stored' : 'eeo_decline' });
+      } else if (eeoVal) {
+        report.unanswered.push(label + ` (EEO — no option matched "${eeoVal.slice(0, 30)}")`);
       }
       continue;
     }
@@ -599,7 +653,6 @@ export async function fillVisibleForm(
       // -> "New Jersey"). Aliases bridge channel-name wording; consent picks
       // the "I agree" option.
       const target = pickOption(value, optionTexts, {
-        eeoDecline: EEO_PATTERN.test(labelNorm),
         aliases: m?.key === 'how_heard' ? HOW_HEARD_ALIASES : undefined,
         consent: isConsent,
         yesNoProse: YES_NO_KEYS.has(m?.key || ''),
@@ -723,14 +776,30 @@ export async function fillVisibleForm(
     }
   };
 
+  // SNAPSHOT each combobox's stable id + label BEFORE interacting. React
+  // re-renders after every selection, which shifts positional nth() indices —
+  // resolving labels lazily mid-loop made the worker fill the wrong question
+  // (a Veteran Status dropdown was processed as "Please identify your race"
+  // once Gender/Hispanic re-rendered the form). Re-locate by id at fill time.
+  const comboTargets: Array<{ label: string; locate: () => ReturnType<FormScope['locator']> }> = [];
   for (let i = 0; i < cbCount; i++) {
     const el = combos.nth(i);
     if (!(await el.isVisible().catch(() => false))) continue;
+    const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
+    if (!label || seenComboLabels.has(label)) continue;
+    seenComboLabels.add(label);
+    const id = await el.getAttribute('id').catch(() => null);
+    const idSel = id ? `[id="${id.replace(/"/g, '\\"')}"]` : null;
+    const index = i;
+    comboTargets.push({ label, locate: () => (idSel ? root.locator(idSel).first() : combos.nth(index)) });
+  }
+
+  for (const target of comboTargets) {
+    const label = target.label;
+    const el = target.locate();
+    if (!(await el.isVisible().catch(() => false))) continue;
     const current = ((await el.inputValue().catch(() => '')) || (await el.textContent().catch(() => '')) || '').trim();
     if (current && !PLACEHOLDER_RE.test(current)) continue; // already has a real value
-    const label = (await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '';
-    if (!label) continue;
-    if (seenComboLabels.has(label)) continue;
     const labelNorm = label.replace(/[_-]+/g, ' ');
     const required = (await el.getAttribute('aria-required')) === 'true' || /\*/.test(label);
     const isEeo = EEO_PATTERN.test(labelNorm);
@@ -739,14 +808,8 @@ export async function fillVisibleForm(
     // must never leak an unrelated value in ("ethniCITY" once matched the
     // location matcher and offered the user's city to a race question).
     const m = isEeo ? undefined : findMatcher(matchers, labelNorm);
-    const eeoStored = !isEeo ? undefined
-      : packet.answers['gender'] && /gender/i.test(labelNorm) ? packet.answers['gender']
-      : packet.answers['ethnicity'] && /race|ethnic/i.test(labelNorm) ? packet.answers['ethnicity']
-      : packet.answers['veteran_status'] && /veteran/i.test(labelNorm) ? packet.answers['veteran_status']
-      : packet.answers['disability_status'] && /disabilit/i.test(labelNorm) ? packet.answers['disability_status']
-      : undefined;
     const value = isEeo
-      ? eeoStored ?? packet.answers[slug(labelNorm)]
+      ? eeoAnswerFor(labelNorm, packet.answers) ?? packet.answers[slug(labelNorm)]
       : m?.value(packet) ?? packet.answers[slug(labelNorm)];
     // Consent dropdowns ("By selecting 'I agree'…") carry no stored answer but
     // are a required proceed-to-apply gate — pick the agreement option.
@@ -758,7 +821,11 @@ export async function fillVisibleForm(
       continue;
     }
 
-    const extra = { aliases: m?.key === 'how_heard' ? HOW_HEARD_ALIASES : undefined, consent: isConsent, yesNoProse: YES_NO_KEYS.has(m?.key || '') };
+    // EEO: map the stored answer onto the form's options (Male↔Man, Yes/No
+    // onto prose like "I am not a protected veteran"), decline as fallback.
+    const extra = isEeo
+      ? { aliases: eeoPickOpts(value).aliases, yesNoProse: eeoPickOpts(value).yesNoProse }
+      : { aliases: m?.key === 'how_heard' ? HOW_HEARD_ALIASES : undefined, consent: isConsent, yesNoProse: YES_NO_KEYS.has(m?.key || '') };
     let result = await selectComboOption(el, label, value, isEeo, extra);
     if (!result.ok && !result.reason?.startsWith('no option matched')) {
       // Interaction-level failures are often transient — one full re-attempt.
@@ -769,7 +836,7 @@ export async function fillVisibleForm(
       report.filled.push({
         label,
         value: result.picked.slice(0, 60),
-        via: m?.key || (value ? 'answer_bank' : isConsent ? 'consent' : 'eeo_decline'),
+        via: isEeo ? (value ? 'eeo_stored' : 'eeo_decline') : m?.key || (value ? 'answer_bank' : isConsent ? 'consent' : 'eeo_decline'),
       });
       comboFills.set(label, result.picked);
       continue;

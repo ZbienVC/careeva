@@ -70,11 +70,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: `Cannot edit answers while task is "${task.status}"` }, { status: 409 });
     }
 
+    // Per-job answers are company/role-specific — editing "Why do you want to
+    // join Figma?" must NOT save a global answer that then gets served to every
+    // other company. They live on the task packet only, never the answer bank.
+    const PER_JOB_KEYS = new Set(['why_this_company', 'why_this_role']);
+
     // The learning loop: every answer the user provides becomes a verified
     // reusable answer, so future applications asking the same question
     // auto-fill without asking again.
     for (const [key, answer] of Object.entries(sanitized)) {
       if (key.startsWith('__')) continue; // internal packet keys
+      if (PER_JOB_KEYS.has(key)) continue; // never globalize per-job answers
       await prisma.reusableAnswer.upsert({
         where: { userId_questionKey: { userId: user.id, questionKey: key } },
         update: { answer, isVerified: true, questionText: questionTexts[key] || undefined },

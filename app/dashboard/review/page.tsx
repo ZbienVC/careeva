@@ -406,7 +406,7 @@ export default function ReviewQueuePage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="space-y-1">
+                          <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <p className="font-semibold text-slate-400">Answers on this application</p>
                               {['awaiting_approval', 'needs_review', 'failed', 'queued'].includes(t.status) && (
@@ -415,20 +415,43 @@ export default function ReviewQueuePage() {
                                 </button>
                               )}
                             </div>
-                            {Object.entries(t.packet.answers).map(([k, v]) => (
-                              <p key={k} className="text-slate-400"><span className="font-semibold text-slate-300">{k.replace(/_/g, ' ')}:</span> {v}</p>
-                            ))}
+                            {(() => {
+                              const entries = Object.entries(t.packet!.answers!).filter(([k]) => !k.startsWith('__'));
+                              // Long-form written responses get their own readable block;
+                              // short answers stay in a compact list.
+                              const isLong = (k: string, v: string) =>
+                                v.length > 120 || /^(why_|describe_|tell_|cover|additional|summary)/.test(k);
+                              const longs = entries.filter(([k, v]) => isLong(k, v));
+                              const shorts = entries.filter(([k, v]) => !isLong(k, v));
+                              return (
+                                <>
+                                  {shorts.length > 0 && (
+                                    <div className="space-y-1">
+                                      {shorts.map(([k, v]) => (
+                                        <p key={k} className="text-slate-400"><span className="font-semibold text-slate-300">{k.replace(/_/g, ' ')}:</span> {v}</p>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {longs.map(([k, v]) => (
+                                    <div key={k} className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-3">
+                                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{k.replace(/_/g, ' ')}</p>
+                                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{v}</p>
+                                    </div>
+                                  ))}
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
                     )}
 
                     {t.packet?.coverLetter && (
-                      <details className="text-xs">
+                      <details className="text-xs" open>
                         <summary className="cursor-pointer font-semibold text-slate-400 transition hover:text-slate-300">
                           Cover letter
                         </summary>
-                        <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 text-slate-300">{t.packet.coverLetter}</pre>
+                        <pre className="mt-2 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 text-sm leading-relaxed text-slate-200">{t.packet.coverLetter}</pre>
                       </details>
                     )}
                   </div>

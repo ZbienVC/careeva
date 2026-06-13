@@ -298,9 +298,16 @@ async function generateAnswers(
 ): Promise<Record<string, string>> {
   const answers: Record<string, string> = {};
 
-  // 1) Stored verified answers are ground truth (user-approved text wins).
+  // Per-job answers are SPECIFIC to one company/role and must never be reused
+  // across applications — "Why do you want to join <Company>?" answered for
+  // Arize must not be served to Figma. They are regenerated per job below.
+  const PER_JOB_KEYS = new Set(['why_this_company', 'why_this_role']);
+
+  // 1) Stored verified answers are ground truth (user-approved text wins) —
+  //    except per-job answers, which are always regenerated for this company.
   const stored = await prisma.reusableAnswer.findMany({ where: { userId, isVerified: true } });
   for (const ans of stored) {
+    if (PER_JOB_KEYS.has(ans.questionKey)) continue;
     answers[ans.questionKey] = ans.answerShort || ans.answer;
   }
 

@@ -242,7 +242,21 @@ export async function fillVisibleForm(
 
   // The form may live in an embedded iframe — fill where the fields are.
   const root = await pickFormScope(page);
-  const scope = root === page ? (opts.formSelector || 'body') : 'body';
+  // A narrow formSelector (e.g. "form, #application-form") keeps us off
+  // header/newsletter inputs on the OLD boards.greenhouse.io. But the NEW
+  // job-boards.greenhouse.io renders its fields OUTSIDE any <form>/#application
+  // container, so that scope matches almost nothing — fill found 1 input where
+  // the page has 19. Fall back to "body" whenever the narrow scope is sparse.
+  let scope = root === page ? (opts.formSelector || 'body') : 'body';
+  if (scope !== 'body') {
+    const controlsIn = async (sel: string) =>
+      root.locator(`${sel} input:not([type="hidden"]), ${sel} textarea, ${sel} select, ${sel} [role="combobox"]`).count().catch(() => 0);
+    const scoped = await controlsIn(scope);
+    if (scoped < 3) {
+      const whole = await controlsIn('body');
+      if (whole > scoped) scope = 'body';
+    }
+  }
 
   report.diag = {
     workerBuild: (process.env.RAILWAY_GIT_COMMIT_SHA || 'local').slice(0, 7),

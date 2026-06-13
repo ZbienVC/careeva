@@ -22,7 +22,7 @@ const answers: Record<string, string> = {
   why_this_role: 'It aligns with my background.',
   describe_yourself: 'Data-driven problem solver.',
   // EEO + extras the user provided
-  gender: 'Male', hispanic_latino: 'No', veteran_status: 'No',
+  gender: 'Male', hispanic_latino: 'No', veteran_status: 'No', pronouns: 'He/Him',
   worked_here_before: 'No',
 };
 const identity = {
@@ -34,11 +34,16 @@ const identity = {
 
 const FORMS = [
   ['Figma', 'https://job-boards.greenhouse.io/figma/jobs/6013495004?gh_jid=6013495004'],
-  ['Affirm', 'https://job-boards.greenhouse.io/affirm/jobs/7708925003'],
-  ['Reddit', 'https://job-boards.greenhouse.io/reddit/jobs/7958403'],
+  ['Databricks', 'https://job-boards.greenhouse.io/databricks/jobs/8563183002'],
 ];
 
+import { PrismaClient } from '@prisma/client';
+import { materializeFile } from '../src/storage';
+
 (async () => {
+  const prisma = new PrismaClient();
+  const resumePath = await materializeFile(prisma, 'resumes/cmn9udgay0000s01m27s7yv2y/ce4b5daf8d79a927-Zachary_Bienstock_Resume.pdf');
+  await prisma.$disconnect();
   const browser = await chromium.launch({ headless: true, channel: 'chromium' }).catch(() => chromium.launch({ headless: true }));
   for (const [name, url] of FORMS) {
     const task: TaskLike = { id: 'verify', applyUrl: url, mode: 'probe', packet: { answers, coverLetter: 'Cover letter text.', identity } };
@@ -46,9 +51,9 @@ const FORMS = [
     const page = await ctx.newPage();
     try {
       const adapter = getAdapterFor('greenhouse', url)!;
-      const res = await adapter.fill(page, task, { resumePath: null, config: null });
+      const res = await adapter.fill(page, task, { resumePath, config: null });
       const fr = res.report;
-      console.log(`\n=== ${name} === filled ${fr.filled.length} | unanswered ${fr.unanswered.length} | saw ${fr.diag?.textInputs}txt/${fr.diag?.comboboxes}combo`);
+      console.log(`\n=== ${name} === filled ${fr.filled.length} | unanswered ${fr.unanswered.length} | resume ${fr.resumeAttached} | saw ${fr.diag?.textInputs}txt/${fr.diag?.comboboxes}combo`);
       console.log('  FILLED  :', fr.filled.map(f => `${f.via}:${f.value.slice(0,22)}`).join(' | '));
       if (fr.unanswered.length) console.log('  UNANSWER:', JSON.stringify(fr.unanswered));
     } catch (e) {

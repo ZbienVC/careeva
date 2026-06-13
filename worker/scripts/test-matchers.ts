@@ -34,7 +34,7 @@ function expectKey(label: string, wantKey: string | null, company = 'figma') {
 function expectValue(label: string, wantValue: string | undefined, company = 'figma') {
   const matchers = buildMatchers(packet, { company });
   const m = findMatcher(matchers, norm(label));
-  const got = m?.value(packet);
+  const got = m?.value(packet, norm(label));
   const pass = got === wantValue;
   if (!pass) { failures++; console.log(`FAIL  value ${JSON.stringify(label)}\n      got ${JSON.stringify(got)}, want ${JSON.stringify(wantValue)}`); }
   else console.log(`PASS  value [${got}] ${label}`);
@@ -180,6 +180,11 @@ console.log('\n── current company ──');
   if (bad?.key === 'current_company') { failures++; console.log('FAIL  "why leaving current company" wrongly matched current_company'); }
   else console.log(`PASS  not-current_company [${bad?.key ?? 'none'}] why leaving`);
 }
+
+console.log('\n── based in region (derived from location) ──');
+expectValue('Are you based in the San Francisco Bay Area?', 'No');
+expectValue('Are you currently located in the New Jersey area?', 'Yes');
+expectKey('Which state do you reside in?', 'location_state'); // must NOT hijack to based_in_region
 
 console.log('\n── core identity still works ──');
 expectValue('First Name*', 'Zach');

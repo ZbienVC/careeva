@@ -77,7 +77,7 @@ export function getPacket(task: TaskLike): Packet {
 // ─── Label → answer matching ───────────────────────────────────────────────────
 // Order matters: identity first (exact intent), then canonical answer keys.
 
-type Matcher = { test: RegExp; notTest?: RegExp; value: (p: Packet) => string | undefined; key: string };
+type Matcher = { test: RegExp; notTest?: RegExp; value: (p: Packet, label?: string) => string | undefined; key: string };
 
 /** A matcher matches a label only if `test` hits AND `notTest` (the
  * false-positive guard) misses. */
@@ -231,6 +231,22 @@ export function buildMatchers(p: Packet, opts: { company?: string } = {}): Match
     { key: 'linkedin_url', test: /linked\s*in/i, value: () => id.linkedinUrl || a['linkedin_url'] },
     { key: 'github_url', test: /github/i, value: () => id.githubUrl || a['github_url'] },
     { key: 'portfolio_url', test: /portfolio|personal\s+(web)?site|website/i, value: () => id.portfolioUrl || a['portfolio_url'] },
+    // "Are you based in the SF Bay Area?" — Yes only if the user's location
+    // shares a real word with the named region, else No (derived, not guessed).
+    { key: 'based_in_region', test: /are\s+you\s+(currently\s+)?(based|located|living|residing)\s+(in|within|near)\b/i, notTest: /which|what\s+(state|country)|state\s+or\s+province/i, value: (p, label) => {
+      let loc = (p.identity.location || '').toLowerCase();
+      if (!loc) return undefined;
+      // Expand any state abbreviation ("NJ" -> "new jersey") so "the New Jersey
+      // area" matches a "Hawthorne, NJ" location.
+      for (const [ab, full] of Object.entries(STATE_NAMES)) {
+        if (new RegExp(`\\b${ab.toLowerCase()}\\b`).test(loc)) loc += ' ' + full.toLowerCase();
+      }
+      const m2 = label && /(?:based|located|living|residing)\s+(?:in|within|near)\s+(?:the\s+)?([a-z .,'-]+?)(?:\s+(?:area|region|metro|metropolitan)\b|\?|$)/i.exec(label);
+      const region = (m2 ? m2[1] : '').toLowerCase().replace(/[^a-z\s]/g, ' ').trim();
+      if (!region) return undefined;
+      const regionTokens = region.split(/\s+/).filter((t) => t.length >= 4 && !['area', 'region', 'metro'].includes(t));
+      return regionTokens.length && regionTokens.some((t) => loc.includes(t)) ? 'Yes' : 'No';
+    } },
     { key: 'current_company', test: /(?:current|present|most\s+recent)\b[^?]{0,25}\b(?:company|employer|organization)|name\s+of\s+your\s+(?:company|employer)|present\s+employer|company\s+you\s+(?:currently\s+)?work/i, notTest: /why|reason|leav|cover|salary|how\s+long|years?\s+at/i, value: () => a['current_company'] },
     { key: 'salary_expectation', test: /salary|compensation|pay\s+expectation/i, value: () => a['salary_expectation'] },
     { key: 'start_date', test: /start\s*date|when\s+can\s+you\s+start|notice\s+period|available/i, value: () => a['start_date'] },
@@ -501,40 +517,78 @@ export async function fillVisibleForm(
     return !!after.trim();
   };
 
-  // 1) Resume file input(s). VERIFY the ATS accepted the file — Playwright's
-  //    setInputFiles only sets input.files; if the page's upload handler errors
-  //    ("Cannot read properties of undefined (reading 'uploadFile')") the file
-  //    is never registered. Confirm the filename appears before claiming the
-  //    resume is attached, so the report never over-promises.
+  // 1) Resume upload. VERIFY the ATS accepted the file — confirming the
+  //    filename appears before claiming success.
+  //
+  //    New Greenhouse hides the file input behind an "Attach" button and only
+  //    initializes its uploader JS when that button is clicked. Setting the
+  //    file on the raw hidden input throws "Cannot read properties of undefined
+  //    (reading 'uploadFile')" and the resume never attaches. So drive the
+  //    button via the file-chooser API (which is what a human click does);
+  //    fall back to direct setInputFiles for classic forms.
   report.diag.fileInputs = await root.locator(`${scope} input[type="file"]`).count().catch(() => 0);
   if (ctx.resumePath) {
     const baseName = ctx.resumePath.split('/').pop() || '';
-    // Strip our temp prefix ("<hash>-Real_Name.pdf") for the page-text check.
     const shownName = baseName.replace(/^[0-9a-f]{8,}-/i, '').replace(/\.[a-z]+$/i, '');
-    const fileInputs = root.locator(`${scope} input[type="file"]`);
-    const n = await fileInputs.count();
-    for (let i = 0; i < n; i++) {
-      const input = fileInputs.nth(i);
-      const label = (await labelFor(root, input)) || '';
-      if (i === 0 || /resume|cv/i.test(label)) {
-        try {
-          await input.setInputFiles(ctx.resumePath);
-          await page.waitForTimeout(1800); // many ATSes parse the file client-side
-          // Did the ATS register it? Look for the filename in the field's
-          // container (or, failing that, anywhere on the page).
-          const token = shownName.split(/[_\s]/).filter((t) => t.length >= 4)[0] || shownName;
-          const pageText = (await root.locator(scope).innerText().catch(() => '')) || '';
-          const accepted = !!token && new RegExp(escapeRegex(token), 'i').test(pageText);
-          if (accepted) {
-            report.resumeAttached = true;
-            report.filled.push({ label: label || 'Resume', value: '[file]', via: 'file' });
-            break;
-          }
-          // Set but not registered — keep trying other inputs; if none work the
-          // report shows resumeAttached=false and the task pauses for review.
-          report.skippedOptional.push((label || 'Resume') + ' (file set but the ATS did not register it)');
-        } catch { /* keep trying others */ }
+    const token = shownName.split(/[_\s]/).filter((t) => t.length >= 4)[0] || shownName;
+    // The upload is async (Greenhouse posts the file then echoes the name) —
+    // poll for the filename rather than guessing a single delay.
+    const filenameShows = async (): Promise<boolean> => {
+      for (let t = 0; t < 5; t++) {
+        await page.waitForTimeout(1000);
+        const pageText = (await root.locator(scope).innerText().catch(() => '')) || '';
+        if (token && new RegExp(escapeRegex(token), 'i').test(pageText)) return true;
       }
+      return false;
+    };
+
+    // The uploader's JS loads async — clicking before it initializes is what
+    // triggers the "uploadFile" error. Let the page settle first.
+    await page.waitForLoadState('networkidle', { timeout: 6000 }).catch(() => {});
+
+    // Preferred for new Greenhouse: click the FIRST visible "Attach" control and
+    // answer the file chooser (what a human does). Only one click — clicking a
+    // second stacked Attach mid-upload aborts the first, and a direct
+    // setInputFiles on the hidden input throws the "uploadFile" error. Poll for
+    // the echoed filename to confirm the ATS accepted it.
+    const attach = root.locator(`${scope} button:has-text("Attach"):visible, ${scope} label:has-text("Attach"):visible, ${scope} button:has-text("Upload"):visible`).first();
+    const hasAttach = (await attach.count().catch(() => 0)) > 0;
+    if (hasAttach) {
+      try {
+        const [chooser] = await Promise.all([
+          page.waitForEvent('filechooser', { timeout: 8000 }),
+          attach.click({ timeout: 5000 }),
+        ]);
+        await chooser.setFiles(ctx.resumePath);
+        if (await filenameShows()) {
+          report.resumeAttached = true;
+          report.filled.push({ label: 'Resume', value: '[file]', via: 'file' });
+        }
+      } catch { /* fall through to manual review */ }
+    } else {
+      // Classic forms: a plain visible file input — set it directly.
+      const fileInputs = root.locator(`${scope} input[type="file"]`);
+      const n = await fileInputs.count();
+      for (let i = 0; i < n; i++) {
+        const input = fileInputs.nth(i);
+        const label = (await labelFor(root, input)) || '';
+        if (i === 0 || /resume|cv/i.test(label)) {
+          try {
+            await input.setInputFiles(ctx.resumePath);
+            if (await filenameShows()) {
+              report.resumeAttached = true;
+              report.filled.push({ label: label || 'Resume', value: '[file]', via: 'file' });
+              break;
+            }
+          } catch { /* keep trying others */ }
+        }
+      }
+    }
+
+    if (!report.resumeAttached && report.diag.fileInputs > 0) {
+      // A resume was expected (we have the file) but didn't attach — surface it
+      // so the application pauses for review instead of submitting résumé-less.
+      report.unanswered.push('Resume/CV (upload did not register — open the form and attach manually, or Retry)');
     }
   }
 
@@ -585,8 +639,8 @@ export async function fillVisibleForm(
     const m = findMatcher(matchers, labelNorm);
     // Canonical matcher first, then the user's taught answer bank (answers the
     // user provided for this exact question on a previous application).
-    const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
-    const via = m?.value(packet) ? m!.key : 'answer_bank';
+    const value = m?.value(packet, labelNorm) ?? packet.answers[slug(labelNorm)];
+    const via = m?.value(packet, labelNorm) ? m!.key : 'answer_bank';
     if (value) {
       if (await verifiedFill(el, value)) {
         report.filled.push({ label, value: value.slice(0, 60), via });
@@ -626,7 +680,7 @@ export async function fillVisibleForm(
     const label = (await labelFor(root, el)) || (await el.getAttribute('name')) || '';
     const labelNorm = label.replace(/[_-]+/g, ' ');
     const m = findMatcher(matchers, labelNorm);
-    const value = m?.value(packet) ?? packet.answers[slug(labelNorm)];
+    const value = m?.value(packet, labelNorm) ?? packet.answers[slug(labelNorm)];
     const optionTexts: string[] = await el.locator('option').allTextContents();
     const verifiedSelect = async (optionLabel: string): Promise<boolean> => {
       await el.selectOption({ label: optionLabel }, { timeout: 5000 }).catch(() => {});
@@ -810,7 +864,7 @@ export async function fillVisibleForm(
     const m = isEeo ? undefined : findMatcher(matchers, labelNorm);
     const value = isEeo
       ? eeoAnswerFor(labelNorm, packet.answers) ?? packet.answers[slug(labelNorm)]
-      : m?.value(packet) ?? packet.answers[slug(labelNorm)];
+      : m?.value(packet, labelNorm) ?? packet.answers[slug(labelNorm)];
     // Consent dropdowns ("By selecting 'I agree'…") carry no stored answer but
     // are a required proceed-to-apply gate — pick the agreement option.
     const isConsent = !isEeo && CONSENT_RE.test(labelNorm) && !CONSENT_NOT.test(labelNorm);
@@ -922,6 +976,43 @@ export async function fillVisibleForm(
       report.filled.push({ label: label.slice(0, 80) || 'Consent', value: 'checked', via: 'consent' });
     } else {
       report.unanswered.push((label.slice(0, 80) || 'Required consent checkbox') + ' (could not check)');
+    }
+  }
+
+  // 7) Checkbox GROUPS ("select all that apply"). Only the safe case is
+  //    auto-selected: a "None of the above" / "Not applicable" / "None of these
+  //    apply" option on an eligibility/compliance question (sanctions, export
+  //    control, citizenship/residency) — correct for a US-based applicant and
+  //    the logical answer to the conditional follow-ups. Anything else in a
+  //    required group is surfaced for the user, never guessed (a wrong tick on
+  //    a sanctions question is far worse than a blank).
+  //    A "None of the above" / "Not applicable" option whose nearby text reads
+  //    as compliance (sanctions, export control, citizenship/residency) is the
+  //    correct, safe answer for a US-based applicant — select it. Other
+  //    "select all that apply" options are left untouched (never guessed): a
+  //    wrong tick on a sanctions question is far worse than a blank, and the
+  //    "none/not applicable" pick usually satisfies the group anyway.
+  const NONE_OPTION_RE = /^\s*(none\s+of\s+(the\s+)?(above|these)|none\s+of\s+these\s+apply|not\s+applicable|n\/a)\b/i;
+  for (let i = 0; i < cxCount; i++) {
+    const el = consentBoxes.nth(i);
+    if (!(await el.isVisible().catch(() => false))) continue;
+    if (await el.isChecked().catch(() => false)) continue;
+    const optLabel = ((await labelFor(root, el)) || (await el.getAttribute('aria-label')) || '').trim();
+    if (!optLabel || !NONE_OPTION_RE.test(optLabel) || CONSENT_RE.test(optLabel)) continue;
+    // Confirm the surrounding question is a compliance/eligibility one.
+    const context = (await el.evaluate((node: Element) => {
+      let c: Element | null = node.parentElement;
+      for (let d = 0; d < 6 && c; d++) {
+        const t = (c.textContent || '').trim();
+        if (t.length > 60) return t.slice(0, 600);
+        c = c.parentElement;
+      }
+      return '';
+    }).catch(() => '')) || '';
+    if (!/sanction|export\s+control|complian|eligib|citizen|residen|the\s+following\s+appl|confirm\s+whether|legally\s+entitled|prior\s+question/i.test(context)) continue;
+    await el.check({ timeout: 4000 }).catch(() => el.click({ timeout: 4000 }).catch(() => {}));
+    if (await el.isChecked().catch(() => false)) {
+      report.filled.push({ label: optLabel.slice(0, 60), value: 'checked', via: 'eligibility' });
     }
   }
 

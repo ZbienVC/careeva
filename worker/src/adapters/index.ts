@@ -89,7 +89,7 @@ export function buildMatchers(p: Packet): Matcher[] {
     { key: 'phone', test: /phone|mobile|cell/i, value: () => id.phone || a['phone'] },
     { key: 'country', test: /^country|country\s*[*]?$|country\s+of\s+residence/i, value: () => id.country || a['country'] },
     // \bcity\b: a bare "city" substring also matches "ethniCITY" (an EEO label)
-    { key: 'location', test: /location|\bcity\b|current\s+address|where.*based|state\s+or\s+province|which\s+state|state\s*\/\s*province/i, value: () => id.location || a['address'] },
+    { key: 'location', test: /location|\bcity\b|current\s+address|where.*based|from\s+where|where\s+do\s+you\s+(intend|plan)\s+to\s+work|state\s+or\s+province|which\s+state|state\s*\/\s*province/i, value: () => id.location || a['address'] },
     { key: 'linkedin_url', test: /linked\s*in/i, value: () => id.linkedinUrl || a['linkedin_url'] },
     { key: 'github_url', test: /github/i, value: () => id.githubUrl || a['github_url'] },
     { key: 'portfolio_url', test: /portfolio|personal\s+(web)?site|website/i, value: () => id.portfolioUrl || a['portfolio_url'] },
@@ -646,6 +646,24 @@ export async function fillVisibleForm(
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 50);
+}
+
+/**
+ * Why does this page have no fillable form? Inspect what the browser actually
+ * landed on so the user's error message states facts, not guesses ("login
+ * gated" used to be reported for everything, including bot-blocks).
+ */
+export async function describeUnfillablePage(page: Page): Promise<string> {
+  const title = ((await page.title().catch(() => '')) || '').slice(0, 80);
+  const url = page.url();
+  const sample = ((await page.locator('body').innerText().catch(() => '')) || '').slice(0, 3000);
+  if (/just a moment|attention required|verify you are human|cloudflare|are you a robot|unusual traffic|access denied/i.test(title + ' ' + sample)) {
+    return `the page is a bot-protection challenge ("${title}") at ${url} — the apply engine's server IP is being blocked for this site; running the worker from a residential IP (or adding a browser proxy) fixes this`;
+  }
+  if (/sign in|log ?in|create (an )?account/i.test(sample) && /password/i.test(sample)) {
+    return `the page is a login wall at ${url} — this ATS requires an account before it shows the application form`;
+  }
+  return `the browser landed on "${title}" at ${url}, which has no application form — likely a listing/landing page or a broken apply link`;
 }
 
 // US state + Canadian province abbreviation expansion for location dropdowns.

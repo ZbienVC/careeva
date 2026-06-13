@@ -83,14 +83,22 @@ export default function ReviewQueuePage() {
     return () => clearInterval(t);
   }, [load]);
 
+  const [actionError, setActionError] = useState<string | null>(null);
+
   const act = async (id: string, action: 'approve' | 'cancel' | 'retry') => {
     setActing(id + action);
-    await fetch(`/api/apply-queue/${id}`, {
+    setActionError(null);
+    const res = await fetch(`/api/apply-queue/${id}`, {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
     });
+    if (!res.ok) {
+      // A silently-swallowed 409 here looked like a dead Retry button.
+      const data = await res.json().catch(() => ({}));
+      setActionError(data.error || `Could not ${action} (HTTP ${res.status}) — refresh and try again`);
+    }
     setActing(null);
     load();
   };
@@ -175,6 +183,12 @@ export default function ReviewQueuePage() {
         <div className="alert-warning flex items-center gap-3 text-sm font-semibold">
           <IconAlertTriangle size={18} />
           {approvalCount} application{approvalCount > 1 ? 's' : ''} waiting for your approval
+        </div>
+      )}
+
+      {actionError && (
+        <div className="alert-error flex items-center gap-3 text-sm font-semibold">
+          <IconAlertTriangle size={18} /> {actionError}
         </div>
       )}
 

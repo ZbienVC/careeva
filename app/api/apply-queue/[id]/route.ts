@@ -130,9 +130,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json(await prisma.applyTask.findUnique({ where: { id } }));
   }
   if (action === 'retry') {
+    // awaiting_approval is retryable too: "the fill looks wrong, do it again"
+    // discards the worker's fill and requeues with the current packet.
     const result = await prisma.applyTask.updateMany({
-      where: { id, userId: user.id, status: { in: ['failed', 'needs_review', 'cancelled'] } },
-      data: { status: 'queued', attempts: 0, claimedBy: null, lastError: null },
+      where: { id, userId: user.id, status: { in: ['failed', 'needs_review', 'cancelled', 'awaiting_approval'] } },
+      data: { status: 'queued', attempts: 0, claimedBy: null, lastError: null, approvedAt: null },
     });
     if (result.count === 0) {
       return NextResponse.json({ error: `Cannot retry task in status "${task.status}"` }, { status: 409 });

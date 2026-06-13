@@ -25,7 +25,7 @@
 import { PrismaClient } from '@prisma/client';
 import { chromium, Browser } from 'playwright';
 import crypto from 'crypto';
-import { getAdapterFor } from './adapters';
+import { getAdapterFor, describeUnfillablePage } from './adapters';
 import { materializeFile, saveScreenshot } from './storage';
 
 const prisma = new PrismaClient({ log: ['error'] });
@@ -158,12 +158,13 @@ async function processTask(task: NonNullable<Awaited<ReturnType<typeof claimTask
     // must never be presented as ready for approval.
     const filledReport = fill.report as { filled?: unknown[]; resumeAttached?: boolean } | undefined;
     if ((filledReport?.filled?.length || 0) === 0 && !filledReport?.resumeAttached) {
+      const why = await describeUnfillablePage(page).catch(() => 'page inspection failed');
       await setStatus(task.id, 'needs_review', {
-        lastError: 'No fillable application form was found at this URL — it appears to be a listing page or login-gated. Open the original form to apply manually (your answers and cover letter are below), or Retry after the posting link is fixed.',
+        lastError: `Nothing could be filled: ${why}. The screenshot below shows exactly what the apply engine saw (note: it fills in its own browser — "Open original form" always opens a fresh, empty copy in yours). Apply manually with the answers below, or Retry once the cause is fixed.`,
         screenshotKey: shotKey,
         fieldReport: fill.report as object,
       });
-      log('needs review: zero fields filled (no real form found)');
+      log(`needs review: zero fields filled — ${why}`);
       return;
     }
 
